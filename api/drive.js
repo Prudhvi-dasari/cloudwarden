@@ -88,6 +88,13 @@ export default async function handler(req, res) {
   const shareId = urlObj.searchParams.get('shareId');
   const fileName = urlObj.searchParams.get('fileName') || 'downloaded_file';
 
+  if (!process.env.GOOGLE_REFRESH_TOKEN && action !== 'verify-password') {
+    return res.status(200).json({
+      status: 'migrated',
+      message: 'Storage backend has migrated to Cloudflare R2. Use /api/r2 endpoints.',
+    });
+  }
+
   try {
     // 1. Direct Binary File Download Stream (Zero-RAM buffer stream pipe with Resumable Range support)
     if (action === 'download' && fileId) {

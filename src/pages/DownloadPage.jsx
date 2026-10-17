@@ -104,8 +104,8 @@ export default function DownloadPage() {
           expiresAt: firstFile.expires_at,
         });
         setLoading(false);
-        // Trigger server-side purge of Google Drive files in background
-        fetch('/api/drive?action=cleanup').catch(() => {});
+        // Trigger server-side purge of expired transfers in background
+        fetch('/api/r2?action=cleanup').catch(() => {});
         return;
       }
 
@@ -143,7 +143,7 @@ export default function DownloadPage() {
     if (!inputPassword.trim()) return;
 
     try {
-      const res = await fetch('/api/drive?action=verify-password', {
+      const res = await fetch('/api/r2?action=verify-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

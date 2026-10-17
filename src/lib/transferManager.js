@@ -33,7 +33,7 @@ export class TransferManager {
     this.guestId = options.guestId || 'Guest-General';
     this.userDisplayName = options.userDisplayName || null;
     this.concurrency = options.concurrency || 3;
-    this.apiBase = options.apiBase || '/api/drive';
+    this.apiBase = options.apiBase || '/api/r2';
 
     this.files = []; // Array of file items
     this.listeners = new Map();
@@ -518,145 +518,14 @@ export class TransferManager {
       console.warn('Direct stream fallback to Drive Vault session:', edgeErr.message);
     }
 
-    // =========================================================================
-    // METHOD C: Resumable Chunk Streaming Loop via Google Drive Cloud Vault Session (Fallback)
-    // =========================================================================
-    try {
-      if (!item.uploadUrl) {
-        const initRes = await fetch(`${this.apiBase}?action=init`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            fileName: item.name,
-            contentType: item.type,
-            fileSize: item.size,
-            shareId: this.shareId,
-            isGuest: this.isGuest,
-            guestId: this.guestId,
-            userDisplayName: this.userDisplayName,
-            transferName: this.transferName,
-            expiryHours: this.expiryHours,
-          }),
-        });
-
-        if (!initRes.ok) {
-          const errData = await initRes.json().catch(() => ({}));
-          throw new Error(errData.error || 'Failed to initialize upload session');
-        }
-
-        const sessionData = await initRes.json();
-        item.uploadUrl = sessionData.uploadUrl;
-      }
-
-      let startOffset = 0;
-      let start = startOffset;
-      let chunkSize = 4 * 1024 * 1024;
-      let retryCount = 0;
-      const maxRetries = 3;
-
-      while (start < totalSize && item.status === 'uploading') {
-        const end = Math.min(start + chunkSize, totalSize);
-        const chunkBlob = item.file.slice(start, end);
-        const rangeHeader = `bytes ${start}-${end - 1}/${totalSize}`;
-
-        let chunkResult = null;
-
-        try {
-          chunkResult = await new Promise((resolve, reject) => {
-            const xhr = new XMLHttpRequest();
-            item.xhr = xhr;
-
-            xhr.open('POST', `${this.apiBase}?action=chunk`, true);
-            xhr.setRequestHeader('X-Session-Url', item.uploadUrl);
-            xhr.setRequestHeader('Content-Range', rangeHeader);
-            xhr.setRequestHeader('X-File-Type', item.type || 'application/octet-stream');
-
-            xhr.upload.onprogress = (e) => {
-              if (e.lengthComputable && item.status === 'uploading') {
-                const currentChunkBytes = e.loaded;
-                const totalUploaded = start + currentChunkBytes;
-                item.uploadedBytes = Math.min(totalSize, totalUploaded);
-                item.progress = Math.min(99, Math.round((totalUploaded / totalSize) * 100));
-                this.emit('fileProgress', item);
-                this.emit('stateChanged', this.getSnapshot());
-              }
-            };
-
-            xhr.onload = () => {
-              item.xhr = null;
-              if (xhr.status >= 200 && xhr.status < 300) {
-                try {
-                  resolve(JSON.parse(xhr.responseText));
-                } catch (e) {
-                  resolve({ complete: true });
-                }
-              } else {
-                reject(new Error(`Chunk upload failed with status [${xhr.status}]`));
-              }
-            };
-
-            xhr.onerror = () => {
-              item.xhr = null;
-              reject(new Error('Network error during upload'));
-            };
-
-            xhr.onabort = () => {
-              item.xhr = null;
-              resolve({ aborted: true });
-            };
-
-            xhr.timeout = 120000;
-            xhr.send(chunkBlob);
-          });
-
-        } catch (err) {
-          retryCount++;
-          if (retryCount <= maxRetries && item.status === 'uploading') {
-            await new Promise(r => setTimeout(r, 1000 * retryCount));
-            continue;
-          } else {
-            throw err;
-          }
-        }
-
-        if (chunkResult?.aborted) return;
-
-        retryCount = 0;
-        start = end;
-        item.uploadedBytes = start;
-
-        if (chunkResult?.complete) {
-          item.status = 'completed';
-          item.progress = 100;
-          item.fileId = chunkResult.file?.id || item.fileId;
-          item.speedStr = 'Verified & Ready';
-          item.timeRemainingStr = '00:00';
-          this.emit('fileComplete', item);
-          this.emit('stateChanged', this.getSnapshot());
-          this.processQueue();
-          return;
-        }
-      }
-
-      if (start >= totalSize && item.status === 'uploading') {
-        item.status = 'completed';
-        item.progress = 100;
-        item.speedStr = 'Verified & Ready';
-        item.timeRemainingStr = '00:00';
-        this.emit('fileComplete', item);
-        this.emit('stateChanged', this.getSnapshot());
-        this.processQueue();
-      }
-
-    } catch (err) {
-      if (item.status !== 'cancelled' && item.status !== 'paused') {
-        console.error('File upload error:', err);
-        item.status = 'error';
-        item.error = err.message || 'Upload failed';
-        this.emit('fileError', { item, error: err });
-        this.emit('stateChanged', this.getSnapshot());
-        this.processQueue();
-      }
+    // If all upload methods fail
+    if (item.status !== 'cancelled' && item.status !== 'paused' && item.status !== 'completed') {
+      console.error('File upload error: All upload methods exhausted');
+      item.status = 'error';
+      item.error = 'Upload could not be completed. Please check your network connection and try again.';
+      this.emit('fileError', { item, error: new Error(item.error) });
+      this.emit('stateChanged', this.getSnapshot());
+      this.processQueue();
     }
   }
 

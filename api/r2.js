@@ -237,7 +237,28 @@ export default async function handler(req, res) {
     }
 
     // ========================================================
-    // 8. Automated Purge / Cleanup (7, 14, 30 Days Expiry)
+    // 8. Secure Password Verification
+    // ========================================================
+    if (action === 'verify-password' && req.method === 'POST') {
+      const { shareId: sId, inputPassword, expectedPasswordHash } = req.body || {};
+      if (!sId || !inputPassword) {
+        return res.status(400).json({ error: 'shareId and inputPassword required' });
+      }
+
+      const isMatch = (inputPassword === expectedPasswordHash);
+      if (!isMatch) {
+        await new Promise(r => setTimeout(r, 200));
+        return res.status(401).json({ error: 'Incorrect password. Access denied.' });
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: 'Password verified',
+      });
+    }
+
+    // ========================================================
+    // 9. Automated Purge / Cleanup (7, 14, 30 Days Expiry)
     // ========================================================
     if (action === 'cleanup') {
       const { maxAgeHours = 168 } = req.query; // default 7 days = 168h
