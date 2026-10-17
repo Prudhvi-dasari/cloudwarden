@@ -1,458 +1,239 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Send Large Files - Free Secure File Transfer - TransferNow Clone</title>
-  <meta name="description" content="TransferNow is a simple, quick and secure free solution to send large files and big documents up to 250 GB per transfer.">
-  <script type="module" crossorigin src="/assets/main-4wFjb9b1.js"></script>
-  <link rel="stylesheet" crossorigin href="/assets/main-C3kL6Rvu.css">
-</head>
-<body>
+<!doctype html>
+<html lang="en" prefix="og: https://ogp.me/ns#">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0" />
+    
+    <!-- Primary Page Title & Meta Description -->
+    <title>[No Sign Up] Send Large Files Online Free (Up to 25 GB) — iTransfer</title>
+    <meta name="title" content="[No Sign Up] Send Large Files Online Free (Up to 25 GB) — iTransfer" />
+    <meta name="description" content="Send large files up to 25 GB 100% free with no registration or account required. Instant shareable links, AES-256 encryption, direct email transfer, and gigabit speeds." />
+    <meta name="keywords" content="send files online, file transfer free, large file transfer, how to send large files, send large files, send files online free, share files free, send large files online free, wetransfer alternative, send huge files online free, send heavy files online, secure file sharing" />
+    <meta name="author" content="iTransfer" />
+    <meta name="application-name" content="iTransfer" />
+    <meta name="rating" content="General" />
+    <meta name="referrer" content="origin-when-cross-origin" />
+    
+    <!-- Canonical Link -->
+    <link rel="canonical" href="https://itransfer.iprudhvi.in/" />
+    
+    <!-- Search Engine Robots & Crawling Directives -->
+    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
+    <meta name="googlebot" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
+    <meta name="bingbot" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
 
-  <!-- Full Screen Drag and Drop Overlay -->
-  <div id="dropzone-overlay" class="dropzone-overlay">
-    <div class="dropzone-box">
-      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-      <h2>Drop your files here</h2>
-      <p>Add your files or folders by drag-and-dropping them on this window 😉</p>
-    </div>
-  </div>
+    <!-- Open Graph / Facebook / WhatsApp / LinkedIn / Discord -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://itransfer.iprudhvi.in/" />
+    <meta property="og:site_name" content="iTransfer" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:title" content="iTransfer — Send Large Files Online Free (Up to 25 GB)" />
+    <meta property="og:description" content="Deliver large files, 4K videos, and archives at gigabit speeds with zero compression. End-to-end AES-256 encryption. Zero signup required." />
+    <meta property="og:image" content="https://itransfer.iprudhvi.in/images/hero_3d_cloudscape.jpg" />
+    <meta property="og:image:secure_url" content="https://itransfer.iprudhvi.in/images/hero_3d_cloudscape.jpg" />
+    <meta property="og:image:type" content="image/jpeg" />
+    <meta property="og:image:width" content="1376" />
+    <meta property="og:image:height" content="768" />
+    <meta property="og:image:alt" content="iTransfer — 3D Cloudscape High-Speed File Transfer Engine" />
 
-  <!-- Shared Header -->
-  <header id="header">
-    <div class="container header-inner">
-      <a href="/index.html" class="logo" title="TransferNow">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 913.4 106.9" width="160">
-          <path d="M710.3 70.4.8-5.2c1.1-4.5 2.6-8.8 4.5-13 1.9-3.8 4.5-7.1 7.8-9.8 5.3-3.6 12.8-7.3 26.2-.1l5-3.4c-7.3-7.7-19.9-10.5-26.4-10.5-6-.1-11.9 1-17.5 3.3-5 2.1-9.5 5.2-13.1 9.3-3.6 4.2-6.4 9-8.1 14.2-1.9 5.7-2.8 11.8-2.8 17.8 0 3.9.6 7.7 1.6 11.5 7.1-4.2 14.1-6.5 21.8-9.5 0-.2.1-4.6.2-4.6" fill="#ccc"></path>
-          <path d="M758.1 43.6c-1.3-2.2-3-4.3-4.9-6.1-.9-.9-1.9-1.8-3-2.5 0 0-16.1-1.5-26.9 7.3 0 0 4.7-.3 10.6 5 3.4 3.2 5.3 7.6 5.2 12.2 0 3.3-.4 6.5-1.1 9.8-.7 3.2-1.8 6.4-3.3 9.3-1.3 2.7-3.2 5-5.4 6.9-2.2 1.8-4.9 2.7-7.7 2.6-2.2.1-4.4-.4-6.4-1.5-1.8-1-3.2-2.6-4-4.5-.9-2.3-1.4-4.8-1.3-7.3l.1-1.1c-7.4 2.8-15.4 5.5-22.1 9.7.7 2.6 1.8 5.1 3.2 7.4 3 4.9 7.3 8.8 12.4 11.3 5.5 2.7 11.5 4 17.6 4 6 .1 12-1 17.6-3.3 5-2.1 9.5-5.3 13.1-9.3 3.6-4.2 6.4-9 8.1-14.2 1.9-5.7 2.8-11.7 2.8-17.8-.1-6.9-1.6-12.9-4.6-17.9" fill="#999"></path>
-          <path d="m632.1 30.5-24.5 6.4-17.1 66.7h24.9z" fill="#0066ff"></path>
-          <path d="M677.4 43.4c-1.3-4-3.9-7.5-7.5-9.7-3.6-2.3-8-3.4-13.2-3.4-6.8 0-17.9 1.5-32.5 11.1-10.8 7.2-23.8 23.4-23.9 23.7l-3.6 14c4.4-5 9.1-9.7 14.1-14 13-11.3 24.4-15.6 32.4-15.8 3.5-.1 6 1.1 7.6 3.3s1.9 5.2 1 9.1l-10 41.9h24.9l10.7-45c1.5-5.9 1.5-11 0-15.2" fill="#b3b3b3"></path>
-          <path d="m850.6 50.2-5.3-5.2s-20.2 24-28.8 31.5c-6.8 5.9-22.4 21.3-38.2 9.2 0 5.6 1.1 10 3.3 13 2.3 3.1 5.1 4.2 9.2 4.7s11.3-1.2 16.2-2.8c6.9-3 16.1-8.4 28.7-23.5 9.3-11.2 15-26.6 14.9-26.9" fill="#888"></path>
-          <path d="m903.2 30.2-9.3 2.5s-1 6.2-5.3 16.7c-5.3 10.2-11.3 19.7-22.7 28.4-9.8 7.5-23.8 14.8-36.5 4.7 0 5.6.3 13.3 2.5 16.4 2.3 3.1 5.8 5.1 9.6 5.5 4.2.2 10.6-1.4 15.5-3.5 5.4-2.5 16.3-8.6 27.9-24.4 14.4-19.8 18.3-46.3 18.3-46.3" fill="#aaa"></path>
-          <path d="M796.4 82.7c1.3-20 7.9-52.4 7.9-52.4L779 37l-5.8 30.9c-8.7 50.1 33.9 32.7 33.9 32.7-12.7.5-11.3-7.7-10.7-17.9m50 0c1.3-20 7.9-52.4 7.9-52.4L829.2 37l-6 30.9c-8.7 52.7 33.8 32.8 33.8 32.8-12.6.4-11.2-7.8-10.6-18M38.1 50.3h19.8L62 32.8H42.2l5.3-22.6-26.4 7-3.6 15.7H4.1L0 50.3h13.4L7 78.7c-1.3 6.1-1.2 11.2.4 15.4 1.6 4.1 4.7 7.5 8.7 9.4 4.8 2.2 10 3.3 15.2 3.1 3.1 0 6.2-.2 9.3-.7 2.9-.5 5.7-1.3 8.4-2.6l1.4-15.8c-1.2.6-2.4 1.1-3.7 1.5q-2.7.6-5.4.6c-3.7 0-6.4-.9-8.3-2.8s-2.3-4.7-1.4-8.5zm86.4-18.6c-1.4-.3-2.7-.4-4.1-.4-4.4-.1-8.7 1-12.5 3.2-3.7 2.2-6.9 5.2-9.3 8.8-1.3 2-2.5 4.1-3.4 6.2L98 32.8H76.1l-16.8 72.5H84l7.8-33.5c.9-4.2 2.5-8.1 4.9-11.6 1.9-2.7 4.5-4.9 7.5-6.3 2.8-1.3 5.7-1.9 8.8-2 1.7 0 3.3.1 5 .4 1.2.2 2.3.6 3.4 1.1l5.9-20.7c-.9-.5-1.8-.8-2.8-1m58 16.3c-.6-3.5-2-6.8-4.3-9.6-2-2.4-4.6-4.2-7.5-5.4s-6.1-1.8-9.2-1.8c-5.2-.1-10.3 1.3-14.9 3.9-4.5 2.6-8.3 6.2-11.3 10.4-3.2 4.5-5.6 9.5-7.2 14.9-1.7 5.5-2.5 11.2-2.5 17q0 9.45 3.3 15.9c2 4.1 5.1 7.5 9 9.9 3.9 2.3 8.4 3.5 13 3.4 4.8 0 9.5-1.4 13.5-4 4.1-2.7 7.4-6.5 9.6-10.9l-2.5 13.6h22.3l16.8-72.5H186zm-5.4 23.7c-.8 2.9-2 5.8-3.5 8.4-1.3 2.4-3.1 4.5-5.3 6.2-1.9 1.5-4.2 2.3-6.7 2.3-2.3.1-4.5-.5-6.4-1.7-1.7-1.2-3.1-2.8-3.8-4.8-.9-2.4-1.4-4.9-1.3-7.5.1-5.8 1.6-11.6 4.5-16.7 1.3-2.4 3.2-4.5 5.4-6.2 2.1-1.6 4.6-2.4 7.2-2.4 2.1-.1 4.2.5 6 1.6 1.7 1.1 3 2.7 3.8 4.6 1 2.2 1.4 4.6 1.4 7 0 3.2-.5 6.2-1.3 9.2m110.7-37c-3.9-2.4-8.5-3.6-13.1-3.4-6.4-.1-12.7 2-17.8 5.8-3.4 2.6-6.1 5.9-8 9.7l2.2-14h-21.9l-16.8 72.5H237l9.1-39.1c.6-3.1 1.7-6 3.3-8.8 1.2-2.2 3-4 5.1-5.4 2.1-1.2 4.5-1.9 6.9-1.8q5.25 0 7.5 3.3c2.25 3.3 1.9 5.2 1 9.1l-10 42.8h24.6l10.7-45.8c1.3-5.9 1.3-10.9-.1-15.1-1.2-4.1-3.8-7.5-7.3-9.8m48.6 14.5c2.1-1 4.5-1.5 6.8-1.4 2.8 0 5.6.5 8.3 1.4 2.6.9 5 2.2 7.2 3.8q3.15 2.25 5.1 5.4l12.3-12.1c-3.5-4.8-8.3-8.6-13.8-11-6.4-2.8-13.2-4.1-20.2-4-5.6-.1-11.1.9-16.4 2.9-4.4 1.7-8.2 4.5-11 8.2-2.7 3.7-4.1 8.1-4 12.7-.1 4.7 1.6 9.2 4.7 12.7 3.1 3.4 8.3 6.3 15.6 8.6l8.7 2.6c1.7.4 3.3 1.2 4.6 2.3 1 .9 1.5 2.2 1.5 3.5.1 1.7-.9 3.3-2.5 4.1-2.2 1-4.6 1.4-7 1.3-4.6 0-9-1.3-12.9-3.7-4-2.4-7.4-5.7-9.9-9.6l-12.9 11.7c2.6 3.8 5.8 7.2 9.6 9.8 4 2.8 8.5 4.9 13.3 6.3 4.9 1.5 10 2.2 15.1 2.2 5.8.1 11.6-.9 17-3 4.4-1.8 8.2-4.8 10.9-8.7 2.6-4 3.9-8.6 3.8-13.4.1-4.3-1.4-8.4-4.1-11.7-2.7-3.2-6.7-5.7-11.8-7.3l-13.8-4.2c-1.6-.5-3.2-1.2-4.6-2.1-1.3-.7-2-2-2-3.4.1-1.7 1-3.2 2.4-3.9M427 27.3c.8-3.7 2.1-6.2 4.1-7.6s4.8-2.1 8.6-2.1c1.7 0 3.5.2 5.1.6 1.2.3 2.3.7 3.4 1.3l5.5-15.8c-2.2-1.2-4.5-2.1-7-2.6-8.2-1.7-16.8-1.2-24.8 1.4-4.4 1.6-8.3 4.4-11.3 8-3.1 3.7-5.4 8.8-7 15.3l-1.6 7.1h-12.6l-4.1 17.5H398l-12.7 55h24.6l12.8-55h19.1l4-17.5h-20.1zm79.3 8.1c-5-2.7-11-4-18-4-8.5 0-15.8 1.8-22 5.5-6 3.6-11 8.8-14.2 15-3.4 6.7-5.1 14.2-5 21.7-.1 6.1 1.4 12 4.5 17.2 3 5 7.4 9 12.6 11.5 5.9 2.9 12.3 4.3 18.8 4.1q7.65 0 15-2.1c4.3-1.3 8.4-3.3 12-6 3.3-2.4 5.9-5.7 7.6-9.4l-20.3-8c-1.1 2.4-2.8 4.4-4.9 6-2.5 1.7-5.4 2.5-8.4 2.4-2.5.1-5.1-.5-7.3-1.7-2.1-1.1-3.8-2.8-4.9-4.9-1.2-2.3-1.8-4.8-1.8-7.4h50.1c.6-1.9 1-3.9 1.2-5.9s.3-4 .3-5.8c.1-5.9-1.2-11.8-3.9-17.1-2.7-4.7-6.6-8.6-11.4-11.1M479 51c2.5-1.7 5.6-2.6 8.6-2.5 1.9 0 3.8.4 5.5 1.2 1.6.8 2.8 2.1 3.6 3.7.9 1.9 1.4 4.1 1.3 6.2 0 .8 0 1.6-.1 2.5h-26.3c.5-1.6 1.1-3.2 1.9-4.7 1.3-2.5 3.2-4.7 5.5-6.4m114.1-19.3c-1.4-.3-2.7-.4-4.1-.4-4.4-.1-8.7 1-12.5 3.2-3.7 2.2-6.9 5.2-9.3 8.8-1.3 2-2.5 4.1-3.4 6.2l2.9-16.8h-21.9L528 105.2h24.7l7.8-33.5c.9-4.2 2.5-8.1 4.9-11.6 1.9-2.7 4.5-4.9 7.5-6.3 2.8-1.3 5.7-1.9 8.8-2 1.7 0 3.3.1 5 .4 1.2.2 2.3.6 3.4 1.1l5.9-20.7c-1-.4-1.9-.7-2.9-.9" fill="#0066ff"></path>
-        </svg>
-      </a>
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:url" content="https://itransfer.iprudhvi.in/" />
+    <meta name="twitter:title" content="iTransfer — Send Large Files Online Free (Up to 25 GB)" />
+    <meta name="twitter:description" content="Deliver large files, 4K videos, and archives at gigabit speeds with zero compression. End-to-end AES-256 encryption. Zero signup required." />
+    <meta name="twitter:image" content="https://itransfer.iprudhvi.in/images/hero_3d_cloudscape.jpg" />
+    <meta name="twitter:image:alt" content="iTransfer — High-Speed File Transfer Engine" />
 
-      <nav class="nav-menu" id="nav-menu">
-        <li><a href="/index.html" class="nav-link active">Send files</a></li>
-        <li><a href="/prices.html" class="nav-link">Prices</a></li>
-        <li><a href="/features.html" class="nav-link">Features</a></li>
-        <li><a href="/faq.html" class="nav-link">Help</a></li>
-        <li><a href="/contact.html" class="nav-link">Contact</a></li>
-      </nav>
+    <!-- Favicon & Touch Icons -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.json" />
 
-      <div class="nav-actions">
-        <a href="#" class="btn btn-outline" style="padding: 8px 20px;">Log in</a>
-        <a href="/prices.html" class="btn btn-primary" style="padding: 8px 20px;">Sign up</a>
-      </div>
+    <!-- Mobile & Theme Configuration -->
+    <meta name="theme-color" content="#0a1744" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#4f46e5" media="(prefers-color-scheme: light)" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="format-detection" content="telephone=no" />
 
-      <button class="menu-toggle" id="menu-toggle">
-        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
-      </button>
-    </div>
-  </header>
+    <!-- High-Performance Font Optimization -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
 
-  <!-- Hero & Uploader Widget Section -->
-  <section class="hero-section">
-    <div class="container" style="display: flex; flex-direction: column; align-items: center;">
-      <div class="hero-content">
-        <h1 class="hero-title">Transfer and have your files travel for free</h1>
-        <h2 class="hero-subtitle">TransferNow is a simple and free way to securely share your files and folders.</h2>
-      </div>
+    <!-- ==============================================================================
+         STRUCTURED DATA (JSON-LD) FOR GOOGLE RICH SEARCH RESULTS & RANKINGS
+         ============================================================================== -->
+    
+    <!-- 1. WebApplication / SoftwareApplication Schema -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "iTransfer",
+      "alternateName": "iTransfer Cloud",
+      "url": "https://itransfer.iprudhvi.in",
+      "applicationCategory": "FileTransferApplication",
+      "operatingSystem": "All (Web, iOS, Android, macOS, Windows, Linux)",
+      "browserRequirements": "Requires JavaScript. Requires HTML5.",
+      "description": "High-performance encrypted file transfer application. Send files up to 25 GB via share links, email delivery, and direct peer-to-peer device transfers.",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD",
+        "category": "Free Tier"
+      },
+      "featureList": [
+        "Send files up to 25 GB per transfer",
+        "TurboBandwidth™ Gigabit Upload Pipeline",
+        "AES-256 End-to-End Encryption with Passwords",
+        "Direct Device P2P WebRTC File Transfer",
+        "Branded Shareable Link Generation",
+        "Direct-to-Inbox Email Delivery Engine",
+        "Zero Compression 100% Quality Retention",
+        "Auto-Resumable Chunked TUS Uploads"
+      ],
+      "aggregateRating": {
+        "@type": "AggregateRating",
+        "ratingValue": "4.9",
+        "ratingCount": "1248",
+        "bestRating": "5",
+        "worstRating": "1"
+      }
+    }
+    </script>
 
-      <!-- Interactive Uploader Widget Card -->
-      <div class="uploader-card" id="uploader-widget">
-        
-        <!-- State 1: Idle (Click/Drop Start button) -->
-        <div class="uploader-idle" id="uploader-idle">
-          <input type="file" id="file-input" multiple style="display: none;">
-          <input type="file" id="folder-input" webkitdirectory directory multiple style="display: none;">
-          
-          <button class="circle-start-btn" id="start-upload-btn">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.2 15a8.85 8.85 0 0 0-17.4-3.6 7.1 7.1 0 0 0-.2 14c4.8 0 7.4-2.6 8.5-3.8V12"/><polyline points="15 19 12 16 9 19"/></svg>
-            <span>Start</span>
-          </button>
-          
-          <div class="uploader-hint">
-            <strong>Click or drag-and-drop your files here</strong>
-            <div class="uploader-selectors">
-              <button class="selector-btn" id="select-files-btn">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
-                Add files
-              </button>
-              <button class="selector-btn" id="select-folder-btn">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/></svg>
-                Add folder
-              </button>
-            </div>
-          </div>
-        </div>
+    <!-- 2. Organization Schema -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Organization",
+      "name": "iTransfer",
+      "url": "https://itransfer.iprudhvi.in",
+      "logo": "https://itransfer.iprudhvi.in/favicon.svg",
+      "sameAs": [
+        "https://github.com/Prudhvi-dasari/cloudwarden"
+      ],
+      "contactPoint": {
+        "@type": "ContactPoint",
+        "contactType": "Customer Support",
+        "email": "send@iprudhvi.in",
+        "availableLanguage": ["English", "Hindi"]
+      }
+    }
+    </script>
 
-        <!-- State 2: File Setup Form -->
-        <div class="uploader-form-state" id="uploader-form-state">
-          <div class="uploader-tabs">
-            <button class="uploader-tab active" id="tab-email">Send by email</button>
-            <button class="uploader-tab" id="tab-link">Get a link</button>
-          </div>
+    <!-- 3. WebSite with Google Sitelinks Searchbox Schema -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebSite",
+      "name": "iTransfer",
+      "url": "https://itransfer.iprudhvi.in",
+      "potentialAction": {
+        "@type": "SearchAction",
+        "target": "https://itransfer.iprudhvi.in/how-it-works?q={search_term_string}",
+        "query-input": "required name=search_term_string"
+      }
+    }
+    </script>
 
-          <form id="transfer-form" onsubmit="return false;">
-            <!-- Send to (Email Tab only) -->
-            <div class="form-group" id="group-recipients">
-              <label class="form-label">Send to (up to 20 email addresses)</label>
-              <div class="chips-container" id="recipients-container">
-                <input type="text" class="chips-input" id="recipient-input" placeholder="Enter email and press Enter">
-              </div>
-            </div>
+    <!-- 4. FAQPage Schema for Rich Snippets in Google Search -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "How to send and share large files with iTransfer?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "1. Select your files or folders by clicking the Start button or dragging them onto the interface. 2. Choose whether to generate a sharing link or send directly via email. 3. Click Transfer to start high-speed encrypted streaming."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What is the maximum file size I can send on iTransfer?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "You can send up to 5 GB per transfer completely free with zero registration required. Upgrading to iTransfer Pro unlocks 25 GB transfers, priority bandwidth, and permanent storage."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Are my files safe and encrypted on iTransfer?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes. All file transfers use TLS 1.3 in transit and are encrypted on disk at rest using AES-256 bits. If you add a password, only recipients with your passphrase can unlock and decrypt the files."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How long do files remain available for download?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Free transfers remain active for 7 days before being automatically purged. With an iTransfer Pro account, files can remain downloadable for 30 days, 1 year, or permanently."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Can I upload full directory folders with subfolders?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes! Click the 'Add Folder' button to select any directory. iTransfer preserves the full folder hierarchy for your recipients."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How does Direct Device P2P file transfer work?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Device P2P streams files directly between your devices (e.g. phone to laptop) over local Wi-Fi and WebRTC with zero cloud server storage required."
+          }
+        }
+      ]
+    }
+    </script>
 
-            <!-- Sender Email -->
-            <div class="form-group">
-              <label class="form-label" id="label-sender">Your email address</label>
-              <input type="email" class="form-input" id="sender-email" placeholder="email@example.com" required>
-            </div>
+    <!-- 5. BreadcrumbList Schema -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "name": "Home",
+          "item": "https://itransfer.iprudhvi.in/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 2,
+          "name": "How It Works",
+          "item": "https://itransfer.iprudhvi.in/how-it-works"
+        },
+        {
+          "@type": "ListItem",
+          "position": 3,
+          "name": "Features",
+          "item": "https://itransfer.iprudhvi.in/features"
+        },
+        {
+          "@type": "ListItem",
+          "position": 4,
+          "name": "Pricing",
+          "item": "https://itransfer.iprudhvi.in/pricing"
+        }
+      ]
+    }
+    </script>
 
-            <!-- Subject -->
-            <div class="form-group">
-              <label class="form-label">Subject</label>
-              <input type="text" class="form-input" id="transfer-subject" placeholder="What is this transfer about?">
-            </div>
-
-            <!-- Message -->
-            <div class="form-group">
-              <label class="form-label">Message</label>
-              <textarea class="form-input" id="transfer-message" placeholder="Add a description or message for your contacts..."></textarea>
-            </div>
-
-            <!-- Advanced Settings Accordion -->
-            <button type="button" class="advanced-settings-toggle" id="advanced-toggle">
-              Advanced Settings
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
-            </button>
-            
-            <div class="advanced-settings-content" id="advanced-content">
-              <div class="toggle-switch-group">
-                <span class="form-label" style="margin-bottom:0;">Protect with password</span>
-                <label class="toggle-switch">
-                  <input type="checkbox" id="setting-password-toggle">
-                  <span class="slider"></span>
-                </label>
-              </div>
-              <div class="form-group" id="password-input-group" style="display:none; margin-top:8px;">
-                <input type="password" class="form-input" id="setting-password" placeholder="Choose a password">
-              </div>
-
-              <div class="form-group" style="margin-top:16px;">
-                <label class="form-label">Expiration date</label>
-                <select class="form-input" id="setting-expiration" style="height: 48px;">
-                  <option value="7">7 Days (Default)</option>
-                  <option value="3">3 Days</option>
-                  <option value="1">1 Day</option>
-                </select>
-              </div>
-
-              <div class="form-group">
-                <label class="form-label">Storage Region</label>
-                <select class="form-input" id="setting-region" style="height: 48px;">
-                  <option value="eu">Europe (Frankfurt) - Encrypted</option>
-                  <option value="us">United States (Virginia) - Encrypted</option>
-                  <option value="as">Asia Pacific (Singapore) - Encrypted</option>
-                </select>
-              </div>
-            </div>
-
-            <!-- Files list manager -->
-            <div class="files-manager-wrapper">
-              <div class="files-manager-title">
-                <span>Selected Files</span>
-                <span id="selected-files-count">0 files</span>
-              </div>
-              <ul class="files-list" id="selected-files-list"></ul>
-            </div>
-
-            <div class="form-actions">
-              <button type="submit" class="btn btn-primary btn-transfer" id="btn-submit-transfer">Transfer</button>
-            </div>
-          </form>
-        </div>
-
-        <!-- State 3: Upload Progress -->
-        <div class="uploader-progress-state" id="uploader-progress-state">
-          <div class="progress-circle-container">
-            <svg class="progress-circle-svg">
-              <circle class="progress-circle-bg" cx="60" cy="60" r="56"></circle>
-              <circle class="progress-circle-bar" id="progress-circle-fill" cx="60" cy="60" r="56"></circle>
-            </svg>
-            <div class="progress-circle-text" id="progress-percentage-text">0%</div>
-          </div>
-          
-          <h3 class="progress-filename" id="progress-current-file">Uploading files...</h3>
-          <div class="progress-stats">
-            <span id="progress-uploaded-size">0 MB / 0 MB</span>
-            <span id="progress-speed">0 MB/s</span>
-            <span id="progress-time-remaining">Remaining: --:--</span>
-          </div>
-
-          <div class="progress-bar-linear">
-            <div class="progress-bar-fill" id="progress-linear-fill"></div>
-          </div>
-        </div>
-
-        <!-- State 4: Success -->
-        <div class="uploader-success-state" id="uploader-success-state">
-          <div class="success-icon-wrap">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-          </div>
-          <h2 class="success-title">Transfer Complete!</h2>
-          <p class="success-description" id="success-desc">An email has been sent successfully to your recipients.</p>
-          
-          <!-- Download Link Container (for Link tab) -->
-          <div class="success-link-box" id="success-link-box" style="display:none;">
-            <span class="success-link-text" id="share-link-url">https://transfernow.clone/dl/a7f3k8</span>
-            <button class="btn btn-primary" id="btn-copy-link" style="padding:8px 16px; border-radius:20px; font-size:13px;">Copy Link</button>
-          </div>
-
-          <button class="btn btn-outline" id="btn-reset-uploader" style="width: 100%;">Send more files</button>
-        </div>
-
-        <!-- Copy Clipboard Toast -->
-        <div class="copy-toast" id="copy-toast">Link copied to clipboard!</div>
-      </div>
-    </div>
-  </section>
-
-  <!-- How to Send Section -->
-  <section class="section section-grey">
-    <div class="container">
-      <div class="section-header">
-        <h2>How to send and share large files with TransferNow?</h2>
-        <p>Follow three simple steps to upload and share large documents securely.</p>
-      </div>
-
-      <div class="steps-grid">
-        <div class="step-card">
-          <div class="step-number">1</div>
-          <h3>Select your files to send</h3>
-          <p>Click on <strong>Start</strong> to select the files and documents to send, or drag and drop them anywhere directly on our interface.</p>
-        </div>
-        <div class="step-card">
-          <div class="step-number">2</div>
-          <h3>Fill-in our form</h3>
-          <p>Send files via email to your contacts or get a customizable shareable link. Our tool provides the adapted features in keeping with your needs.</p>
-        </div>
-        <div class="step-card">
-          <div class="step-number">3</div>
-          <h3>Validate to transfer and start upload!</h3>
-          <p>When you have finished filling-in the file transfer form, click on <strong>Transfer</strong> to confirm your transfer information and start uploading your documents 🚀</p>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- Features Grid Section -->
-  <section class="section">
-    <div class="container">
-      <div class="section-header">
-        <h2>With a TransferNow account you can send and share even larger files!</h2>
-        <p>Create a free account to gain more features, tracking tools, and higher transfer caps.</p>
-      </div>
-
-      <div class="features-grid">
-        <!-- Feature 1 -->
-        <div class="feature-card">
-          <div class="feature-icon">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-          </div>
-          <h3>Secure file transfer</h3>
-          <p>Send and share files via email or generate links. All communication uses SSL/TLS and stored files are encrypted at rest using AES-256 bits.</p>
-        </div>
-
-        <!-- Feature 2 -->
-        <div class="feature-card">
-          <div class="feature-icon">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-          </div>
-          <h3>Send up to 250 GB per transfer</h3>
-          <p>Create a paid plan to send up to 250 GB of data. Files remain available on the servers for up to 365 days before automatic removal.</p>
-        </div>
-
-        <!-- Feature 3 -->
-        <div class="feature-card">
-          <div class="feature-icon">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-          </div>
-          <h3>Track and manage transfers</h3>
-          <p>Access your dashboard to check download statistics. Delete transfers before they expire, or extend their lifetime with a single click.</p>
-        </div>
-
-        <!-- Feature 4 -->
-        <div class="feature-card">
-          <div class="feature-icon">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-          </div>
-          <h3>Add team collaborators</h3>
-          <p>Easily import team members. Define explicit administrative rights, white-label subdomains, custom styles, and consolidated group invoices.</p>
-        </div>
-
-        <!-- Feature 5 -->
-        <div class="feature-card">
-          <div class="feature-icon">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/></svg>
-          </div>
-          <h3>Integrate a file widget</h3>
-          <p>Use our generator to build file-reception widgets. Paste a simple line of HTML code to collect files from customers directly on your website.</p>
-        </div>
-
-        <!-- Feature 6 -->
-        <div class="feature-card">
-          <div class="feature-icon">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-          </div>
-          <h3>Antivirus verification scan</h3>
-          <p>Rest easy knowing we automatically scan all files for viruses at the end of every transfer before they become accessible to download.</p>
-        </div>
-      </div>
-
-      <div class="features-actions">
-        <a href="/prices.html" class="btn btn-primary">Free trial</a>
-        <a href="/features.html" class="btn btn-outline">Compare all features</a>
-      </div>
-    </div>
-  </section>
-
-  <!-- Apps Promos Section -->
-  <section class="apps-section">
-    <div class="container">
-      <h2>Available for all your devices</h2>
-      <div class="apps-grid">
-        <div class="app-card">
-          <div class="app-icon">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg>
-          </div>
-          <div class="app-name">Web App</div>
-          <a href="#" class="app-btn">Use Web</a>
-        </div>
-        <div class="app-card">
-          <div class="app-icon">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
-          </div>
-          <div class="app-name">Developer API</div>
-          <a href="#" class="app-btn">View SDK</a>
-        </div>
-        <div class="app-card">
-          <div class="app-icon">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/></svg>
-          </div>
-          <div class="app-name">Windows</div>
-          <a href="#" class="app-btn">Download</a>
-        </div>
-        <div class="app-card">
-          <div class="app-icon">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2A10 10 0 0 0 2 12c0 4.42 2.87 8.17 6.84 9.5.5.08.66-.23.66-.5v-1.69c-2.77.6-3.36-1.34-3.36-1.34-.46-1.16-1.11-1.47-1.11-1.47-.9-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.9 1.52 2.34 1.07 2.91.83.1-.65.35-1.09.63-1.34-2.22-.25-4.55-1.11-4.55-4.92 0-1.11.38-2 1.03-2.71-.1-.25-.45-1.29.1-2.64 0 0 .84-.27 2.75 1.02.79-.22 1.65-.33 2.5-.33.85 0 1.71.11 2.5.33 1.91-1.29 2.75-1.02 2.75-1.02.55 1.35.2 2.39.1 2.64.65.71 1.03 1.6 1.03 2.71 0 3.82-2.34 4.66-4.57 4.91.36.31.69.92.69 1.85V21c0 .27.16.59.67.5C19.14 20.16 22 16.42 22 12A10 10 0 0 0 12 2z"/></svg>
-          </div>
-          <div class="app-name">macOS</div>
-          <a href="#" class="app-btn">Download</a>
-        </div>
-        <div class="app-card">
-          <div class="app-icon">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
-          </div>
-          <div class="app-name">iOS App</div>
-          <a href="#" class="app-btn">Download</a>
-        </div>
-        <div class="app-card">
-          <div class="app-icon">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
-          </div>
-          <div class="app-name">Android</div>
-          <a href="#" class="app-btn">Download</a>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- Addons Outlook and Chrome Promotion -->
-  <section class="addons-section">
-    <div class="container">
-      <h2>Add-ins & Extensions for your mailboxes</h2>
-      <div class="addons-grid">
-        <div class="addon-card">
-          <div class="addon-header">
-            <svg class="addon-logo-outlook" xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22 6 12 13 2 6"/></svg>
-            <h3>Outlook Add-in</h3>
-          </div>
-          <p>Integrate TransferNow inside Microsoft Outlook. Upload heavy attachments effortlessly and embed download links directly into your emails.</p>
-          <a href="#" class="btn btn-outline">Discover Outlook Add-in</a>
-        </div>
-        <div class="addon-card">
-          <div class="addon-header">
-            <svg class="addon-logo-chrome" xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="8"/><line x1="12" y1="16" x2="12" y2="22"/></svg>
-            <h3>Chrome & Gmail Extension</h3>
-          </div>
-          <p>Send large files right from Google Chrome and Gmail. Perfect, lightweight integration to elevate your file sharing efficiency.</p>
-          <a href="#" class="btn btn-outline">Discover Chrome Extension</a>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- Shared Footer -->
-  <footer>
-    <div class="container footer-grid">
-      <div class="footer-col" style="grid-column: span 2;">
-        <div class="footer-logo">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 913.4 106.9" width="160">
-            <path d="M710.3 70.4.8-5.2c1.1-4.5 2.6-8.8 4.5-13 1.9-3.8 4.5-7.1 7.8-9.8 5.3-3.6 12.8-7.3 26.2-.1l5-3.4c-7.3-7.7-19.9-10.5-26.4-10.5-6-.1-11.9 1-17.5 3.3-5 2.1-9.5 5.2-13.1 9.3-3.6 4.2-6.4 9-8.1 14.2-1.9 5.7-2.8 11.8-2.8 17.8 0 3.9.6 7.7 1.6 11.5 7.1-4.2 14.1-6.5 21.8-9.5 0-.2.1-4.6.2-4.6" fill="#fff"></path>
-            <path d="M758.1 43.6c-1.3-2.2-3-4.3-4.9-6.1-.9-.9-1.9-1.8-3-2.5 0 0-16.1-1.5-26.9 7.3 0 0 4.7-.3 10.6 5 3.4 3.2 5.3 7.6 5.2 12.2 0 3.3-.4 6.5-1.1 9.8-.7 3.2-1.8 6.4-3.3 9.3-1.3 2.7-3.2 5-5.4 6.9-2.2 1.8-4.9 2.7-7.7 2.6-2.2.1-4.4-.4-6.4-1.5-1.8-1-3.2-2.6-4-4.5-.9-2.3-1.4-4.8-1.3-7.3l.1-1.1c-7.4 2.8-15.4 5.5-22.1 9.7.7 2.6 1.8 5.1 3.2 7.4 3 4.9 7.3 8.8 12.4 11.3 5.5 2.7 11.5 4 17.6 4 6 .1 12-1 17.6-3.3 5-2.1 9.5-5.3 13.1-9.3 3.6-4.2 6.4-9 8.1-14.2 1.9-5.7 2.8-11.7 2.8-17.8-.1-6.9-1.6-12.9-4.6-17.9" fill="#fff"></path>
-            <path d="m632.1 30.5-24.5 6.4-17.1 66.7h24.9z" fill="#fff"></path>
-            <path d="M677.4 43.4c-1.3-4-3.9-7.5-7.5-9.7-3.6-2.3-8-3.4-13.2-3.4-6.8 0-17.9 1.5-32.5 11.1-10.8 7.2-23.8 23.4-23.9 23.7l-3.6 14c4.4-5 9.1-9.7 14.1-14 13-11.3 24.4-15.6 32.4-15.8 3.5-.1 6 1.1 7.6 3.3s1.9 5.2 1 9.1l-10 41.9h24.9l10.7-45c1.5-5.9 1.5-11 0-15.2" fill="#fff"></path>
-            <path d="m850.6 50.2-5.3-5.2s-20.2 24-28.8 31.5c-6.8 5.9-22.4 21.3-38.2 9.2 0 5.6 1.1 10 3.3 13 2.3 3.1 5.1 4.2 9.2 4.7s11.3-1.2 16.2-2.8c6.9-3 16.1-8.4 28.7-23.5 9.3-11.2 15-26.6 14.9-26.9" fill="#fff"></path>
-            <path d="m903.2 30.2-9.3 2.5s-1 6.2-5.3 16.7c-5.3 10.2-11.3 19.7-22.7 28.4-9.8 7.5-23.8 14.8-36.5 4.7 0 5.6.3 13.3 2.5 16.4 2.3 3.1 5.8 5.1 9.6 5.5 4.2.2 10.6-1.4 15.5-3.5 5.4-2.5 16.3-8.6 27.9-24.4 14.4-19.8 18.3-46.3 18.3-46.3" fill="#fff"></path>
-            <path d="M796.4 82.7c1.3-20 7.9-52.4 7.9-52.4L779 37l-5.8 30.9c-8.7 50.1 33.9 32.7 33.9 32.7-12.7.5-11.3-7.7-10.7-17.9m50 0c1.3-20 7.9-52.4 7.9-52.4L829.2 37l-6 30.9c-8.7 52.7 33.8 32.8 33.8 32.8-12.6.4-11.2-7.8-10.6-18M38.1 50.3h19.8L62 32.8H42.2l5.3-22.6-26.4 7-3.6 15.7H4.1L0 50.3h13.4L7 78.7c-1.3 6.1-1.2 11.2.4 15.4 1.6 4.1 4.7 7.5 8.7 9.4 4.8 2.2 10 3.3 15.2 3.1 3.1 0 6.2-.2 9.3-.7 2.9-.5 5.7-1.3 8.4-2.6l1.4-15.8c-1.2.6-2.4 1.1-3.7 1.5q-2.7.6-5.4.6c-3.7 0-6.4-.9-8.3-2.8s-2.3-4.7-1.4-8.5zm86.4-18.6c-1.4-.3-2.7-.4-4.1-.4-4.4-.1-8.7 1-12.5 3.2-3.7 2.2-6.9 5.2-9.3 8.8-1.3 2-2.5 4.1-3.4 6.2L98 32.8H76.1l-16.8 72.5H84l7.8-33.5c.9-4.2 2.5-8.1 4.9-11.6 1.9-2.7 4.5-4.9 7.5-6.3 2.8-1.3 5.7-1.9 8.8-2 1.7 0 3.3.1 5 .4 1.2.2 2.3.6 3.4 1.1l5.9-20.7c-.9-.5-1.8-.8-2.8-1m58 16.3c-.6-3.5-2-6.8-4.3-9.6-2-2.4-4.6-4.2-7.5-5.4s-6.1-1.8-9.2-1.8c-5.2-.1-10.3 1.3-14.9 3.9-4.5 2.6-8.3 6.2-11.3 10.4-3.2 4.5-5.6 9.5-7.2 14.9-1.7 5.5-2.5 11.2-2.5 17q0 9.45 3.3 15.9c2 4.1 5.1 7.5 9 9.9 3.9 2.3 8.4 3.5 13 3.4 4.8 0 9.5-1.4 13.5-4 4.1-2.7 7.4-6.5 9.6-10.9l-2.5 13.6h22.3l16.8-72.5H186zm-5.4 23.7c-.8 2.9-2 5.8-3.5 8.4-1.3 2.4-3.1 4.5-5.3 6.2-1.9 1.5-4.2 2.3-6.7 2.3-2.3.1-4.5-.5-6.4-1.7-1.7-1.2-3.1-2.8-3.8-4.8-.9-2.4-1.4-4.9-1.3-7.5.1-5.8 1.6-11.6 4.5-16.7 1.3-2.4 3.2-4.5 5.4-6.2 2.1-1.6 4.6-2.4 7.2-2.4 2.1-.1 4.2.5 6 1.6 1.7 1.1 3 2.7 3.8 4.6 1 2.2 1.4 4.6 1.4 7 0 3.2-.5 6.2-1.3 9.2m110.7-37c-3.9-2.4-8.5-3.6-13.1-3.4-6.4-.1-12.7 2-17.8 5.8-3.4 2.6-6.1 5.9-8 9.7l2.2-14h-21.9l-16.8 72.5H237l9.1-39.1c.6-3.1 1.7-6 3.3-8.8 1.2-2.2 3-4 5.1-5.4 2.1-1.2 4.5-1.9 6.9-1.8q5.25 0 7.5 3.3c2.25 3.3 1.9 5.2 1 9.1l-10 42.8h24.6l10.7-45.8c1.3-5.9 1.3-10.9-.1-15.1-1.2-4.1-3.8-7.5-7.3-9.8m48.6 14.5c2.1-1 4.5-1.5 6.8-1.4 2.8 0 5.6.5 8.3 1.4 2.6.9 5 2.2 7.2 3.8q3.15 2.25 5.1 5.4l12.3-12.1c-3.5-4.8-8.3-8.6-13.8-11-6.4-2.8-13.2-4.1-20.2-4-5.6-.1-11.1.9-16.4 2.9-4.4 1.7-8.2 4.5-11 8.2-2.7 3.7-4.1 8.1-4 12.7-.1 4.7 1.6 9.2 4.7 12.7 3.1 3.4 8.3 6.3 15.6 8.6l8.7 2.6c1.7.4 3.3 1.2 4.6 2.3 1 .9 1.5 2.2 1.5 3.5.1 1.7-.9 3.3-2.5 4.1-2.2 1-4.6 1.4-7 1.3-4.6 0-9-1.3-12.9-3.7-4-2.4-7.4-5.7-9.9-9.6l-12.9 11.7c2.6 3.8 5.8 7.2 9.6 9.8 4 2.8 8.5 4.9 13.3 6.3 4.9 1.5 10 2.2 15.1 2.2 5.8.1 11.6-.9 17-3 4.4-1.8 8.2-4.8 10.9-8.7 2.6-4 3.9-8.6 3.8-13.4.1-4.3-1.4-8.4-4.1-11.7-2.7-3.2-6.7-5.7-11.8-7.3l-13.8-4.2c-1.6-.5-3.2-1.2-4.6-2.1-1.3-.7-2-2-2-3.4.1-1.7 1-3.2 2.4-3.9M427 27.3c.8-3.7 2.1-6.2 4.1-7.6s4.8-2.1 8.6-2.1c1.7 0 3.5.2 5.1.6 1.2.3 2.3.7 3.4 1.3l5.5-15.8c-2.2-1.2-4.5-2.1-7-2.6-8.2-1.7-16.8-1.2-24.8 1.4-4.4 1.6-8.3 4.4-11.3 8-3.1 3.7-5.4 8.8-7 15.3l-1.6 7.1h-12.6l-4.1 17.5H398l-12.7 55h24.6l12.8-55h19.1l4-17.5h-20.1zm79.3 8.1c-5-2.7-11-4-18-4-8.5 0-15.8 1.8-22 5.5-6 3.6-11 8.8-14.2 15-3.4 6.7-5.1 14.2-5 21.7-.1 6.1 1.4 12 4.5 17.2 3 5 7.4 9 12.6 11.5 5.9 2.9 12.3 4.3 18.8 4.1q7.65 0 15-2.1c4.3-1.3 8.4-3.3 12-6 3.3-2.4 5.9-5.7 7.6-9.4l-20.3-8c-1.1 2.4-2.8 4.4-4.9 6-2.5 1.7-5.4 2.5-8.4 2.4-2.5.1-5.1-.5-7.3-1.7-2.1-1.1-3.8-2.8-4.9-4.9-1.2-2.3-1.8-4.8-1.8-7.4h50.1c.6-1.9 1-3.9 1.2-5.9s.3-4 .3-5.8c.1-5.9-1.2-11.8-3.9-17.1-2.7-4.7-6.6-8.6-11.4-11.1M479 51c2.5-1.7 5.6-2.6 8.6-2.5 1.9 0 3.8.4 5.5 1.2 1.6.8 2.8 2.1 3.6 3.7.9 1.9 1.4 4.1 1.3 6.2 0 .8 0 1.6-.1 2.5h-26.3c.5-1.6 1.1-3.2 1.9-4.7 1.3-2.5 3.2-4.7 5.5-6.4m114.1-19.3c-1.4-.3-2.7-.4-4.1-.4-4.4-.1-8.7 1-12.5 3.2-3.7 2.2-6.9 5.2-9.3 8.8-1.3 2-2.5 4.1-3.4 6.2l2.9-16.8h-21.9L528 105.2h24.7l7.8-33.5c.9-4.2 2.5-8.1 4.9-11.6 1.9-2.7 4.5-4.9 7.5-6.3 2.8-1.3 5.7-1.9 8.8-2 1.7 0 3.3.1 5 .4 1.2.2 2.3.6 3.4 1.1l5.9-20.7c-1-.4-1.9-.7-2.9-.9" fill="#fff"></path>
-          </svg>
-        </div>
-        <p class="footer-about">TransferNow clone is a complete simulation of a modern large-file transfer platform, showing high-end styling and fully detailed flows.</p>
-      </div>
-
-      <div class="footer-col">
-        <h4>Company</h4>
-        <ul class="footer-links">
-          <li><a href="/index.html">Send files</a></li>
-          <li><a href="/prices.html">Pricing Offers</a></li>
-          <li><a href="/features.html">Product Features</a></li>
-          <li><a href="/faq.html">FAQ Help</a></li>
-        </ul>
-      </div>
-
-      <div class="footer-col">
-        <h4>Product</h4>
-        <ul class="footer-links">
-          <li><a href="#">Outlook Add-in</a></li>
-          <li><a href="#">Chrome Extension</a></li>
-          <li><a href="#">Developer API</a></li>
-          <li><a href="#">Mobile Apps</a></li>
-        </ul>
-      </div>
-
-      <div class="footer-col">
-        <h4>Legal</h4>
-        <ul class="footer-links">
-          <li><a href="#">Privacy Policy</a></li>
-          <li><a href="#">Terms of Use</a></li>
-          <li><a href="#">GDPR Compliance</a></li>
-          <li><a href="#">Datacenter Hosting</a></li>
-        </ul>
-      </div>
-    </div>
-
-    <div class="container footer-bottom">
-      <p>&copy; 2026 TransferNow Clone. Developed as a premium pair programming demo.</p>
-      <div class="social-links">
-        <a href="#" class="social-link"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 3a10.9 10.9 0 0 1-3.14 1.53 4.48 4.48 0 0 0-7.86 3v1A10.66 10.66 0 0 1 3 4s-4 9 5 13a11.64 11.64 0 0 1-7 2c9 5 20 0 20-11.5a4.5 4.5 0 0 0-.08-.83A7.72 7.72 0 0 0 23 3z"/></svg></a>
-        <a href="#" class="social-link"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6z"/><rect x="2" y="9" width="4" height="12"/><circle cx="4" cy="4" r="2"/></svg></a>
-        <a href="#" class="social-link"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg></a>
-      </div>
-    </div>
-  </footer>
-
-</body>
+    <script type="module" crossorigin src="/assets/index-BntYYYbq.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-C_FFKaI2.css">
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
 </html>

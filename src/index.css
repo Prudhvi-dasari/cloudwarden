@@ -1,0 +1,290 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --primary-color: #4f46e5; /* Indigo default */
+    --primary-hover: #4338ca;
+    --primary-light: #eef2ff;
+    --primary-glow: rgba(79, 70, 229, 0.20);
+    --card-bg: rgba(255, 255, 255, 0.96);
+    --card-border: rgba(226, 232, 240, 0.90);
+    --studio-bg: #fafafa;
+    --studio-card: #ffffff;
+    --studio-border: #e4e4e7;
+  }
+
+  [data-theme='emerald'] {
+    --primary-color: #059669;
+    --primary-hover: #047857;
+    --primary-light: #ecfdf5;
+    --primary-glow: rgba(5, 150, 105, 0.20);
+  }
+
+  [data-theme='violet'] {
+    --primary-color: #7c3aed;
+    --primary-hover: #6d28d9;
+    --primary-light: #f5f3ff;
+    --primary-glow: rgba(124, 58, 237, 0.20);
+  }
+
+  [data-theme='rose'] {
+    --primary-color: #e11d48;
+    --primary-hover: #be123c;
+    --primary-light: #fff1f2;
+    --primary-glow: rgba(225, 29, 72, 0.20);
+  }
+
+  [data-theme='cyan'] {
+    --primary-color: #0891b2;
+    --primary-hover: #0e7490;
+    --primary-light: #ecfeff;
+    --primary-glow: rgba(8, 145, 178, 0.20);
+  }
+
+  [data-theme='amber'] {
+    --primary-color: #d97706;
+    --primary-hover: #b45309;
+    --primary-light: #fffbeb;
+    --primary-glow: rgba(217, 119, 6, 0.20);
+  }
+}
+
+/* Base Body Styling */
+body {
+  margin: 0;
+  min-height: 100vh;
+  background-color: #f8fafc;
+  color: #0f172a;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Inter', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
+}
+
+/* Background Ambient Glow Orbs */
+@keyframes floatOrb1 {
+  0%, 100% { transform: translate(0px, 0px) scale(1); }
+  33% { transform: translate(30px, -40px) scale(1.08); }
+  66% { transform: translate(-20px, 25px) scale(0.95); }
+}
+
+@keyframes floatOrb2 {
+  0%, 100% { transform: translate(0px, 0px) scale(1); }
+  33% { transform: translate(-40px, 30px) scale(1.1); }
+  66% { transform: translate(25px, -25px) scale(0.92); }
+}
+
+.ambient-orb-1 {
+  position: absolute;
+  top: 5%;
+  left: 15%;
+  width: 450px;
+  height: 450px;
+  border-radius: 9999px;
+  background: radial-gradient(circle, rgba(99, 102, 241, 0.14) 0%, rgba(139, 92, 246, 0.05) 50%, transparent 70%);
+  filter: blur(60px);
+  animation: floatOrb1 18s ease-in-out infinite;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.ambient-orb-2 {
+  position: absolute;
+  top: 15%;
+  right: 12%;
+  width: 500px;
+  height: 500px;
+  border-radius: 9999px;
+  background: radial-gradient(circle, rgba(236, 72, 153, 0.10) 0%, rgba(168, 85, 247, 0.05) 50%, transparent 70%);
+  filter: blur(70px);
+  animation: floatOrb2 22s ease-in-out infinite;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Background Subtle Dot Matrix Grid */
+.bg-dot-grid {
+  background-image: radial-gradient(rgba(148, 163, 184, 0.22) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+/* Sleek Minimalist Glass Card */
+.custom-card {
+  background: var(--card-bg);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--card-border);
+  box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.04), 0 1px 3px 0 rgba(15, 23, 42, 0.02);
+  border-radius: 1.5rem;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.custom-card:hover {
+  border-color: rgba(203, 213, 225, 0.9);
+  box-shadow: 0 12px 32px -4px rgba(15, 23, 42, 0.07), 0 2px 6px -1px rgba(15, 23, 42, 0.03);
+}
+
+/* Primary Action Buttons */
+.theme-btn-primary {
+  background-color: var(--primary-color);
+  color: #ffffff;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.theme-btn-primary:hover {
+  background-color: var(--primary-hover);
+  box-shadow: 0 6px 20px -4px var(--primary-glow);
+  transform: translateY(-1px);
+}
+
+.theme-btn-primary:active {
+  transform: translateY(0);
+}
+
+/* Shimmer Button */
+.btn-animated {
+  background-color: var(--primary-color);
+  color: #ffffff;
+  position: relative;
+  overflow: hidden;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.btn-animated:hover {
+  background-color: var(--primary-hover);
+  box-shadow: 0 8px 25px -5px var(--primary-glow);
+  transform: translateY(-1.5px);
+}
+
+.btn-animated:active {
+  transform: translateY(0);
+}
+
+/* =========================================================================
+   FUTURISTIC ORBIT WHEEL UPLOADER ANIMATIONS
+   ========================================================================= */
+
+@keyframes wirePulse {
+  from { stroke-dashoffset: 280; }
+  to { stroke-dashoffset: 0; }
+}
+
+@keyframes wirePulseReverse {
+  from { stroke-dashoffset: 0; }
+  to { stroke-dashoffset: 280; }
+}
+
+@keyframes flagClothWave {
+  0% {
+    transform: perspective(500px) rotateY(0deg) skewY(0deg) scaleX(1);
+    filter: drop-shadow(0 3px 6px rgba(0,0,0,0.3));
+  }
+  25% {
+    transform: perspective(500px) rotateY(16deg) skewY(2.5deg) scaleX(0.96);
+    filter: drop-shadow(3px 5px 8px rgba(0,0,0,0.35));
+  }
+  50% {
+    transform: perspective(500px) rotateY(-10deg) skewY(-1.8deg) scaleX(0.94);
+    filter: drop-shadow(-2px 4px 6px rgba(0,0,0,0.25));
+  }
+  75% {
+    transform: perspective(500px) rotateY(12deg) skewY(1.8deg) scaleX(0.97);
+    filter: drop-shadow(2px 5px 7px rgba(0,0,0,0.32));
+  }
+  100% {
+    transform: perspective(500px) rotateY(0deg) skewY(0deg) scaleX(1);
+    filter: drop-shadow(0 3px 6px rgba(0,0,0,0.3));
+  }
+}
+
+@keyframes clothRipple {
+  0% { background-position: 0% 0%; }
+  50% { background-position: 100% 0%; }
+  100% { background-position: 0% 0%; }
+}
+
+@keyframes spinOrbit {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes spinCounter {
+  from { transform: rotate(360deg); }
+  to { transform: rotate(0deg); }
+}
+
+@keyframes orbitSpinClockwise {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes orbitSpinCounter {
+  from { transform: rotate(360deg); }
+  to { transform: rotate(0deg); }
+}
+
+@keyframes orbitPulse {
+  0%, 100% { transform: scale(1); opacity: 0.7; }
+  50% { transform: scale(1.05); opacity: 1; }
+}
+
+.orbit-wheel-outer {
+  animation: orbitSpinClockwise 24s linear infinite;
+}
+
+.orbit-wheel-inner {
+  animation: orbitSpinCounter 16s linear infinite;
+}
+
+.orbit-pulse-glow {
+  animation: orbitPulse 3s ease-in-out infinite;
+}
+
+/* Micro-Animations */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.98); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-scale-in {
+  animation: scaleIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Cinematic Kinetic Text Glide with De-Blur */
+@keyframes textGlide {
+  0% {
+    opacity: 0;
+    transform: translateY(14px) scale(0.98);
+    filter: blur(6px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0px);
+  }
+}
+
+.animate-text-glide {
+  animation: textGlide 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.theme-text {
+  color: var(--primary-color);
+}
+
+.theme-bg-light {
+  background-color: var(--primary-light);
+}
+
+.theme-border {
+  border-color: var(--primary-color);
+}

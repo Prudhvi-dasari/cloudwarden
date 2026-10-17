@@ -1,0 +1,169 @@
+// Prisma Schema for iTransfer Engine
+// Supports PostgreSQL via direct pool or Supabase/Neon connection pooler
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum PlanTier {
+  FREE
+  PRO
+  TEAM
+  ENTERPRISE
+}
+
+enum TransferStatus {
+  UPLOADING
+  ACTIVE
+  EXPIRED
+  DELETED
+  PURGED
+}
+
+enum TransferType {
+  LINK
+  EMAIL
+  DEVICE
+  REQUEST
+}
+
+enum StorageProviderType {
+  CLOUDFLARE_R2
+  AWS_S3
+  SUPABASE_STORAGE
+  LOCAL_HDD
+}
+
+model User {
+  id               String          @id @default(uuid())
+  email            String          @unique
+  plan             PlanTier        @default(FREE)
+  storageUsedBytes BigInt          @default(0)
+  storageLimitBytes BigInt         @default(10737418240) // 10 GB default free tier
+  customDomain     String?
+  brandColor       String?         @default("#4f46e5")
+  brandLogoUrl     String?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  transfers        Transfer[]
+  fileRequests     FileRequest[]
+  contacts         Contact[]
+  apiKeys          ApiKey[]
+
+  @@map("users")
+}
+
+model ApiKey {
+  id         String   @id @default(uuid())
+  userId     String
+  keyHash    String   @unique
+  name       String   @default("Default Key")
+  createdAt  DateTime @default(now())
+  lastUsedAt DateTime?
+
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("api_keys")
+}
+
+model Transfer {
+  id               String          @id @default(uuid())
+  shareId          String          @unique
+  userId           String?
+  senderEmail      String?
+  recipientEmails  String?
+  subject          String?
+  message          String?
+  passwordHash     String?
+  transferType     TransferType    @default(LINK)
+  status           TransferStatus  @default(ACTIVE)
+  maxDownloads     Int             @default(0)
+  downloadCount    Int             @default(0)
+  totalSizeBytes   BigInt          @default(0)
+  expiresAt        DateTime
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  user             User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+  files            TransferFile[]
+  downloadLogs     DownloadLog[]
+
+  @@index([shareId])
+  @@index([expiresAt])
+  @@index([userId])
+  @@map("transfers")
+}
+
+model TransferFile {
+  id               String              @id @default(uuid())
+  transferId       String
+  fileName         String
+  fileSize         BigInt
+  contentType      String              @default("application/octet-stream")
+  storageProvider  StorageProviderType @default(CLOUDFLARE_R2)
+  s3Bucket         String              @default("itransfer-storage")
+  s3Key            String
+  etag             String?
+  checksumSha256   String?
+  downloadCount    Int                 @default(0)
+  createdAt        DateTime            @default(now())
+
+  transfer         Transfer            @relation(fields: [transferId], references: [id], onDelete: Cascade)
+  downloadLogs     DownloadLog[]
+
+  @@index([transferId])
+  @@index([s3Key])
+  @@map("transfer_files")
+}
+
+model FileRequest {
+  id               String    @id @default(uuid())
+  requestId        String    @unique
+  userId           String?
+  portalName       String
+  description      String?
+  maxUploadSizeBytes BigInt  @default(5368709120) // 5 GB
+  expiresAt        DateTime
+  isActive         Boolean   @default(true)
+  createdAt        DateTime  @default(now())
+
+  user             User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([requestId])
+  @@map("file_requests")
+}
+
+model DownloadLog {
+  id               String       @id @default(uuid())
+  transferId       String
+  fileId           String?
+  recipientEmail   String?
+  ipHash           String?
+  userAgent        String?
+  downloadedAt     DateTime     @default(now())
+
+  transfer         Transfer     @relation(fields: [transferId], references: [id], onDelete: Cascade)
+  file             TransferFile? @relation(fields: [fileId], references: [id], onDelete: SetNull)
+
+  @@index([transferId])
+  @@map("download_logs")
+}
+
+model Contact {
+  id        String   @id @default(uuid())
+  userId    String
+  name      String
+  email     String
+  group     String   @default("Clients")
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("contacts")
+}

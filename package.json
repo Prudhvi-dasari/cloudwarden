@@ -1,20 +1,40 @@
 {
-  "name": "new-tranfer-now",
-  "version": "0.0.0",
+  "name": "cloudwarden-app",
   "private": true,
+  "version": "0.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "start": "node server.js",
-    "server": "node server.js",
     "build": "vite build",
+    "lint": "oxlint",
     "preview": "vite preview"
   },
-  "devDependencies": {
-    "vite": "^8.1.1"
-  },
   "dependencies": {
-    "dotenv": "^17.4.2",
-    "firebase": "^12.16.0"
+    "@aws-sdk/client-s3": "^3.1114.0",
+    "@aws-sdk/s3-request-presigner": "^3.1114.0",
+    "@google-cloud/storage": "^8.0.1",
+    "@prisma/client": "^7.9.1",
+    "@supabase/supabase-js": "^2.112.3",
+    "@tailwindcss/vite": "^4.3.3",
+    "ioredis": "^6.0.0",
+    "jsdom": "^29.1.1",
+    "jszip": "^3.10.1",
+    "lucide-react": "^1.33.0",
+    "nodemailer": "^9.0.5",
+    "peerjs": "^1.5.5",
+    "prisma": "^7.9.1",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "react-dropzone": "^20.1.1",
+    "react-router-dom": "^7.18.2",
+    "tailwindcss": "^4.3.3",
+    "tus-js-client": "^4.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.4",
+    "oxlint": "^1.75.0",
+    "vite": "^8.2.0"
   }
 }

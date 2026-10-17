@@ -1,0 +1,46 @@
+{
+  "name": "iTransfer — Fast & Secure File Sharing",
+  "short_name": "iTransfer",
+  "description": "Send large files up to 25GB at gigabit speed. AES-256 encrypted link sharing, direct email transfer, and zero-compression P2P device transfer.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a1744",
+  "theme_color": "#4f46e5",
+  "orientation": "portrait-primary",
+  "categories": [
+    "productivity",
+    "utilities",
+    "business"
+  ],
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Send Files",
+      "short_name": "Send",
+      "description": "Upload and share large files instantly",
+      "url": "/?action=send",
+      "icons": [{ "src": "/favicon.svg", "sizes": "any" }]
+    },
+    {
+      "name": "Device P2P",
+      "short_name": "P2P",
+      "description": "Direct browser-to-browser file transfer",
+      "url": "/?mode=device",
+      "icons": [{ "src": "/favicon.svg", "sizes": "any" }]
+    },
+    {
+      "name": "Request Files",
+      "short_name": "Receive",
+      "description": "Collect files from clients without signup",
+      "url": "/receive",
+      "icons": [{ "src": "/favicon.svg", "sizes": "any" }]
+    }
+  ]
+}

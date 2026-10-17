@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "include": ["/*"],
+  "exclude": [
+    "/assets/*",
+    "/images/*",
+    "/favicon.svg",
+    "/icons.svg",
+    "/manifest.json",
+    "/robots.txt",
+    "/sitemap.xml",
+    "/_headers",
+    "/_routes.json"
+  ]
+}
