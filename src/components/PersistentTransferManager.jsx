@@ -5,6 +5,7 @@ import {
   File, Image as ImageIcon, Film, Music, FileText, Archive
 } from 'lucide-react';
 import { formatBytes } from '../lib/transferManager';
+import Portal from './Portal';
 
 function getFileIcon(fileName, fileType) {
   const ext = fileName?.split('.').pop()?.toLowerCase();
@@ -36,11 +37,15 @@ export default function PersistentTransferManager({
     totalFiles = 0,
     completedFiles = 0,
     totalBytes = 0,
-    uploadedBytes = 0,
+    totalUploadedBytes = 0,
+    uploadedBytes: uploadedBytesAlias = 0,
     overallProgress = 0,
     speedStr,
     timeRemainingStr,
   } = snapshot;
+
+  // Engine emits totalUploadedBytes; keep alias so the bar never sticks at 0%
+  const uploadedBytes = totalUploadedBytes || uploadedBytesAlias || 0;
 
   const isAllComplete = Boolean(
     snapshot.isAllComplete ||
@@ -67,7 +72,8 @@ export default function PersistentTransferManager({
     (effectiveShareId ? `${window.location.origin}/d/${effectiveShareId}` : window.location.origin);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/80 backdrop-blur-md animate-fadeIn">
+    <Portal>
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-3 sm:p-4 bg-slate-950/80 backdrop-blur-md animate-fadeIn">
       <div className="w-full max-w-2xl bg-white rounded-3xl shadow-2xl border border-slate-200/90 overflow-hidden flex flex-col max-h-[90vh] animate-scale-in">
         
         {/* Header */}
@@ -386,5 +392,6 @@ export default function PersistentTransferManager({
 
       </div>
     </div>
+    </Portal>
   );
 }

@@ -1,128 +1,98 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
 import AuthModal from '../components/AuthModal';
 import ProfileModal from '../components/ProfileModal';
+import P2PTransferView from '../components/P2PTransferView';
 import { getStoredUser, clearUserSession } from '../lib/authSession';
-import {
-  QrCode, Smartphone, Laptop, Wifi, ShieldCheck,
-  Sparkles, Send, ArrowRight, RefreshCw, CheckCircle2, Zap
-} from 'lucide-react';
+import { QrCode, RefreshCw, ArrowRight } from 'lucide-react';
+import { generateP2PCode } from '../lib/p2p';
 
 export default function QrTransferPage() {
   const [user, setUser] = useState(() => getStoredUser());
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [authMode, setAuthMode] = useState('login');
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [hostCode, setHostCode] = useState(() => generateP2PCode());
 
-  const [roomId, setRoomId] = useState(() => Math.floor(100000 + Math.random() * 900000).toString());
+  const joinUrl = `${window.location.origin}/?mode=device&room=${encodeURIComponent(hostCode)}`;
+  const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(joinUrl)}&bgcolor=0c0b0a&color=c4a574`;
 
-  const generateNewRoom = () => {
-    setRoomId(Math.floor(100000 + Math.random() * 900000).toString());
-  };
-
-  const roomUrl = `${window.location.origin}/?p2p=true&room=${roomId}`;
-  const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(roomUrl)}`;
+  useEffect(() => {
+    // Keep URL shareable for this host session
+    const url = new URL(window.location.href);
+    url.searchParams.set('host', hostCode);
+    window.history.replaceState({}, '', url.pathname + url.search);
+  }, [hostCode]);
 
   return (
-    <div className="min-h-screen bg-slate-50/50 flex flex-col font-sans text-slate-900 bg-dot-grid relative overflow-hidden">
-      <div className="ambient-orb-1" />
-      <div className="ambient-orb-2" />
-
-      <Navbar
+    <div className="min-h-screen flex flex-col text-white relative overflow-hidden bg-[#07080d]">
+      <div className="page-sky" aria-hidden="true" />
+<Navbar
         user={user}
         onOpenAuth={(mode) => { setAuthMode(mode); setIsAuthOpen(true); }}
         onOpenProfile={() => setIsProfileOpen(true)}
       />
 
-      <main className="flex-1 max-w-4xl w-full mx-auto px-4 sm:px-6 py-12 sm:py-16 z-10 relative">
-        
-        {/* Header */}
-        <div className="text-center max-w-2xl mx-auto mb-10 animate-fadeIn">
-          <div className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold theme-bg-light theme-text mb-4 border border-indigo-100/80 shadow-2xs">
-            <QrCode className="w-3.5 h-3.5" /> Instant Wireless P2P Pairing
+      <main className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 py-12 sm:py-16 z-10 relative">
+        <div className="text-center max-w-2xl mx-auto mb-10">
+          <div className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold text-[#c4a574] bg-[#c4a574]/10 border border-[#c4a574]/25 mb-4">
+            <QrCode className="w-3.5 h-3.5" /> Device P2P
           </div>
-          <h1 className="text-4xl sm:text-5xl font-black text-slate-900 tracking-tight mb-4 leading-tight">
-            Scan & Stream Files Directly
+          <h1 className="font-display text-4xl sm:text-5xl font-semibold text-white tracking-tight mb-4 italic">
+            Scan & stream directly
           </h1>
-          <p className="text-base sm:text-lg text-slate-600 font-medium leading-relaxed">
-            Scan the QR code with your iPhone or Android camera to instantly pair devices and stream files over local Wi-Fi with zero server storage.
+          <p className="text-base text-white/55 font-medium leading-relaxed">
+            Open this page on your laptop, scan with your phone, and transfer over the local network — zero cloud storage.
           </p>
         </div>
 
-        {/* Dynamic QR Card */}
-        <div className="custom-card p-8 sm:p-12 text-center max-w-md mx-auto bg-white/95 shadow-xl mb-12 animate-scale-in">
-          
-          <div className="inline-block p-4 bg-white rounded-3xl border-2 border-slate-200 shadow-md mb-6">
-            <img
-              src={qrCodeUrl}
-              alt="Scan to pair devices"
-              className="w-56 h-56 rounded-2xl object-contain mx-auto"
-            />
-          </div>
-
-          <div className="space-y-2 mb-6">
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Room Pairing Code</span>
-            <div className="text-3xl font-black font-mono tracking-widest text-slate-900 bg-slate-100 py-2 px-4 rounded-xl border border-slate-200 inline-block">
-              {roomId}
+        <div className="grid lg:grid-cols-2 gap-6 items-start">
+          <div className="custom-card p-8 text-center">
+            <div className="inline-block p-4 rounded-2xl border border-white/10 bg-[#17192e] mb-6">
+              <img src={qrCodeUrl} alt="Scan to pair devices" className="w-56 h-56 rounded-xl object-contain mx-auto" />
             </div>
-          </div>
-
-          <div className="flex items-center justify-center gap-3">
-            <button
-              onClick={generateNewRoom}
-              className="p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold flex items-center gap-1.5 transition-colors"
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-              <span>New Room Code</span>
-            </button>
-
-            <Link
-              to={`/?p2p=true&room=${roomId}`}
-              className="theme-btn-primary px-5 py-2.5 rounded-xl text-xs font-bold shadow-sm inline-flex items-center gap-1.5"
-            >
-              <span>Join Room in Browser</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </Link>
-          </div>
-
-        </div>
-
-        {/* 3 Step Guide */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 mb-16">
-          <div className="custom-card p-6 bg-white/90 space-y-2">
-            <div className="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold text-sm">
-              1
+            <p className="text-xs font-semibold text-white/45 uppercase tracking-wider mb-2">Pairing code</p>
+            <div className="text-2xl font-mono font-semibold tracking-widest text-[#c4a574] mb-4">
+              {hostCode}
             </div>
-            <h4 className="text-base font-bold text-slate-900">Open Camera</h4>
-            <p className="text-xs text-slate-500 font-medium leading-relaxed">
-              Open the native Camera app on your iPhone or Android phone and point it at the QR code above.
+            <div className="flex flex-wrap items-center justify-center gap-3">
+              <button
+                type="button"
+                onClick={() => setHostCode(generateP2PCode())}
+                className="px-4 py-2 rounded-full bg-white/5 border border-white/10 text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                New code
+              </button>
+              <Link
+                to={`/?mode=device&room=${encodeURIComponent(hostCode)}`}
+                className="theme-btn-primary px-5 py-2 rounded-full text-xs font-semibold inline-flex items-center gap-1.5"
+              >
+                Open as receiver
+                <ArrowRight className="w-3.5 h-3.5" />
+              </Link>
+            </div>
+            <p className="mt-4 text-[11px] text-white/45">
+              Phone scans QR → joins as receiver. Use the panel to send from this device.
             </p>
           </div>
 
-          <div className="custom-card p-6 bg-white/90 space-y-2">
-            <div className="w-9 h-9 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center font-bold text-sm">
-              2
-            </div>
-            <h4 className="text-base font-bold text-slate-900">Tap Browser Link</h4>
-            <p className="text-xs text-slate-500 font-medium leading-relaxed">
-              Tap the notification to automatically open iTransfer in Safari or Chrome paired to this session.
-            </p>
-          </div>
-
-          <div className="custom-card p-6 bg-white/90 space-y-2">
-            <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold text-sm">
-              3
-            </div>
-            <h4 className="text-base font-bold text-slate-900">Instant Stream</h4>
-            <p className="text-xs text-slate-500 font-medium leading-relaxed">
-              Select your photos or videos and stream them directly across devices with uncapped local Wi-Fi speeds.
-            </p>
+          <div className="custom-card p-5 sm:p-6">
+            <P2PTransferView preferredCode={hostCode} key={hostCode} />
           </div>
         </div>
-
       </main>
+
+      
+      <div className="relative z-10 max-w-6xl mx-auto px-4 sm:px-6 pb-12">
+        <div className="pt-8 border-t border-white/10">
+          <Link to="/" className="inline-flex items-center gap-2 rounded-full bg-white text-black text-sm font-semibold px-5 py-3 hover:bg-white/90">
+            Send a file
+          </Link>
+        </div>
+      </div>
 
       <Footer />
 

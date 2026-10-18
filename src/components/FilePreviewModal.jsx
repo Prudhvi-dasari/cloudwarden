@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { X, Download, ExternalLink, FileText, Film, Music, Image as ImageIcon, File, Loader2, Sparkles, Check, Copy } from 'lucide-react';
 import { activeStorageProvider } from '../lib/storageProvider';
+import Portal from './Portal';
 
 function formatBytes(bytes) {
   if (!bytes || bytes === 0) return '0 Bytes';
@@ -32,10 +33,14 @@ export default function FilePreviewModal({ file, shareId, onClose }) {
   useEffect(() => {
     let isMounted = true;
     async function loadStream() {
-      if (!file?.file_path) return;
+      const previewShareId = shareId || file?.share_id;
+      if (!file?.id || !previewShareId) return;
       setLoading(true);
       try {
-        const url = await activeStorageProvider.getPreviewUrl(file.file_path);
+        const url = await activeStorageProvider.getPreviewUrl(null, file.file_name || file.name, {
+          shareId: previewShareId,
+          fileId: file.id,
+        });
         if (isMounted) {
           setStreamUrl(url);
           if (category === 'text') {
@@ -64,7 +69,10 @@ export default function FilePreviewModal({ file, shareId, onClose }) {
   };
 
   const handleDirectDownload = async () => {
-    const url = await activeStorageProvider.getSignedDownloadUrl(file.file_path, file.file_name);
+    const url = await activeStorageProvider.getSignedDownloadUrl(null, file.file_name || file.name, {
+      shareId: shareId || file.share_id,
+      fileId: file.id,
+    });
     if (url) {
       const a = document.createElement('a');
       a.href = url;
@@ -78,7 +86,8 @@ export default function FilePreviewModal({ file, shareId, onClose }) {
   if (!file) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-950/80 backdrop-blur-md animate-fadeIn">
+    <Portal>
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-2 sm:p-4 bg-slate-950/80 backdrop-blur-md animate-fadeIn">
       <div className="relative w-full max-w-4xl max-h-[92vh] flex flex-col bg-white rounded-3xl shadow-2xl overflow-hidden border border-slate-200 animate-scale-in">
         
         {/* Header */}
@@ -94,7 +103,7 @@ export default function FilePreviewModal({ file, shareId, onClose }) {
             </div>
             <div className="min-w-0">
               <h3 className="text-sm sm:text-base font-black text-slate-900 truncate">{file.file_name}</h3>
-              <p className="text-xs text-slate-500 font-semibold">{formatBytes(file.file_size)} • 5 TB Cloud Vault</p>
+              <p className="text-xs text-slate-500 font-semibold">{formatBytes(file.file_size)}</p>
             </div>
           </div>
 
@@ -202,5 +211,6 @@ export default function FilePreviewModal({ file, shareId, onClose }) {
         </div>
       </div>
     </div>
+    </Portal>
   );
 }

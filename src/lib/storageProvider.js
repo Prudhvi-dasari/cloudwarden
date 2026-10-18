@@ -39,9 +39,9 @@ export class BaseStorageProvider {
   async getStorageStats() {
     return {
       usedBytes: 0,
-      totalBytes: 5497558138880, // 5.5 TB Cloud Vault
-      availableBytes: 5497558138880,
-      providerName: 'iTransfer 5 TB Cloud Vault',
+      totalBytes: 6_000_000_000,
+      availableBytes: 6_000_000_000,
+      providerName: 'iTransfer',
     };
   }
 }
@@ -288,10 +288,10 @@ export class GoogleOneStorageProvider extends BaseStorageProvider {
 
     return {
       usedBytes: 26 * 1024 * 1024,
-      totalBytes: 5497558138880, // 5.5 TB Cloud Vault
-      availableBytes: 5497531614533,
+      totalBytes: 6_000_000_000,
+      availableBytes: 6_000_000_000,
       user: 'iTransfer Vault',
-      providerName: 'iTransfer 5 TB Cloud Vault',
+      providerName: 'iTransfer',
     };
   }
 }
@@ -487,8 +487,8 @@ export class SupabaseStorageProvider extends BaseStorageProvider {
   async getStorageStats() {
     return {
       usedBytes: 120 * 1024 * 1024,
-      totalBytes: 25 * 1024 * 1024 * 1024,
-      availableBytes: 24.88 * 1024 * 1024 * 1024,
+      totalBytes: 6_000_000_000,
+      availableBytes: 6_000_000_000,
       providerName: 'iTransfer Cloud Storage',
     };
   }
@@ -496,7 +496,7 @@ export class SupabaseStorageProvider extends BaseStorageProvider {
 
 /**
  * Cloudflare R2 Object Storage Provider (Active Primary)
- * 10 GB Free Storage + Zero Egress Costs + Gigabit Edge CDN
+ * Direct-to-R2 uploads. A cloud transfer is 6 GB and lasts at most 7 days.
  */
 export class CloudflareR2StorageProvider extends BaseStorageProvider {
   constructor(apiBase = '/api/r2') {
@@ -504,19 +504,42 @@ export class CloudflareR2StorageProvider extends BaseStorageProvider {
     this.apiBase = apiBase;
   }
 
-  async uploadFile({ file, filePath, expiryHours = 168, onProgress }) {
+  async uploadFile({ file, shareId, expiryHours = 168, password = '', deleteToken = '', senderEmail = null, subject = '', message = null, recipientEmails = null, requestId = null, transferType = 'link', onProgress }) {
     const fileName = file.name;
     const totalSize = file.size;
+    let claimToken = null;
+    let activeDeleteToken = deleteToken;
+    let activeShareId = shareId;
 
-    // 1. Request presigned upload URL from Cloudflare R2 API
+    if (!activeDeleteToken) {
+      const openRes = await fetch(`${this.apiBase}?action=open-transfer`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ shareId, expiryHours, senderEmail, subject, transferType }),
+      });
+      const opened = await openRes.json().catch(() => ({}));
+      if (!openRes.ok) throw new Error(opened.error || 'Could not start this transfer.');
+      claimToken = opened.claimToken;
+      activeDeleteToken = opened.deleteToken;
+      activeShareId = opened.shareId || shareId;
+    }
+
     const initRes = await fetch(`${this.apiBase}?action=get-put-url`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         fileName,
         fileSize: totalSize,
-        expiryHours,
         contentType: file.type || 'application/octet-stream',
+        deleteToken: activeDeleteToken,
+        shareId: activeShareId,
+        password: password || undefined,
+        senderEmail,
+        subject,
+        message,
+        recipientEmails,
+        requestId,
+        transferType,
       }),
     });
 
@@ -525,7 +548,7 @@ export class CloudflareR2StorageProvider extends BaseStorageProvider {
       throw new Error(errJson.error || 'Failed to initialize Cloudflare R2 upload');
     }
 
-    const { presignedUrl, s3Key, shareId } = await initRes.json();
+    const { presignedUrl, s3Key } = await initRes.json();
     if (!presignedUrl) {
       throw new Error('No presigned upload URL received from Cloudflare R2');
     }
@@ -556,33 +579,51 @@ export class CloudflareR2StorageProvider extends BaseStorageProvider {
       xhr.send(file);
     });
 
+    const finalRes = await fetch(`${this.apiBase}?action=finalize-upload`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ s3Key, deleteToken: activeDeleteToken }),
+    });
+    if (!finalRes.ok) {
+      const errJson = await finalRes.json().catch(() => ({}));
+      throw new Error(errJson.error || 'The upload could not be confirmed.');
+    }
+
     return {
       fileId: s3Key,
       filePath: s3Key,
-      shareId,
+      shareId: activeShareId,
       fileName,
       fileSize: totalSize,
+      claimToken,
+      deleteToken: activeDeleteToken,
+      serverRecorded: true,
     };
   }
 
-  async getSignedDownloadUrl(filePath, fileName = null) {
-    if (!filePath) return null;
-
-    // If it's a Cloudflare R2 key
-    if (filePath.startsWith('transfers/')) {
-      try {
-        const nameParam = fileName ? `&customFileName=${encodeURIComponent(fileName)}` : '';
-        const res = await fetch(`${this.apiBase}?action=download-url&s3Key=${encodeURIComponent(filePath)}${nameParam}`);
-        if (res.ok) {
-          const data = await res.json();
-          return data.downloadUrl;
-        }
-      } catch (e) {
-        console.warn('Cloudflare R2 download error:', e);
+  async getSignedDownloadUrl(filePath, fileName = null, options = {}) {
+    if (options.shareId && options.fileId) {
+      const params = new URLSearchParams({
+        action: 'download-url',
+        shareId: String(options.shareId),
+        fileId: String(options.fileId),
+      });
+      if (fileName) params.set('customFileName', fileName);
+      const headers = {};
+      if (options.password) headers['x-transfer-password'] = options.password;
+      const res = await fetch(`${this.apiBase}?${params}`, { headers });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.downloadUrl) {
+        throw new Error(data.error || 'Unable to generate download link.');
       }
+      return data.downloadUrl;
     }
 
-    // Supabase fallback for legacy uploads
+    if (!filePath || filePath.startsWith('transfers/') || filePath.startsWith('requests/')) {
+      throw new Error('A share id and file id are required.');
+    }
+
+    // Older files that were stored outside R2.
     if (filePath.includes('/')) {
       return await supabaseStorageProvider.getSignedDownloadUrl(filePath, fileName);
     }
@@ -591,12 +632,12 @@ export class CloudflareR2StorageProvider extends BaseStorageProvider {
     return await googleOneStorageProvider.getSignedDownloadUrl(filePath, fileName);
   }
 
-  async getPreviewUrl(filePath, fileName = null) {
-    return this.getSignedDownloadUrl(filePath, fileName);
+  async getPreviewUrl(filePath, fileName = null, options = {}) {
+    return this.getSignedDownloadUrl(filePath, fileName, options);
   }
 
-  async downloadFile(filePath) {
-    const url = await this.getSignedDownloadUrl(filePath);
+  async downloadFile(filePath, fileName = null, options = {}) {
+    const url = await this.getSignedDownloadUrl(filePath, fileName, options);
     if (!url) throw new Error('File not available for download.');
     const res = await fetch(url);
     if (!res.ok) throw new Error(`Download failed with status ${res.status}`);
@@ -604,16 +645,23 @@ export class CloudflareR2StorageProvider extends BaseStorageProvider {
   }
 
   async deleteFile(filePath) {
-    return true;
+    if (filePath?.startsWith('transfers/') || filePath?.startsWith('requests/')) {
+      throw new Error('A delete token or signed-in owner is required.');
+    }
+    try {
+      return await supabaseStorageProvider.deleteFile(filePath);
+    } catch {
+      return false;
+    }
   }
 
   async getStorageStats() {
     return {
       usedBytes: 15 * 1024 * 1024,
-      totalBytes: 10 * 1024 * 1024 * 1024, // 10 GB Free Tier
-      availableBytes: 9.98 * 1024 * 1024 * 1024,
+      totalBytes: 6_000_000_000,
+      availableBytes: 6_000_000_000,
       user: 'Cloudflare R2 Vault',
-      providerName: 'Cloudflare R2 (10 GB Free Tier)',
+      providerName: 'Cloudflare R2',
     };
   }
 }
@@ -622,5 +670,5 @@ export const cloudflareR2StorageProvider = new CloudflareR2StorageProvider();
 export const googleOneStorageProvider = new GoogleOneStorageProvider();
 export const supabaseStorageProvider = new SupabaseStorageProvider();
 
-// ★ ACTIVE STORAGE PROVIDER: CLOUDFLARE R2 (10 GB FREE TIER + 0 EGRESS COSTS)
+// Active storage provider: Cloudflare R2. Cloud transfers are 6 GB and last at most 7 days.
 export const activeStorageProvider = cloudflareR2StorageProvider;

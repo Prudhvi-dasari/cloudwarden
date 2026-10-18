@@ -19,7 +19,7 @@ export default function CloudTransferAnimation() {
     });
   }, []);
 
-  const activeCc = geo?.countryCode ? geo.countryCode.toUpperCase() : 'IN';
+  const activeCc = geo?.countryCode ? geo.countryCode.toUpperCase() : '';
 
   // Dynamic clean flag image URL (pure flag cloth with no dark frame)
   const getFlagUrl = (cc) => {

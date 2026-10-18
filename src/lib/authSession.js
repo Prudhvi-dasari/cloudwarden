@@ -1,4 +1,4 @@
-import { supabase, publicSupabase } from './supabase';
+import { supabase } from './supabase';
 
 const USER_SESSION_KEY = 'itransfer_user_session';
 export const ADMIN_EMAILS = [
@@ -66,34 +66,97 @@ export function isUserOnTrial(user) {
   return new Date(expiresAt).getTime() > Date.now();
 }
 
+function isAuthUuid(id) {
+  return typeof id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
+}
+
+function applyAccountRow(cleanUser, row) {
+  if (!row) return cleanUser;
+  const expiredTrial = row.plan === 'trial' && row.trial_expires_at && new Date(row.trial_expires_at).getTime() <= Date.now();
+  const expiredPro = row.plan === 'pro' && row.plan_expires_at && new Date(row.plan_expires_at).getTime() <= Date.now();
+  cleanUser.user_metadata.plan = isAdmin(cleanUser) ? 'pro' : (expiredTrial || expiredPro ? 'free' : (row.plan || 'free'));
+  cleanUser.user_metadata.theme = row.theme || cleanUser.user_metadata.theme;
+  cleanUser.user_metadata.fullName = row.display_name || cleanUser.user_metadata.fullName;
+  cleanUser.user_metadata.trial_started_at = row.trial_started_at || null;
+  cleanUser.user_metadata.trial_expires_at = row.trial_expires_at || null;
+  cleanUser.user_metadata.plan_expires_at = row.plan_expires_at || null;
+  return cleanUser;
+}
+
+async function loadAccountRow(userId) {
+  const { data, error } = await supabase
+    .from('itransfer_accounts')
+    .select('plan, theme, display_name, trial_started_at, trial_expires_at, plan_expires_at, email')
+    .eq('user_id', userId)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+/**
+ * Create the account row if needed, then read plan, theme, and name from the database.
+ */
+export async function syncAccount(authUser) {
+  const cleanUser = buildStoredUser(authUser);
+  if (!isAuthUuid(authUser?.id)) {
+    writeStoredUser(cleanUser);
+    return cleanUser;
+  }
+
+  const { error: insertError } = await supabase.from('itransfer_accounts').insert({
+    user_id: authUser.id,
+    email: authUser.email,
+    display_name: cleanUser.user_metadata.fullName,
+    theme: cleanUser.user_metadata.theme || 'indigo',
+    plan: 'free',
+  });
+  if (insertError && insertError.code !== '23505') {
+    console.warn('Account sync:', insertError.message);
+  }
+
+  try {
+    const row = await loadAccountRow(authUser.id);
+    applyAccountRow(cleanUser, row);
+  } catch (e) {
+    console.warn('Account read:', e.message);
+  }
+
+  writeStoredUser(cleanUser);
+  try {
+    const { data: sessionWrap } = await supabase.auth.getSession();
+    const accessToken = sessionWrap?.session?.access_token;
+    if (accessToken) {
+      const { claimGuestTransfers } = await import('./guestSession');
+      claimGuestTransfers(accessToken).catch(() => {});
+    }
+  } catch (e) {}
+  return cleanUser;
+}
+
 /**
  * Activate 7-Day Free Pro Trial for User (Zero Credit Card Required)
  */
 export async function startProTrial(user) {
   if (!user) return null;
-  const trialDays = 7;
-  const expiresAt = new Date(Date.now() + trialDays * 24 * 60 * 60 * 1000).toISOString();
-  
-  const updatedUser = {
+  const { data, error } = await supabase.rpc('start_itransfer_trial');
+  if (error) throw error;
+  const updatedUser = applyAccountRow(buildStoredUser(user), data);
+  writeStoredUser(updatedUser);
+  return updatedUser;
+}
+
+export async function saveAccountTheme(user, themeId) {
+  if (!user || !isAuthUuid(user.id)) return user;
+  const { error } = await supabase
+    .from('itransfer_accounts')
+    .update({ theme: themeId })
+    .eq('user_id', user.id);
+  if (error) throw error;
+  const updatedUser = buildStoredUser({
     ...user,
-    user_metadata: {
-      ...(user.user_metadata || {}),
-      plan: 'trial',
-      trial_started_at: new Date().toISOString(),
-      trial_expires_at: expiresAt,
-    },
-  };
-  
-  try {
-    localStorage.setItem(USER_SESSION_KEY, JSON.stringify(updatedUser));
-  } catch (e) {}
-
-  try {
-    await supabase.auth.updateUser({
-      data: { plan: 'trial', trial_expires_at: expiresAt },
-    });
-  } catch (e) {}
-
+    user_metadata: { ...(user.user_metadata || {}), theme: themeId },
+  });
+  writeStoredUser(updatedUser);
   return updatedUser;
 }
 
@@ -109,14 +172,14 @@ export function getUserPlanLimits(user) {
     return {
       tierName: isMaster ? 'Master Admin (Lifetime Pro)' : 'iTransfer Pro',
       plan: 'pro',
-      maxFileSizeBytes: 25 * 1024 * 1024 * 1024, // 25 GB
-      maxFileSizeLabel: '25 GB',
-      allowedExpiryHours: [1, 24, 72, 168, 720, 0], // up to 30 days & Permanent
-      maxRetentionDays: 30,
-      allowsPermanent: true,
-      hasCustomBranding: true,
-      hasPriorityBandwidth: true,
-      storageEngine: 'Cloudflare R2 + Turbo Cloud Vault',
+      maxFileSizeBytes: 6_000_000_000,
+      maxFileSizeLabel: '6 GB',
+      allowedExpiryHours: [1, 24, 72, 168],
+      maxRetentionDays: 7,
+      allowsPermanent: false,
+      hasCustomBranding: false,
+      hasPriorityBandwidth: false,
+      storageEngine: 'Cloudflare R2',
     };
   }
 
@@ -124,14 +187,14 @@ export function getUserPlanLimits(user) {
     return {
       tierName: '7-Day Pro Trial',
       plan: 'trial',
-      maxFileSizeBytes: 15 * 1024 * 1024 * 1024, // 15 GB
-      maxFileSizeLabel: '15 GB',
-      allowedExpiryHours: [1, 24, 72, 168, 336], // up to 14 days
-      maxRetentionDays: 14,
+      maxFileSizeBytes: 6_000_000_000,
+      maxFileSizeLabel: '6 GB',
+      allowedExpiryHours: [1, 24, 72, 168],
+      maxRetentionDays: 7,
       allowsPermanent: false,
-      hasCustomBranding: true,
-      hasPriorityBandwidth: true,
-      storageEngine: 'Cloudflare R2 Gigabit Stream',
+      hasCustomBranding: false,
+      hasPriorityBandwidth: false,
+      storageEngine: 'Cloudflare R2',
       trialExpiresAt: user.user_metadata?.trial_expires_at,
     };
   }
@@ -140,8 +203,8 @@ export function getUserPlanLimits(user) {
   return {
     tierName: 'Free Tier',
     plan: 'free',
-    maxFileSizeBytes: 5 * 1024 * 1024 * 1024, // 5 GB
-    maxFileSizeLabel: '5 GB',
+    maxFileSizeBytes: 6_000_000_000,
+    maxFileSizeLabel: '6 GB',
     allowedExpiryHours: [1, 24, 72, 168], // up to 7 days
     maxRetentionDays: 7,
     allowsPermanent: false,
@@ -151,56 +214,42 @@ export function getUserPlanLimits(user) {
   };
 }
 
-/**
- * Persist user session to localStorage and sync with Supabase DB
- */
-export async function persistUserSession(user) {
-  if (!user) {
-    try { localStorage.removeItem(USER_SESSION_KEY); } catch (e) {}
-    return null;
-  }
+function writeStoredUser(cleanUser) {
+  try {
+    if (!cleanUser) localStorage.removeItem(USER_SESSION_KEY);
+    else localStorage.setItem(USER_SESSION_KEY, JSON.stringify(cleanUser));
+  } catch (e) {}
+}
 
+function buildStoredUser(user) {
   const isMaster = isAdmin(user);
   const existingPlan = user.user_metadata?.plan || (isMaster ? 'pro' : 'free');
-
-  const cleanUser = {
-    id: user.id || ('usr_' + btoa(user.email || 'user').replace(/=/g, '')),
+  return {
+    id: user.id,
     email: user.email,
     user_metadata: {
+      ...(user.user_metadata || {}),
       plan: isMaster ? 'pro' : existingPlan,
       role: isMaster ? 'admin' : (user.user_metadata?.role || 'user'),
       theme: user.user_metadata?.theme || 'indigo',
       fullName: user.user_metadata?.fullName || user.user_metadata?.full_name || (isMaster ? 'Prudhvi Dasari (Admin)' : user.email?.split('@')[0]),
       avatarUrl: user.user_metadata?.avatar_url || user.user_metadata?.picture || null,
-      ...(user.user_metadata || {}),
     },
     last_sign_in_at: new Date().toISOString(),
   };
+}
 
-  try {
-    localStorage.setItem(USER_SESSION_KEY, JSON.stringify(cleanUser));
-  } catch (e) {}
-
-  // Sync to database if possible
-  try {
-    const { data: dbUser } = await publicSupabase
-      .from('users')
-      .select('plan, is_pro')
-      .eq('email', cleanUser.email)
-      .maybeSingle();
-
-    if (dbUser && dbUser.plan) {
-      cleanUser.user_metadata.plan = isMaster ? 'pro' : dbUser.plan;
-      try { localStorage.setItem(USER_SESSION_KEY, JSON.stringify(cleanUser)); } catch (e) {}
-    }
-  } catch (e) {}
-
-  // Migrate any previous guest transfers to this user account
-  try {
-    const { migrateGuestTransfersToUser } = await import('./guestSession');
-    migrateGuestTransfersToUser(cleanUser).catch(() => {});
-  } catch (e) {}
-
+/**
+ * Persist user session to localStorage and sync plan, theme, and name with the account table.
+ */
+export async function persistUserSession(user) {
+  if (!user) {
+    writeStoredUser(null);
+    return null;
+  }
+  if (isAuthUuid(user.id)) return syncAccount(user);
+  const cleanUser = buildStoredUser(user);
+  writeStoredUser(cleanUser);
   return cleanUser;
 }
 

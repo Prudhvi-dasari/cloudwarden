@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { supabase, THEMES, applyTheme } from '../lib/supabase';
-import { persistUserSession, isAdmin, isUserPro, isUserOnTrial, startProTrial } from '../lib/authSession';
+import { THEMES, applyTheme } from '../lib/supabase';
+import { isAdmin, isUserPro, isUserOnTrial, startProTrial, saveAccountTheme } from '../lib/authSession';
 import { X, User, Crown, Palette, LogOut, Check, Sparkles, ShieldCheck, ArrowRight, Settings, Zap, Clock } from 'lucide-react';
+import Portal from './Portal';
 
 export default function ProfileModal({
   isOpen,
@@ -10,6 +11,7 @@ export default function ProfileModal({
   onSignOut,
   currentTheme,
   onThemeChange,
+  onAccountChange,
   onOpenUpgrade,
   onOpenAdmin,
 }) {
@@ -34,6 +36,7 @@ export default function ProfileModal({
     try {
       const updated = await startProTrial(currentUser);
       setLocalUser(updated);
+      onAccountChange?.(updated);
     } catch (e) {
       console.error(e);
     } finally {
@@ -44,13 +47,13 @@ export default function ProfileModal({
   async function handleSelectTheme(themeId) {
     applyTheme(themeId);
     if (onThemeChange) onThemeChange(themeId);
-    user.user_metadata = { ...(user.user_metadata || {}), theme: themeId };
-    await persistUserSession(user);
     try {
-      await supabase.auth.updateUser({
-        data: { theme: themeId },
-      });
-    } catch (e) {}
+      const updated = await saveAccountTheme(currentUser, themeId);
+      setLocalUser(updated);
+      onAccountChange?.(updated);
+    } catch (e) {
+      console.error(e);
+    }
   }
 
   const handleSignOutClick = () => {
@@ -59,7 +62,8 @@ export default function ProfileModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+    <Portal>
+    <div className="fixed inset-0 z-[10000] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
       <div className="w-full max-w-lg bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl border border-slate-200 p-6 sm:p-8 relative max-h-[90vh] overflow-y-auto">
         
         {/* Mobile handle indicator */}
@@ -132,7 +136,7 @@ export default function ProfileModal({
                   7-Day Pro Trial Active ({daysLeftInTrial} days remaining)
                 </h4>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Enjoying 15GB transfers & 14-day retention. Upgrade anytime for 25GB & permanent storage.
+                  Uploads stay at 6 GB and 7 days. A larger plan is not available yet.
                 </p>
               </div>
               <button
@@ -152,7 +156,7 @@ export default function ProfileModal({
                 Pro Membership Active
               </h4>
               <p className="text-xs text-slate-500 mt-0.5">
-                Enjoy 25GB single transfers, 30-day & permanent vault retention, and priority gigabit bandwidth.
+                Uploads stay at 6 GB and 7 days until a paid plan is available.
               </p>
             </div>
           ) : (
@@ -234,5 +238,6 @@ export default function ProfileModal({
 
       </div>
     </div>
+    </Portal>
   );
 }

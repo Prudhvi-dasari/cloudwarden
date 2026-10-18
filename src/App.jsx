@@ -1,5 +1,4 @@
-import { useEffect } from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
 import ErrorBoundary from './components/ErrorBoundary';
 import { ToastProvider } from './components/Toast';
 import ScrollToTop from './components/ScrollToTop';
@@ -27,6 +26,7 @@ import ChangelogPage from './pages/ChangelogPage';
 import QrTransferPage from './pages/QrTransferPage';
 import SeoLandingPage from './pages/SeoLandingPage';
 import NotFoundPage from './pages/NotFoundPage';
+import { AccountProvider } from './lib/AccountContext';
 
 const SEO_KEYS = [
   'send-large-files',
@@ -45,26 +45,30 @@ const SEO_KEYS = [
   'file-request',
   'how-to-send-large-files',
   'file-transfer-free',
+  'send-files-whatsapp',
+  'send-folder-online',
+  'expire-file-link',
+  'best-wetransfer-alternative-india',
 ];
 
-export default function App() {
-  useEffect(() => {
-    // Proactively purge expired Google Drive & Supabase transfers in background
-    const lastCleanup = sessionStorage.getItem('itransfer_last_purge');
-    const now = Date.now();
-    if (!lastCleanup || now - parseInt(lastCleanup, 10) > 300000) {
-      sessionStorage.setItem('itransfer_last_purge', now.toString());
-      fetch('/api/r2?action=cleanup').catch(() => {});
-      fetch('/api/drive?action=cleanup').catch(() => {});
-    }
-  }, []);
+function Stage({ children }) {
+  const { pathname } = useLocation();
+  return (
+    <div key={pathname} className="page-stage relative z-10 min-h-screen">
+      {children}
+    </div>
+  );
+}
 
+export default function App() {
   return (
     <ErrorBoundary>
       <ToastProvider>
         <BrowserRouter>
+          <AccountProvider>
           <ScrollToTop />
           <SeoHead />
+          <Stage>
           <Routes>
             {/* Core Product Pages */}
             <Route path="/" element={<HomePage />} />
@@ -109,6 +113,8 @@ export default function App() {
             {/* 404 Route */}
             <Route path="*" element={<NotFoundPage />} />
           </Routes>
+          </Stage>
+          </AccountProvider>
         </BrowserRouter>
       </ToastProvider>
     </ErrorBoundary>

@@ -5,13 +5,22 @@ import DropZone from './DropZone';
 import FileList from './FileList';
 import { Wifi, QrCode, ArrowRight, ShieldCheck, CheckCircle2, AlertCircle, Loader2, Download, Send, RotateCcw, Copy, Check, Smartphone, Laptop, Sparkles, Plus, Monitor, Trash2 } from 'lucide-react';
 
-export default function P2PTransferView() {
+function resolvePeerCodeFromSearch(searchParams, initialRoom) {
+  const room = initialRoom || searchParams.get('room') || '';
+  const p2p = searchParams.get('p2p') || '';
+  // Ignore boolean flags like p2p=true — only accept real pairing codes
+  if (room && room !== 'true') return room.trim().toUpperCase();
+  if (p2p && p2p !== 'true') return p2p.trim().toUpperCase();
+  return '';
+}
+
+export default function P2PTransferView({ initialRoom, preferredCode } = {}) {
   const [searchParams] = useSearchParams();
-  const initialCodeFromUrl = searchParams.get('p2p') || '';
+  const initialCodeFromUrl = resolvePeerCodeFromSearch(searchParams, initialRoom);
 
   const [p2pRole, setP2pRole] = useState(initialCodeFromUrl ? 'receive' : 'send');
   const [files, setFiles] = useState([]);
-  const [p2pCode, setP2pCode] = useState('');
+  const [p2pCode, setP2pCode] = useState(preferredCode || '');
   const [inputCode, setInputCode] = useState(initialCodeFromUrl);
   const [status, setStatus] = useState({ state: 'IDLE' });
   const [progress, setProgress] = useState(null);
@@ -51,7 +60,8 @@ export default function P2PTransferView() {
           setStatus(statusUpdate);
           if (statusUpdate.code) setP2pCode(statusUpdate.code);
         },
-        (progressUpdate) => setProgress(progressUpdate)
+        (progressUpdate) => setProgress(progressUpdate),
+        preferredCode || null
       );
       sender.init();
       senderRef.current = sender;

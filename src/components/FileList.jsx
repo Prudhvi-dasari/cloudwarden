@@ -15,11 +15,11 @@ function getFileIcon(contentType, fileName) {
 }
 
 function getBadgeColor(ext) {
-  if (['mp4', 'mov', 'avi', 'mkv', 'webm', 'prores'].includes(ext)) return 'bg-violet-50 text-violet-700 border-violet-200';
-  if (['png', 'jpg', 'jpeg', 'webp', 'svg', 'gif'].includes(ext)) return 'bg-blue-50 text-blue-700 border-blue-200';
-  if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext)) return 'bg-amber-50 text-amber-700 border-amber-200';
-  if (['pdf', 'doc', 'docx', 'txt'].includes(ext)) return 'bg-emerald-50 text-emerald-700 border-emerald-200';
-  return 'bg-slate-100 text-slate-700 border-slate-200';
+  if (['mp4', 'mov', 'avi', 'mkv', 'webm', 'prores'].includes(ext)) return 'bg-[#c4a574]/15 text-[#d4b88a] border-[#c4a574]/25';
+  if (['png', 'jpg', 'jpeg', 'webp', 'svg', 'gif'].includes(ext)) return 'bg-[#f5f0e8]/8 text-[#f5f0e8] border-white/12';
+  if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext)) return 'bg-[#c4a574]/12 text-[#c4a574] border-[#c4a574]/30';
+  if (['pdf', 'doc', 'docx', 'txt'].includes(ext)) return 'bg-[#8fbc8f]/12 text-[#8fbc8f] border-[#8fbc8f]/25';
+  return 'bg-[#1a1916] text-[#a39e94] border-white/10';
 }
 
 function formatBytes(bytes) {
@@ -30,7 +30,7 @@ function formatBytes(bytes) {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
 
-export default function FileList({ files, onRemoveFile, onAddMore, onFilesAdded, maxSizeBytes = 5 * 1024 * 1024 * 1024 }) {
+export default function FileList({ files, onRemoveFile, onAddMore, onFilesAdded, maxSizeBytes = 6_000_000_000, maxSizeLabel = '' }) {
   const [previews, setPreviews] = useState({});
   const fileInputRef = useRef(null);
   const folderInputRef = useRef(null);
@@ -94,17 +94,17 @@ export default function FileList({ files, onRemoveFile, onAddMore, onFilesAdded,
       />
 
       {/* Header Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-1 border-b border-slate-100">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-1 border-b border-white/8">
         <div>
           <div className="flex items-center gap-2">
-            <h4 className="text-xs sm:text-sm font-bold text-slate-900 tracking-tight flex items-center gap-1.5">
+            <h4 className="text-xs sm:text-sm font-bold text-[#f5f0e8] tracking-tight flex items-center gap-1.5">
               <span>Selected Files</span>
-              <span className="px-2 py-0.5 rounded-full bg-indigo-50 border border-indigo-100 text-indigo-700 text-xs font-bold">
+              <span className="px-2 py-0.5 rounded-full bg-indigo-50 border border-[#c4a574]/20 theme-text text-xs font-bold">
                 {files.length}
               </span>
             </h4>
           </div>
-          <p className="text-[11px] text-slate-500 font-medium">
+          <p className="text-[11px] text-[#a39e94] font-medium">
             {formatBytes(totalSize)} total
           </p>
         </div>
@@ -114,7 +114,7 @@ export default function FileList({ files, onRemoveFile, onAddMore, onFilesAdded,
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1 transition-all active:scale-98 cursor-pointer"
+            className="px-2.5 py-1.5 bg-[#1a1916] hover:bg-[#22211d] text-[#a39e94] rounded-lg text-xs font-semibold flex items-center gap-1 transition-all active:scale-98 cursor-pointer"
           >
             <Plus className="w-3.5 h-3.5" />
             <span>Add Files</span>
@@ -122,26 +122,26 @@ export default function FileList({ files, onRemoveFile, onAddMore, onFilesAdded,
           <button
             type="button"
             onClick={() => folderInputRef.current?.click()}
-            className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1 transition-all active:scale-98 cursor-pointer"
+            className="px-2.5 py-1.5 bg-[#1a1916] hover:bg-[#22211d] text-[#a39e94] rounded-lg text-xs font-semibold flex items-center gap-1 transition-all active:scale-98 cursor-pointer"
           >
-            <FolderPlus className="w-3.5 h-3.5 text-slate-500" />
+            <FolderPlus className="w-3.5 h-3.5 text-[#a39e94]" />
             <span>Folder</span>
           </button>
         </div>
       </div>
 
       {/* Storage Capacity Bar */}
-      <div className="bg-slate-50 rounded-xl p-2.5 border border-slate-100">
+      <div className="bg-[#141311] rounded-xl p-2.5 border border-white/8">
         <div className="flex items-center justify-between text-[11px] font-semibold mb-1.5">
-          <span className="text-slate-600">Storage Capacity</span>
-          <span className={totalSize > maxSizeBytes ? 'text-rose-600 font-bold' : 'text-slate-700'}>
-            {formatBytes(totalSize)} of {formatBytes(maxSizeBytes)}
+          <span className="text-[#a39e94]">Storage Capacity</span>
+          <span className={totalSize > maxSizeBytes ? 'text-rose-600 font-bold' : 'text-[#a39e94]'}>
+            {formatBytes(totalSize)} of {maxSizeLabel || formatBytes(maxSizeBytes)}
           </span>
         </div>
-        <div className="w-full h-1.5 bg-slate-200 rounded-full overflow-hidden">
+        <div className="w-full h-1.5 bg-[#0c0b0a] rounded-full overflow-hidden border border-white/8">
           <div
             className={`h-full transition-all duration-300 rounded-full ${
-              totalSize > maxSizeBytes ? 'bg-rose-500' : 'bg-indigo-600'
+              totalSize > maxSizeBytes ? 'bg-[#c47a7a]' : 'bg-[#c4a574]'
             }`}
             style={{ width: `${Math.min(100, usagePercent)}%` }}
           />
@@ -159,24 +159,24 @@ export default function FileList({ files, onRemoveFile, onAddMore, onFilesAdded,
           return (
             <li
               key={index}
-              className="flex items-center justify-between p-2.5 bg-slate-50/70 hover:bg-slate-100/80 border border-slate-200/80 rounded-xl transition-all group"
+              className="flex items-center justify-between p-2.5 bg-[#141311] hover:bg-[#1a1916] border border-white/10 rounded-xl transition-all group"
             >
               <div className="flex items-center gap-3 min-w-0 pr-2">
                 {previewUrl ? (
                   <img
                     src={previewUrl}
                     alt={file.name}
-                    className="w-10 h-10 rounded-lg object-cover border border-slate-200 shrink-0 shadow-2xs"
+                    className="w-10 h-10 rounded-lg object-cover border border-white/10 shrink-0 shadow-2xs"
                   />
                 ) : (
-                  <div className="w-10 h-10 rounded-lg bg-white border border-slate-200 flex items-center justify-center shrink-0 text-slate-600">
-                    <IconComponent className="w-5 h-5 text-indigo-600" />
+                  <div className="w-10 h-10 rounded-lg bg-[#141311] border border-white/10 flex items-center justify-center shrink-0">
+                    <IconComponent className="w-5 h-5 theme-text" />
                   </div>
                 )}
 
                 <div className="min-w-0">
                   <div className="flex items-center gap-1.5">
-                    <p className="text-xs sm:text-sm font-semibold text-slate-900 truncate">
+                    <p className="text-xs sm:text-sm font-semibold text-[#f5f0e8] truncate">
                       {file.name}
                     </p>
                     {ext && (
@@ -185,7 +185,7 @@ export default function FileList({ files, onRemoveFile, onAddMore, onFilesAdded,
                       </span>
                     )}
                   </div>
-                  <p className="text-[11px] text-slate-500 font-medium">
+                  <p className="text-[11px] text-[#a39e94] font-medium">
                     {formatBytes(file.size)}
                   </p>
                 </div>
@@ -194,7 +194,7 @@ export default function FileList({ files, onRemoveFile, onAddMore, onFilesAdded,
               <button
                 type="button"
                 onClick={() => onRemoveFile(index)}
-                className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors ml-2 cursor-pointer shrink-0"
+                className="p-1.5 text-[#6b665c] hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors ml-2 cursor-pointer shrink-0"
                 title="Remove file"
               >
                 <Trash2 className="w-4 h-4" />

@@ -3,33 +3,33 @@ import { useLocation } from 'react-router-dom';
 
 const ROUTE_SEO_MAP = {
   '/': {
-    title: '[No Sign Up] Send Large Files Online Free (Up to 25 GB) — iTransfer',
-    description: 'Send large files up to 25 GB 100% free with no registration or account required. Instant shareable links, AES-256 encryption, direct email transfer, and gigabit speeds.',
+    title: '[No Sign Up] Send Large Files Free (6 GB) — iTransfer',
+    description: 'Send large files up to 6 GB free with no registration or account required. Instant shareable links, AES-256 encryption, direct email transfer, and gigabit speeds.',
     keywords: 'send files online, file transfer free, large file transfer, how to send large files, send large files, send files online free, share files free, send large files online free, wetransfer alternative, send huge files online free',
     canonical: 'https://itransfer.iprudhvi.in/',
   },
   '/how-it-works': {
     title: 'How It Works — Send & Share Large Files in 3 Steps | iTransfer',
-    description: 'Learn how to send files up to 25 GB with iTransfer. Select files, customize links with passwords and auto-expiration, and transfer at gigabit speed.',
+    description: 'Learn how to send files up to 6 GB with iTransfer. Select files, add a password and an expiry up to 7 days, and send a link.',
     keywords: 'how to send large files, file transfer guide, share large files online, encrypted file sharing steps',
     canonical: 'https://itransfer.iprudhvi.in/how-it-works',
   },
   '/features': {
     title: 'Features — Gigabit Engine, P2P Transfer & AES-256 Vault | iTransfer',
-    description: 'Explore all iTransfer features: 25GB transfer limits, direct device P2P, email transfers, custom links, password protection, and checksum integrity.',
+    description: 'Explore iTransfer: 6 GB links, device transfer, email delivery, passwords, and checksums. Larger plans are not available yet.',
     keywords: 'file transfer features, p2p transfer, encrypted file sharing, high speed file transfer, large file sending features',
     canonical: 'https://itransfer.iprudhvi.in/features',
   },
   '/security': {
-    title: 'Security & Privacy — AES-256 Vault Encryption & Zero-Knowledge | iTransfer',
+    title: 'Security & Privacy — AES-256 Vault Encryption & Password Protection | iTransfer',
     description: 'Bank-grade security: TLS 1.3 in-transit, AES-256 on-disk, optional password hashing, automatic file purges, and zero data tracking.',
     keywords: 'secure file transfer, encrypted file sharing, aes 256 file sharing, secure wetransfer alternative, zero knowledge file transfer',
     canonical: 'https://itransfer.iprudhvi.in/security',
   },
   '/pricing': {
-    title: 'Pricing Plans — Free 5GB & Pro 25GB Gigabit Transfers | iTransfer',
-    description: '100% Free 5GB transfers with zero signup. Upgrade to iTransfer Pro for 25GB single transfers, permanent storage, priority bandwidth, and custom branding.',
-    keywords: 'file transfer pricing, free file transfer, pro file sharing, send 25gb files, cheap wetransfer alternative',
+    title: 'Pricing — 6 GB Free Transfers, Up to 7 Days | iTransfer',
+    description: 'Send up to 6 GB free with no signup. Links last up to 7 days. Larger plans and longer retention are not available yet.',
+    keywords: 'file transfer pricing, free file transfer, send 6 gb, no signup file sharing',
     canonical: 'https://itransfer.iprudhvi.in/pricing',
   },
   '/receive': {
@@ -70,7 +70,7 @@ const ROUTE_SEO_MAP = {
   },
   '/vs-wetransfer': {
     title: 'iTransfer vs WeTransfer — Feature Comparison & Speed Test',
-    description: 'Compare iTransfer vs WeTransfer. Get 25GB transfer limits, direct device P2P, and faster gigabit streaming with no forced signup.',
+    description: 'Compare iTransfer with other send tools. Free cloud transfers are 6 GB, with device transfer and no signup.',
     keywords: 'wetransfer alternative, itransfer vs wetransfer, faster than wetransfer, wetransfer free limit',
     canonical: 'https://itransfer.iprudhvi.in/vs-wetransfer',
   },
@@ -117,7 +117,7 @@ const ROUTE_SEO_MAP = {
     canonical: 'https://itransfer.iprudhvi.in/terms',
   },
   '/help': {
-    title: 'How to Send Large Files Online Free (Up to 25GB, No Sign Up) — iTransfer Guide',
+    title: 'How to Send Large Files Online Free (6 GB, No Sign Up) — iTransfer Guide',
     description: 'Step-by-step guide on how to send large files, heavy videos, and archives online for free without registration. Instant shareable link & direct P2P.',
     keywords: 'how to send large files, how to transfer large files online, how to share files online securely for free, send heavy files online, send huge files online free',
     canonical: 'https://itransfer.iprudhvi.in/help',
@@ -130,13 +130,13 @@ const ROUTE_SEO_MAP = {
   },
   '/how-to-send-large-files': {
     title: 'How to Send Large Files Online Free (Step-by-Step Guide) | iTransfer',
-    description: 'Learn how to send large files up to 25GB for free with no account required. Compare email vs link vs P2P transfers.',
+    description: 'Learn how to send files up to 6 GB with no account. Compare email, link, and device transfer.',
     keywords: 'how to send large files, how to transfer large files online, send heavy files online, send large files free',
     canonical: 'https://itransfer.iprudhvi.in/how-to-send-large-files',
   },
   '/file-transfer-free': {
-    title: '[100% Free] Send Files Online Free (Up to 25GB, No Sign Up) | iTransfer',
-    description: 'Send files online completely free up to 25GB. No registration, no credit card, and no hidden fees. Instant download link.',
+    title: '[100% Free] Send Files Online Free (6 GB, No Sign Up) | iTransfer',
+    description: 'Send files online free up to 6 GB. No registration. Links last up to 7 days.',
     keywords: 'file transfer free, send files free, send files online free, free file sharing no account, send huge files online free',
     canonical: 'https://itransfer.iprudhvi.in/file-transfer-free',
   },
@@ -183,6 +183,35 @@ export default function SeoHead({ customTitle, customDescription, customKeywords
     setMetaTag('name', 'twitter:title', title);
     setMetaTag('name', 'twitter:description', description);
     setMetaTag('name', 'twitter:url', canonical);
+    setMetaTag('name', 'twitter:card', 'summary_large_image');
+    setMetaTag('property', 'og:image', 'https://itransfer.iprudhvi.in/images/hero_3d_cloudscape.jpg');
+    setMetaTag('name', 'twitter:image', 'https://itransfer.iprudhvi.in/images/hero_3d_cloudscape.jpg');
+    setMetaTag('property', 'og:type', 'website');
+    setMetaTag('property', 'og:site_name', 'iTransfer');
+
+    // JSON-LD WebApplication (honest offers)
+    let ld = document.getElementById('itransfer-jsonld');
+    if (!ld) {
+      ld = document.createElement('script');
+      ld.type = 'application/ld+json';
+      ld.id = 'itransfer-jsonld';
+      document.head.appendChild(ld);
+    }
+    ld.textContent = JSON.stringify({
+      '@context': 'https://schema.org',
+      '@type': 'WebApplication',
+      name: 'iTransfer',
+      url: 'https://itransfer.iprudhvi.in',
+      applicationCategory: 'UtilitiesApplication',
+      operatingSystem: 'Web',
+      offers: {
+        '@type': 'Offer',
+        price: '0',
+        priceCurrency: 'USD',
+        description: 'Free transfers up to 6 GB for up to 7 days.',
+      },
+      description,
+    });
 
     // 6. Update Canonical Link
     let linkElem = document.querySelector('link[rel="canonical"]');

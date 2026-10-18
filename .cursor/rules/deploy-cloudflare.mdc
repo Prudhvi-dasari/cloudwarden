@@ -1,0 +1,16 @@
+---
+description: Always deploy iTransfer to Cloudflare Pages (not Vercel)
+alwaysApply: true
+---
+
+# Deploy target: Cloudflare Pages
+
+When the user asks to **deploy** this project (`itransfer-app` / transfer files):
+
+1. **Always deploy to Cloudflare Pages** — this is production for `https://itransfer.iprudhvi.in`.
+2. Do **not** deploy to Vercel unless the user explicitly asks for a Vercel deploy.
+3. Standard flow:
+   - `npm run build`
+   - `npx wrangler pages deploy dist --project-name=itransfer-app` (or the project name in `wrangler.jsonc`)
+4. Confirm the live URL after deploy (`itransfer.iprudhvi.in` and/or the `*.pages.dev` URL).
+5. Keep using Cloudflare Pages Functions under `functions/` and R2 bindings; do not migrate hosting to Vercel for routine deploys.

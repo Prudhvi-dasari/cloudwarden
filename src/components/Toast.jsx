@@ -29,10 +29,10 @@ export function ToastProvider({ children }) {
             key={toast.id}
             className={`pointer-events-auto flex items-center justify-between gap-3 px-4 py-3 rounded-xl border shadow-lg backdrop-blur-md animate-scale-in text-xs font-semibold ${
               toast.type === 'error'
-                ? 'bg-rose-50/95 border-rose-200 text-rose-900'
+                ? 'bg-[#1a1916]/98 border-[#c47a7a]/40 text-[#f5f0e8]'
                 : toast.type === 'info'
-                ? 'bg-indigo-50/95 border-indigo-200 text-indigo-900'
-                : 'bg-white/95 border-slate-200/90 text-slate-800 shadow-slate-900/5'
+                ? 'bg-[#1a1916]/98 border-[#c4a574]/40 text-[#f5f0e8]'
+                : 'bg-[#1a1916]/98 border-white/10 text-[#f5f0e8]'
             }`}
           >
             <div className="flex items-center gap-2">

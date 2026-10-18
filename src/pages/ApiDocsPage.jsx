@@ -71,12 +71,9 @@ print(f"Transfer Ready: {transfer.url}")`,
   };
 
   return (
-    <div className="min-h-screen bg-slate-50/50 flex flex-col font-sans text-slate-900 bg-dot-grid relative overflow-hidden">
-      
-      <div className="ambient-orb-1" />
-      <div className="ambient-orb-3" />
-
-      <Navbar
+    <div className="min-h-screen flex flex-col text-white relative overflow-hidden bg-[#07080d]">
+      <div className="page-sky" aria-hidden="true" />
+<Navbar
         user={user}
         onOpenAuth={(mode) => { setAuthMode(mode); setIsAuthOpen(true); }}
         onOpenProfile={() => setIsProfileOpen(true)}
@@ -86,14 +83,14 @@ print(f"Transfer Ready: {transfer.url}")`,
         
         {/* Header */}
         <div className="text-center max-w-2xl mx-auto mb-12 animate-fadeIn">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold theme-bg-light theme-text mb-3 border border-indigo-100/80 shadow-2xs">
-            <Code className="w-3.5 h-3.5" /> Developer Platform & REST API
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold theme-bg-light theme-text mb-3 border border-[#c4a574]/25/80 shadow-2xs">
+            <Code className="w-3.5 h-3.5" /> Not available
           </div>
-          <h1 className="text-3xl sm:text-5xl font-black text-slate-900 tracking-tight mb-3">
-            Programmatic file transfer infrastructure.
+          <h1 className="text-3xl sm:text-5xl font-semibold text-white tracking-tight mb-3">
+            There is no public API yet.
           </h1>
-          <p className="text-sm sm:text-base text-slate-600 font-medium leading-relaxed">
-            Integrate high-speed resumable uploads, automated download notifications, and file drop portals into your applications.
+          <p className="text-sm sm:text-base text-white/55 font-medium leading-relaxed">
+            The examples below are not a live service. There is no SDK, no API key, and no supported way to upload from another application.
           </p>
         </div>
 
@@ -106,7 +103,7 @@ print(f"Transfer Ready: {transfer.url}")`,
                   key={lang}
                   onClick={() => setSelectedLang(lang)}
                   className={`px-3 py-1 rounded-md text-xs font-bold transition-all ${
-                    selectedLang === lang ? 'bg-indigo-600 text-white shadow-2xs' : 'text-slate-400 hover:text-white'
+                    selectedLang === lang ? 'bg-[#c4a574] text-white shadow-2xs' : 'text-white/45 hover:text-white'
                   }`}
                 >
                   {lang === 'curl' ? 'cURL' : lang === 'js' ? 'JavaScript / Node' : 'Python'}
@@ -130,48 +127,57 @@ print(f"Transfer Ready: {transfer.url}")`,
 
         {/* REST API Endpoints Overview */}
         <div className="space-y-4">
-          <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Core Endpoints</h3>
+          <h3 className="text-xs font-bold text-white/45 uppercase tracking-wider">Core Endpoints</h3>
 
           <div className="space-y-2.5">
-            <div className="custom-card p-4 bg-white/90 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="custom-card p-4 bg-[#17192e] flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div className="flex items-center gap-2.5">
                 <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 font-mono">POST</span>
-                <span className="text-xs font-mono font-bold text-slate-900">/api/v1/transfers</span>
-                <span className="text-xs text-slate-500">• Initialize a new chunked file transfer</span>
+                <span className="text-xs font-mono font-bold text-white">/api/v1/transfers</span>
+                <span className="text-xs text-white/45">• Initialize a new chunked file transfer</span>
               </div>
-              <span className="text-[11px] font-bold text-slate-400">Resumable TUS Protocol</span>
+              <span className="text-[11px] font-bold text-white/45">Resumable TUS Protocol</span>
             </div>
 
-            <div className="custom-card p-4 bg-white/90 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="custom-card p-4 bg-[#17192e] flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div className="flex items-center gap-2.5">
                 <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-blue-100 text-blue-800 font-mono">GET</span>
-                <span className="text-xs font-mono font-bold text-slate-900">/api/v1/transfers/:id</span>
-                <span className="text-xs text-slate-500">• Fetch transfer metadata and download count</span>
+                <span className="text-xs font-mono font-bold text-white">/api/v1/transfers/:id</span>
+                <span className="text-xs text-white/45">• Fetch transfer metadata and download count</span>
               </div>
-              <span className="text-[11px] font-bold text-slate-400">Real-time status</span>
+              <span className="text-[11px] font-bold text-white/45">Real-time status</span>
             </div>
 
-            <div className="custom-card p-4 bg-white/90 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="custom-card p-4 bg-[#17192e] flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div className="flex items-center gap-2.5">
                 <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-indigo-100 text-indigo-800 font-mono">POST</span>
-                <span className="text-xs font-mono font-bold text-slate-900">/api/v1/requests</span>
-                <span className="text-xs text-slate-500">• Create an on-demand file drop portal</span>
+                <span className="text-xs font-mono font-bold text-white">/api/v1/requests</span>
+                <span className="text-xs text-white/45">• Create an on-demand file drop portal</span>
               </div>
-              <span className="text-[11px] font-bold text-slate-400">Embeddable ready</span>
+              <span className="text-[11px] font-bold text-white/45">Embeddable ready</span>
             </div>
 
-            <div className="custom-card p-4 bg-white/90 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="custom-card p-4 bg-[#17192e] flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div className="flex items-center gap-2.5">
                 <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-rose-100 text-rose-800 font-mono">DELETE</span>
-                <span className="text-xs font-mono font-bold text-slate-900">/api/v1/transfers/:id</span>
-                <span className="text-xs text-slate-500">• Instantly purge files before expiration</span>
+                <span className="text-xs font-mono font-bold text-white">/api/v1/transfers/:id</span>
+                <span className="text-xs text-white/45">• Instantly purge files before expiration</span>
               </div>
-              <span className="text-[11px] font-bold text-slate-400">Zero residual data</span>
+              <span className="text-[11px] font-bold text-white/45">Zero residual data</span>
             </div>
           </div>
         </div>
 
       </main>
+
+      
+      <div className="relative z-10 max-w-6xl mx-auto px-4 sm:px-6 pb-12">
+        <div className="pt-8 border-t border-white/10">
+          <Link to="/" className="inline-flex items-center gap-2 rounded-full bg-white text-black text-sm font-semibold px-5 py-3 hover:bg-white/90">
+            Send a file
+          </Link>
+        </div>
+      </div>
 
       <Footer />
 

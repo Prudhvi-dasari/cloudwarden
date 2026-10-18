@@ -14,6 +14,144 @@ export function getCountryFlag(countryCode) {
   return String.fromCodePoint(...codePoints);
 }
 
+/** Fallback clock for a connection country when the edge does not send a timezone. */
+const COUNTRY_TZ = {
+  IN: 'Asia/Kolkata',
+  US: 'America/New_York',
+  CN: 'Asia/Shanghai',
+  HK: 'Asia/Hong_Kong',
+  TW: 'Asia/Taipei',
+  JP: 'Asia/Tokyo',
+  KR: 'Asia/Seoul',
+  SG: 'Asia/Singapore',
+  AE: 'Asia/Dubai',
+  PK: 'Asia/Karachi',
+  BD: 'Asia/Dhaka',
+  LK: 'Asia/Colombo',
+  NP: 'Asia/Kathmandu',
+  TH: 'Asia/Bangkok',
+  ID: 'Asia/Jakarta',
+  PH: 'Asia/Manila',
+  MY: 'Asia/Kuala_Lumpur',
+  AU: 'Australia/Sydney',
+  GB: 'Europe/London',
+  DE: 'Europe/Berlin',
+  FR: 'Europe/Paris',
+  ES: 'Europe/Madrid',
+  IT: 'Europe/Rome',
+  NL: 'Europe/Amsterdam',
+  CA: 'America/Toronto',
+  BR: 'America/Sao_Paulo',
+  MX: 'America/Mexico_City',
+  ZA: 'Africa/Johannesburg',
+};
+
+const TZ_COUNTRY = {
+  'Asia/Kolkata': 'IN',
+  'Asia/Calcutta': 'IN',
+  'Asia/Shanghai': 'CN',
+  'Asia/Chongqing': 'CN',
+  'Asia/Harbin': 'CN',
+  'Asia/Urumqi': 'CN',
+  'Asia/Hong_Kong': 'HK',
+  'Asia/Taipei': 'TW',
+  'Asia/Tokyo': 'JP',
+  'Asia/Seoul': 'KR',
+  'Asia/Singapore': 'SG',
+  'Asia/Dubai': 'AE',
+  'Asia/Karachi': 'PK',
+  'Asia/Dhaka': 'BD',
+  'Asia/Colombo': 'LK',
+  'Asia/Kathmandu': 'NP',
+  'Asia/Bangkok': 'TH',
+  'Asia/Jakarta': 'ID',
+  'Asia/Manila': 'PH',
+  'Asia/Kuala_Lumpur': 'MY',
+  'Australia/Sydney': 'AU',
+  'Australia/Melbourne': 'AU',
+  'Europe/London': 'GB',
+  'Europe/Berlin': 'DE',
+  'Europe/Paris': 'FR',
+  'Europe/Madrid': 'ES',
+  'Europe/Rome': 'IT',
+  'Europe/Amsterdam': 'NL',
+  'America/New_York': 'US',
+  'America/Chicago': 'US',
+  'America/Denver': 'US',
+  'America/Los_Angeles': 'US',
+  'America/Toronto': 'CA',
+  'America/Sao_Paulo': 'BR',
+  'America/Mexico_City': 'MX',
+  'Africa/Johannesburg': 'ZA',
+};
+
+export function getDeviceTimeZone() {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  } catch {
+    return 'UTC';
+  }
+}
+
+export function countryFromTimeZone(timeZone) {
+  return TZ_COUNTRY[timeZone] || null;
+}
+
+function countryNameFromCode(cc) {
+  if (!cc) return '';
+  try {
+    return new Intl.DisplayNames(['en'], { type: 'region' }).of(cc) || cc;
+  } catch {
+    return cc;
+  }
+}
+
+function asTimeZone(timezone) {
+  if (!timezone) return '';
+  if (typeof timezone === 'string') return timezone;
+  return timezone.id || timezone.time_zone || '';
+}
+
+/**
+ * Flag and sun follow the IP country only.
+ * India IP → India, China IP → China, and the same for every other country.
+ * The laptop clock is not allowed to rewrite that.
+ */
+export function resolveVisitorPlace({ countryCode, city, timezone, ip } = {}) {
+  const ipCountry = countryCode && String(countryCode).length === 2
+    ? String(countryCode).toUpperCase()
+    : null;
+  const ipZone = asTimeZone(timezone);
+  const zoneCountry = countryFromTimeZone(ipZone);
+  const timeZone = ipCountry
+    ? ((ipZone && (!zoneCountry || zoneCountry === ipCountry)) ? ipZone : (COUNTRY_TZ[ipCountry] || ipZone || getDeviceTimeZone()))
+    : (ipZone || getDeviceTimeZone());
+
+  if (!ipCountry) {
+    return {
+      countryCode: '',
+      countryName: '',
+      city: city || '',
+      flag: '🌐',
+      timeZone,
+      ip: ip || '',
+    };
+  }
+
+  return {
+    countryCode: ipCountry,
+    countryName: countryNameFromCode(ipCountry),
+    city: city || '',
+    flag: getCountryFlag(ipCountry),
+    timeZone,
+    ip: ip || '',
+  };
+}
+
+export function guessVisitorPlace() {
+  return resolveVisitorPlace({});
+}
+
 // Country code to default region name
 const REGION_MAP = {
   IN: 'Mumbai Edge Cluster',
@@ -40,93 +178,41 @@ const REGION_MAP = {
 export async function detectClientGeo() {
   const startTime = performance.now();
 
-  // 1. Try first-party /api/geo (Vercel edge headers - 100% accurate for VPNs)
+  // Connection country from our edge only. A VPN exit is reported as-is.
+  // If the edge cannot see a country, stay neutral — do not guess from the clock or a third party.
   try {
-    const res = await fetch('/api/geo', {
+    const res = await fetch(`/api/geo?t=${Date.now()}`, {
+      cache: 'no-store',
       headers: { 'Cache-Control': 'no-cache' },
-      signal: AbortSignal.timeout(2000),
+      signal: AbortSignal.timeout(2500),
     });
     if (res.ok) {
       const data = await res.json();
-      if (data?.countryCode && data.countryCode.length === 2) {
-        const cc = data.countryCode.toUpperCase();
-        let countryName = cc;
-        try {
-          const displayNames = new Intl.DisplayNames(['en'], { type: 'region' });
-          countryName = displayNames.of(cc) || cc;
-        } catch (e) {}
-
+      if (data?.countryCode && String(data.countryCode).length === 2) {
+        const place = resolveVisitorPlace({
+          countryCode: data.countryCode,
+          city: data.city,
+          timezone: data.timezone,
+          ip: data.ip,
+        });
         const latency = Math.round(performance.now() - startTime);
         return {
-          countryCode: cc,
-          countryName,
-          city: data.city || '',
-          flag: getCountryFlag(cc),
-          edgeRegion: REGION_MAP[cc] || `${data.city || countryName} Edge Region`,
-          latencyMs: Math.max(6, Math.min(latency, 45)),
-          ip: data.ip || '0.0.0.0',
+          ...place,
+          detected: true,
+          edgeRegion: REGION_MAP[place.countryCode] || `${place.city || place.countryName} Edge`,
+          latencyMs: latency,
         };
       }
     }
-  } catch (e) {
-    // Continue to fallback services
+  } catch {
+    // Neutral fallback below.
   }
 
-  // 2. Try ipwho.is (fast HTTPS, CORS friendly, works globally)
-  try {
-    const res = await fetch('https://ipwho.is/', { signal: AbortSignal.timeout(2500) });
-    if (res.ok) {
-      const data = await res.json();
-      if (data?.country_code && data.country_code.length === 2) {
-        const cc = data.country_code.toUpperCase();
-        const latency = Math.round(performance.now() - startTime);
-        return {
-          countryCode: cc,
-          countryName: data.country || cc,
-          city: data.city || '',
-          flag: getCountryFlag(cc),
-          edgeRegion: REGION_MAP[cc] || `${data.city || data.country} Edge Region`,
-          latencyMs: Math.max(8, Math.min(latency, 45)),
-          ip: data.ip || '0.0.0.0',
-        };
-      }
-    }
-  } catch (e) {}
-
-  // 3. Try ipinfo.io
-  try {
-    const res = await fetch('https://ipinfo.io/json', { signal: AbortSignal.timeout(2500) });
-    if (res.ok) {
-      const data = await res.json();
-      if (data?.country && data.country.length === 2) {
-        const cc = data.country.toUpperCase();
-        let countryName = cc;
-        try {
-          const displayNames = new Intl.DisplayNames(['en'], { type: 'region' });
-          countryName = displayNames.of(cc) || cc;
-        } catch (e) {}
-        const latency = Math.round(performance.now() - startTime);
-        return {
-          countryCode: cc,
-          countryName,
-          city: data.city || '',
-          flag: getCountryFlag(cc),
-          edgeRegion: REGION_MAP[cc] || `${data.city || countryName} Edge Region`,
-          latencyMs: Math.max(8, Math.min(latency, 45)),
-          ip: data.ip || '0.0.0.0',
-        };
-      }
-    }
-  } catch (e) {}
-
-  // 4. Default to US
+  const place = guessVisitorPlace();
   return {
-    countryCode: 'US',
-    countryName: 'United States',
-    city: 'Virginia',
-    flag: '🇺🇸',
-    edgeRegion: 'Virginia US-East Node',
-    latencyMs: 12,
-    ip: '0.0.0.0',
+    ...place,
+    detected: false,
+    edgeRegion: '',
+    latencyMs: null,
   };
 }

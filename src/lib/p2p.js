@@ -18,12 +18,12 @@ export function generateP2PCode() {
 }
 
 export class P2PSender {
-  constructor(onStatusChange, onProgress) {
+  constructor(onStatusChange, onProgress, preferredCode = null) {
     this.onStatusChange = onStatusChange;
     this.onProgress = onProgress;
     this.peer = null;
     this.conn = null;
-    this.code = generateP2PCode();
+    this.code = preferredCode || generateP2PCode();
     this.isRelay = false;
   }
 

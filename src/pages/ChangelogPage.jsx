@@ -18,19 +18,29 @@ export default function ChangelogPage() {
 
   const releases = [
     {
-      version: 'v2.0.0',
-      date: 'August 2026',
-      title: 'The Full TransferNow Ecosystem & 10X Redesign Upgrade',
+      version: 'v3.0.0',
+      date: 'October 2026',
+      title: 'Luxury Noir Atelier redesign',
       badge: 'Major Release',
       highlights: [
-        'Interactive Navigation Mega Menus: Products, Tools & Utilities, Solutions & Enterprise, Resources & Trust.',
-        'Embeddable Web Drop Widget: 1-line HTML & script generator for client file uploads.',
-        'iTransfer for Teams: Custom domain branding, 4K wallpapers, pooled storage, and audit logs.',
-        'Client-Side SHA-256 Checksum & Hash Integrity Verifier.',
-        'Live 99.99% Global Uptime & Telemetry Monitor with regional edge pings.',
-        'Full GDPR, DPA, and Regional Data Sovereignty Center.',
-        'Side-by-side Competitor Comparison matrix against WeTransfer and TransferNow.',
-        'Slow-motion full-page confetti celebration on transfer completion.',
+        'Luxury dark editorial UI — charcoal canvas, champagne gold, Fraunces + DM Sans.',
+        'Celebration modal with confetti when your share link is ready.',
+        'Fixed QR ↔ Device P2P pairing for phone-to-laptop transfers.',
+        'Real file request portals persisted in Supabase with owner routing.',
+        'R2 cleanup aligned to transfer expiry + working object delete on revoke.',
+        'Honest SEO meta, Compare matrix, and Security copy (no fake E2EE/API claims).',
+        'Google sign-in via Supabase OAuth; Resources hub for organic traffic.',
+      ],
+    },
+    {
+      version: 'v2.0.0',
+      date: 'August 2026',
+      title: 'Ecosystem expansion',
+      badge: 'Release',
+      highlights: [
+        'Checksum verifier, Compare pages, and SEO landing cluster.',
+        'Dashboard, guest uploads, and Pro trial flows.',
+        'Side-by-side competitor comparison vs WeTransfer and TransferNow.',
       ],
     },
     {
@@ -60,11 +70,9 @@ export default function ChangelogPage() {
   ];
 
   return (
-    <div className="min-h-screen bg-slate-50/50 flex flex-col font-sans text-slate-900 bg-dot-grid relative overflow-hidden">
-      <div className="ambient-orb-1" />
-      <div className="ambient-orb-2" />
-
-      <Navbar
+    <div className="min-h-screen flex flex-col text-white relative overflow-hidden bg-[#07080d]">
+      <div className="page-sky" aria-hidden="true" />
+<Navbar
         user={user}
         onOpenAuth={(mode) => { setAuthMode(mode); setIsAuthOpen(true); }}
         onOpenProfile={() => setIsProfileOpen(true)}
@@ -74,13 +82,13 @@ export default function ChangelogPage() {
         
         {/* Header */}
         <div className="text-center max-w-2xl mx-auto mb-14 animate-fadeIn">
-          <div className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold theme-bg-light theme-text mb-4 border border-indigo-100/80 shadow-2xs">
+          <div className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold theme-bg-light theme-text mb-4 border border-[#c4a574]/25/80 shadow-2xs">
             <History className="w-3.5 h-3.5" /> Product Updates & Evolution
           </div>
-          <h1 className="text-4xl sm:text-5xl font-black text-slate-900 tracking-tight mb-4 leading-tight">
+          <h1 className="font-display text-4xl sm:text-5xl font-semibold text-white italic tracking-tight mb-4 leading-tight">
             iTransfer Changelog
           </h1>
-          <p className="text-base sm:text-lg text-slate-600 font-medium leading-relaxed">
+          <p className="text-base sm:text-lg text-white/55 font-medium leading-relaxed">
             Follow our latest features, performance improvements, security enhancements, and SDK releases.
           </p>
         </div>
@@ -88,20 +96,20 @@ export default function ChangelogPage() {
         {/* Timeline */}
         <div className="space-y-8 mb-16">
           {releases.map((rel, idx) => (
-            <div key={idx} className="custom-card p-6 sm:p-8 bg-white/95 shadow-md relative">
+            <div key={idx} className="custom-card p-6 sm:p-8 bg-[#17192e] shadow-md relative">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-4 border-b border-slate-100 mb-4">
                 <div className="flex items-center gap-3">
-                  <span className="text-xl font-black text-slate-900">{rel.version}</span>
-                  <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100">
+                  <span className="text-xl font-black text-white">{rel.version}</span>
+                  <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-[#c4a574]/25">
                     {rel.badge}
                   </span>
                 </div>
                 <span className="text-xs font-bold text-slate-400">{rel.date}</span>
               </div>
 
-              <h3 className="text-base sm:text-lg font-bold text-slate-900 mb-3">{rel.title}</h3>
+              <h3 className="text-base sm:text-lg font-bold text-white mb-3">{rel.title}</h3>
 
-              <ul className="space-y-2 text-sm text-slate-600 font-medium">
+              <ul className="space-y-2 text-sm text-white/55 font-medium">
                 {rel.highlights.map((h, hIdx) => (
                   <li key={hIdx} className="flex items-start gap-2.5">
                     <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
@@ -115,8 +123,8 @@ export default function ChangelogPage() {
 
         {/* CTA */}
         <div className="text-center custom-card p-8 sm:p-12 bg-white/90 shadow-md">
-          <h2 className="text-2xl font-black text-slate-900 mb-2">Want to test the latest features?</h2>
-          <p className="text-sm text-slate-600 mb-6 font-medium">Send your files today at maximum speed with zero limits.</p>
+          <h2 className="text-2xl font-black text-white mb-2">Want to test the latest features?</h2>
+          <p className="text-sm text-white/55 mb-6 font-medium">Send your files today at maximum speed with zero limits.</p>
           <Link
             to="/"
             className="theme-btn-primary px-7 py-3.5 text-sm font-bold shadow-md inline-flex items-center gap-2"
@@ -127,6 +135,15 @@ export default function ChangelogPage() {
         </div>
 
       </main>
+
+      
+      <div className="relative z-10 max-w-6xl mx-auto px-4 sm:px-6 pb-12">
+        <div className="pt-8 border-t border-white/10">
+          <Link to="/" className="inline-flex items-center gap-2 rounded-full bg-white text-black text-sm font-semibold px-5 py-3 hover:bg-white/90">
+            Send a file
+          </Link>
+        </div>
+      </div>
 
       <Footer />
 

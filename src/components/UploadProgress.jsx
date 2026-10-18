@@ -1,4 +1,28 @@
-import { CheckCircle2, AlertCircle, Zap, Clock, Pause, Play, WifiOff, RefreshCw, PlusCircle, Minimize2, Sparkles, Server, Cpu, X } from 'lucide-react';
+import { useEffect, useId, useRef, useState } from 'react';
+import {
+  CheckCircle2,
+  AlertCircle,
+  Zap,
+  Clock,
+  WifiOff,
+  PlusCircle,
+  X,
+  FileText,
+} from 'lucide-react';
+
+const PATH_D = 'M 28 78 C 90 40, 150 110, 220 72 C 280 40, 330 55, 372 68';
+
+function usePrefersReducedMotion() {
+  const [reduced, setReduced] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const onChange = () => setReduced(mq.matches);
+    onChange();
+    mq.addEventListener?.('change', onChange);
+    return () => mq.removeEventListener?.('change', onChange);
+  }, []);
+  return reduced;
+}
 
 export default function UploadProgress({
   progress,
@@ -8,158 +32,190 @@ export default function UploadProgress({
   status,
   isPaused,
   isOffline,
-  telemetry,
-  onPause,
-  onResume,
   onRunInBackground,
   onCancel,
+  onPause,
+  onRetry,
 }) {
-  const radius = 54;
-  const circumference = 2 * Math.PI * radius;
-  const strokeDashoffset = circumference - (progress / 100) * circumference;
-
+  const safeProgress = Math.max(0, Math.min(100, progress || 0));
   const isComplete = status === 'complete';
+  const isConfirming = status === 'confirming';
   const isError = status === 'error';
+  const reduceMotion = usePrefersReducedMotion();
+  const pathRef = useRef(null);
+  const pathId = useId().replace(/:/g, '');
+  const [parcel, setParcel] = useState({ x: 40, y: 78, angle: 0 });
+
+  const t = isComplete || isConfirming ? 1 : Math.max(0, Math.min(1, safeProgress / 100));
+
+  useEffect(() => {
+    const path = pathRef.current;
+    if (!path) return;
+    const len = path.getTotalLength();
+    const pt = path.getPointAtLength(len * t);
+    const ahead = path.getPointAtLength(Math.min(len, len * t + 10));
+    const angle = (Math.atan2(ahead.y - pt.y, ahead.x - pt.x) * 180) / Math.PI;
+    setParcel({ x: pt.x, y: pt.y, angle });
+  }, [t]);
+
+  const ringR = 54;
+  const ringC = 2 * Math.PI * ringR;
+  const ringOffset = ringC - (ringC * (isComplete || isConfirming ? 100 : safeProgress)) / 100;
+  const speedKnown = Boolean(uploadSpeed);
+  const etaKnown = Boolean(timeRemaining);
+
+  const statusLabel = isComplete ? 'Link ready' : isConfirming ? 'Saving the link' : isError ? 'Stopped' : isPaused ? 'Paused' : 'Sending';
+  const statusHint = isComplete
+    ? 'Your download link is on this page.'
+    : isConfirming
+      ? 'The upload finished. Waiting until the link is saved.'
+      : isError
+        ? (safeProgress >= 100
+          ? 'The files uploaded, but the link was not saved.'
+          : 'This send did not finish. You can try again.')
+        : isPaused
+          ? 'Paused on the bytes already sent.'
+          : 'Your file is leaving. The link appears in this card.';
 
   return (
-    <div className="flex flex-col items-center text-center p-5 sm:p-8 animate-scale-in">
-      
-      {/* Turbo Acceleration Active Pill Badge */}
-      {!isComplete && !isError && (
-        <div className="mb-4 inline-flex items-center gap-2 px-3 py-1 rounded-full bg-gradient-to-r from-indigo-500/10 via-purple-500/10 to-amber-500/10 border border-indigo-200 text-indigo-700 text-[11px] font-bold shadow-2xs">
-          <Zap className="w-3.5 h-3.5 text-amber-500 fill-amber-400 animate-pulse" />
-          <span>TurboBandwidth™ Acceleration Engine Active</span>
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
-        </div>
-      )}
+    <div className={`send-progress ${isComplete ? 'is-complete' : ''} ${isError ? 'is-error' : ''} ${isPaused ? 'is-paused' : ''} ${reduceMotion ? 'is-reduced' : ''}`}>
+      {/* Theater: file flies along the path as % climbs */}
+      <div className="send-progress-stage" aria-hidden="true">
+        <div className="send-progress-glow" />
+        <div className="send-progress-radar" />
 
-      {/* Offline Warning Alert */}
-      {isOffline && (
-        <div className="w-full max-w-sm mb-4 p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-xs font-bold flex items-center justify-center gap-2 animate-pulse">
-          <WifiOff className="w-4 h-4 text-amber-600" />
-          <span>Connection lost! Upload paused. Waiting to auto-resume...</span>
-        </div>
-      )}
-
-      {/* Circular Ring */}
-      <div className="relative flex items-center justify-center mb-5">
-        <svg className="w-32 h-32 sm:w-36 sm:h-36 transform -rotate-90">
-          <circle
-            className="text-slate-100"
-            strokeWidth="8"
-            stroke="currentColor"
-            fill="transparent"
-            r={radius}
-            cx="64"
-            cy="64"
-          />
-          <circle
-            className={`transition-all duration-300 ease-out ${
-              isError ? 'text-rose-500' : isPaused ? 'text-amber-500' : 'theme-text'
-            }`}
-            strokeWidth="8"
-            strokeDasharray={circumference}
-            strokeDashoffset={strokeDashoffset}
+        <svg className="send-progress-map" viewBox="0 0 400 120" preserveAspectRatio="xMidYMid meet">
+          <path
+            ref={pathRef}
+            id={`sendpath-${pathId}`}
+            d={PATH_D}
+            fill="none"
+            stroke="rgba(255,255,255,0.28)"
+            strokeWidth="2.5"
+            strokeDasharray="2 12"
             strokeLinecap="round"
-            stroke="currentColor"
-            fill="transparent"
-            r={radius}
-            cx="64"
-            cy="64"
           />
+          <circle cx="28" cy="78" r="5" fill="rgba(255,255,255,0.55)" />
+          <circle cx="372" cy="68" r="7" fill="none" stroke="rgba(255,255,255,0.85)" strokeWidth="2" />
+          <circle cx="372" cy="68" r="3.5" fill="#ffffff" />
+
+          <g
+            className="send-progress-parcel"
+            style={{
+              transform: `translate(${parcel.x}px, ${parcel.y}px) rotate(${parcel.angle}deg)`,
+            }}
+          >
+            <g transform="translate(-18 -12)">
+              <rect width="36" height="24" rx="5" fill="#fff" />
+              <path d="M24 0 L24 10 L36 10" fill="#ffe7c2" />
+              <path d="M24 0 L36 10" fill="none" stroke="#f0b56a" strokeWidth="1.2" />
+              <path d="M7 13 H22" stroke="#1c1917" strokeWidth="1.6" strokeLinecap="round" opacity="0.25" />
+            </g>
+          </g>
         </svg>
 
-        <div className="absolute flex flex-col items-center justify-center">
-          {isComplete ? (
-            <CheckCircle2 className="w-12 h-12 text-emerald-500 animate-scale-in" />
-          ) : isError ? (
-            <AlertCircle className="w-12 h-12 text-rose-500 animate-scale-in" />
-          ) : isPaused ? (
-            <span className="text-sm font-black text-amber-600 uppercase tracking-wider">Paused</span>
-          ) : (
-            <span className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
-              {Math.round(progress)}%
-            </span>
-          )}
+        <div className="send-progress-pins">
+          <span>You</span>
+          <span>Link arrives</span>
         </div>
       </div>
 
-      {/* File Info */}
-      <div className="w-full max-w-sm space-y-3">
-        <h3 className="text-sm sm:text-base font-bold text-slate-900 truncate mb-1">{fileName}</h3>
-        
-        {isComplete ? (
-          <p className="text-xs sm:text-sm font-bold text-emerald-600 mt-1">Files uploaded successfully to Cloud Vault!</p>
-        ) : isError ? (
-          <p className="text-xs sm:text-sm font-bold text-rose-600 mt-1">Upload failed. Please retry.</p>
-        ) : progress >= 100 ? (
-          <p className="text-xs sm:text-sm font-black text-indigo-600 mt-1 flex items-center justify-center gap-1.5 animate-pulse">
-            <Sparkles className="w-4 h-4 text-indigo-500" />
-            <span>100% • Validating file integrity & securing in Cloud Vault...</span>
-          </p>
-        ) : (
-          <>
-            {/* Linear Bar with Shimmer */}
-            <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden my-2.5 border border-slate-200 animate-shimmer">
-              <div
-                className={`h-full transition-all duration-300 ease-out ${
-                  isPaused ? 'bg-amber-500' : 'bg-gradient-to-r from-indigo-500 via-purple-500 to-amber-400'
-                }`}
-                style={{ width: `${progress}%` }}
+      <div className="send-progress-body">
+        <div className="send-progress-top">
+          <div className="min-w-0 flex-1">
+            <p className="send-progress-kicker">
+              <span className="send-progress-pulse" />
+              {statusLabel}
+            </p>
+            <h3 className="send-progress-title" title={fileName || 'Your file'}>
+              <FileText className="w-4 h-4 shrink-0 opacity-40" />
+              <span className="truncate">{fileName || 'Your file'}</span>
+            </h3>
+            <p className="send-progress-hint">{statusHint}</p>
+          </div>
+
+          <div className="send-progress-ring-wrap" aria-hidden="true">
+            <svg className="send-progress-ring" viewBox="0 0 128 128">
+              <circle cx="64" cy="64" r={ringR} className="send-progress-ring-track" />
+              <circle
+                cx="64"
+                cy="64"
+                r={ringR}
+                className={`send-progress-ring-value ${isError ? 'is-error' : ''} ${isPaused ? 'is-paused' : ''}`}
+                style={{
+                  strokeDasharray: ringC,
+                  strokeDashoffset: isError ? ringC : ringOffset,
+                }}
               />
-            </div>
-
-            {/* Metrics Bar */}
-            <div className="grid grid-cols-2 gap-2 p-2.5 bg-slate-50 border border-slate-200/80 rounded-xl text-xs font-semibold text-slate-600 mb-3">
-              <div className="flex items-center gap-1.5">
-                <Zap className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                <span className="font-bold text-slate-900">{isPaused ? 'Paused' : uploadSpeed || '-- MB/s'}</span>
-              </div>
-              <div className="flex items-center gap-1.5 justify-end">
-                <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                <span>{isPaused ? 'Waiting' : timeRemaining || 'Estimating...'}</span>
-              </div>
-            </div>
-
-            {/* Real-time Hardware Telemetry Bar */}
-            {telemetry && (
-              <div className="flex items-center justify-between px-1 text-[11px] font-bold text-slate-400">
-                <span className="flex items-center gap-1 text-indigo-600">
-                  <Server className="w-3 h-3" />
-                  {telemetry.isDirect ? 'Direct 0-Hop Edge' : 'Proxy Accelerated'}
+            </svg>
+            <div className="send-progress-ring-label">
+              {isComplete ? (
+                <CheckCircle2 className="w-7 h-7 text-emerald-500" />
+              ) : isError ? (
+                <AlertCircle className="w-7 h-7 text-rose-500" />
+              ) : (!speedKnown && safeProgress === 0 && !isPaused) ? (
+                <span className="send-progress-pct">…</span>
+              ) : (
+                <span className="send-progress-pct">
+                  <span className="tabular-nums">{Math.round(safeProgress)}</span>
+                  <small>%</small>
                 </span>
-                <span>
-                  📦 {telemetry.chunkSizeMB || '16'}MB Dynamic Chunk
-                </span>
-              </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {isOffline && (
+          <div className="mt-4 flex items-center gap-2 rounded-2xl bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+            <WifiOff className="w-4 h-4 shrink-0" />
+            Connection dropped. It resumes when you are back online.
+          </div>
+        )}
+
+        {!isComplete && !isError && (
+          <div className="send-progress-stats">
+            <div className="send-progress-stat">
+              <p>
+                <Zap className="w-3.5 h-3.5" /> Speed
+              </p>
+              <strong>{isPaused ? 'Paused' : speedKnown ? uploadSpeed : 'Calculating'}</strong>
+            </div>
+            <div className="send-progress-stat">
+              <p>
+                <Clock className="w-3.5 h-3.5" /> Left
+              </p>
+              <strong>{isPaused ? 'Waiting' : etaKnown ? timeRemaining : 'Calculating'}</strong>
+            </div>
+          </div>
+        )}
+
+        {!isComplete && (
+          <div className="send-progress-actions">
+            {onRunInBackground && !isError && (
+              <button type="button" onClick={onRunInBackground} className="send-progress-btn-secondary">
+                <PlusCircle className="w-4 h-4" />
+                Send another while this finishes
+              </button>
             )}
-
-            {/* Action Buttons: Background Multitask & Cancel Transfer */}
-            <div className="flex flex-col gap-2 mt-3 w-full">
-              {onRunInBackground && !isComplete && !isError && (
-                <button
-                  type="button"
-                  onClick={onRunInBackground}
-                  className="w-full py-2.5 px-4 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-2xs active:scale-98 cursor-pointer"
-                >
-                  <PlusCircle className="w-4 h-4 text-indigo-600" /> Upload Another File in Background
-                </button>
-              )}
-
-              {onCancel && !isComplete && !isError && (
-                <button
-                  type="button"
-                  onClick={onCancel}
-                  className="w-full py-2.5 px-4 bg-slate-50 hover:bg-rose-50 border border-slate-200 hover:border-rose-200 text-slate-600 hover:text-rose-700 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-2xs active:scale-98 cursor-pointer"
-                >
-                  <X className="w-4 h-4 text-rose-500" /> Cancel Transfer & Edit Files
-                </button>
-              )}
-            </div>
-          </>
+            {isError && onRetry && (
+              <button type="button" onClick={onRetry} className="send-progress-btn-secondary">
+                Try again
+              </button>
+            )}
+            {!isError && !isConfirming && onPause && (
+              <button type="button" onClick={onPause} className="send-progress-btn-cancel">
+                {isPaused ? 'Resume' : 'Pause'}
+              </button>
+            )}
+            {onCancel && (
+              <button type="button" onClick={onCancel} className="send-progress-btn-cancel">
+                <X className="w-4 h-4" />
+                Cancel
+              </button>
+            )}
+          </div>
         )}
       </div>
-
     </div>
   );
 }

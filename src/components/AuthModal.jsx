@@ -2,9 +2,16 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { persistUserSession, resetPasswordForEmail } from '../lib/authSession';
 import { X, Lock, Mail, Loader2, Sparkles, CheckCircle, ArrowRight, ShieldCheck, KeyRound, User, AlertCircle } from 'lucide-react';
+import Portal from './Portal';
+
+function normalizeMode(mode) {
+  if (mode === 'signup' || mode === 'register' || mode === 'create') return 'register';
+  if (mode === 'forgot') return 'forgot';
+  return 'login';
+}
 
 export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAuthSuccess }) {
-  const [mode, setMode] = useState(initialMode); // 'login' | 'register' | 'forgot' | 'google-prompt'
+  const [mode, setMode] = useState(() => normalizeMode(initialMode));
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
@@ -16,55 +23,40 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
 
   useEffect(() => {
     if (!isOpen) return;
+    setMode(normalizeMode(initialMode));
+    setError(null);
+    setSuccessMsg('');
     const handleKeyDown = (e) => {
       if (e.key === 'Escape') onClose();
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
+  }, [isOpen, initialMode, onClose]);
 
   if (!isOpen) return null;
 
-  // Handle Google Direct 1-Click Sign-In
-  function handleGoogleSignIn() {
+  // Real Google OAuth via Supabase
+  async function handleGoogleSignIn() {
     setError(null);
-    setMode('google-prompt');
+    setGoogleLoading(true);
+    try {
+      const { error: oauthError } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}/`,
+          queryParams: { access_type: 'offline', prompt: 'consent' },
+        },
+      });
+      if (oauthError) throw oauthError;
+    } catch (err) {
+      setGoogleLoading(false);
+      setError(err.message || 'Google sign-in is unavailable. Use email instead.');
+    }
   }
 
-  // Handle Google Profile Fast Sign-In
   async function handleGoogleDirectComplete(e) {
     e.preventDefault();
-    if (!email) {
-      setError('Please provide your Google email address');
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    try {
-      const googleUser = {
-        id: 'usr_g_' + btoa(email).replace(/=/g, ''),
-        email: email.trim().toLowerCase(),
-        user_metadata: {
-          fullName: fullName.trim() || email.split('@')[0],
-          provider: 'google',
-          avatarUrl: `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(fullName || email)}`,
-          plan: email.toLowerCase().includes('iprudhvi') ? 'pro' : 'free',
-          role: email.toLowerCase().includes('iprudhvi') ? 'admin' : 'user',
-          theme: 'indigo',
-        },
-      };
-
-      const persisted = await persistUserSession(googleUser);
-      setSuccessMsg(`Signed in with Google as ${googleUser.user_metadata.fullName}!`);
-      setTimeout(() => {
-        onAuthSuccess(persisted);
-        onClose();
-      }, 500);
-    } catch (err) {
-      setError(err.message || 'Google sign in failed');
-    } finally {
-      setLoading(false);
-    }
+    setError('Use Continue with Google for secure OAuth sign-in.');
   }
 
   // 1-Click Master Admin Login (Prudhvi)
@@ -132,26 +124,11 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
         });
 
         if (err) {
-          // If invalid credentials or user not found, allow 1-click account creation
-          if (err.message?.includes('Invalid login credentials') || err.message?.includes('Email not confirmed') || err.message?.includes('User not found')) {
-            // Auto fallback: create account directly or offer 1-click create
-            const fallbackUser = {
-              id: 'usr_' + btoa(cleanEmail).replace(/=/g, ''),
-              email: cleanEmail,
-              user_metadata: {
-                fullName: cleanEmail.split('@')[0],
-                plan: cleanEmail.includes('iprudhvi') ? 'pro' : 'free',
-                role: cleanEmail.includes('iprudhvi') ? 'admin' : 'user',
-                theme: 'indigo',
-              },
-            };
-            const persisted = await persistUserSession(fallbackUser);
-            setSuccessMsg(`Welcome back, ${persisted.user_metadata.fullName}!`);
-            setTimeout(() => {
-              onAuthSuccess(persisted);
-              onClose();
-            }, 500);
-            return;
+          if (err.message?.includes('Email not confirmed')) {
+            throw new Error('Confirm the link in your email, then sign in.');
+          }
+          if (err.message?.includes('Invalid login credentials')) {
+            throw new Error('Wrong email or password. Create an account if you are new.');
           }
           throw err;
         }
@@ -177,23 +154,18 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
           },
         });
 
-        const activeUser = data?.user || {
-          id: 'usr_' + btoa(cleanEmail).replace(/=/g, ''),
-          email: cleanEmail,
-          user_metadata: {
-            fullName: fullName.trim() || cleanEmail.split('@')[0],
-            plan: cleanEmail.includes('iprudhvi') ? 'pro' : 'free',
-            role: cleanEmail.includes('iprudhvi') ? 'admin' : 'user',
-            theme: 'indigo',
-          },
-        };
-
-        const persisted = await persistUserSession(activeUser);
-        setSuccessMsg('Account created successfully! Welcome to iTransfer.');
+        if (err) throw err;
+        if (!data?.session) {
+          setSuccessMsg('Account created. Open the confirmation email, then sign in here.');
+          setMode('login');
+          return;
+        }
+        const persisted = await persistUserSession(data.user);
+        setSuccessMsg('Account created. You are signed in.');
         setTimeout(() => {
           onAuthSuccess(persisted);
           onClose();
-        }, 600);
+        }, 400);
       }
     } catch (err) {
       setError(err.message || 'Authentication error. Please check your credentials.');
@@ -203,9 +175,10 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
   }
 
   return (
+    <Portal>
     <div
       onClick={onClose}
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/70 backdrop-blur-md animate-fadeIn cursor-pointer"
+      className="fixed inset-0 z-[10000] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/70 backdrop-blur-md animate-fadeIn cursor-pointer"
     >
       <div
         onClick={(e) => e.stopPropagation()}
@@ -282,61 +255,6 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
             >
               Create Account
             </button>
-          </div>
-        )}
-
-        {/* 1-Click Google OAuth Button */}
-        {mode !== 'forgot' && mode !== 'google-prompt' && (
-          <div className="space-y-3 mb-5">
-            <button
-              type="button"
-              onClick={handleGoogleSignIn}
-              disabled={googleLoading || loading}
-              className="w-full py-2.5 px-4 bg-white hover:bg-slate-50 border border-slate-300/80 rounded-xl text-xs sm:text-sm font-bold text-slate-800 flex items-center justify-center gap-2.5 transition-all shadow-xs hover:shadow-md cursor-pointer active:scale-98"
-            >
-              {googleLoading ? (
-                <Loader2 className="w-4 h-4 animate-spin text-slate-500" />
-              ) : (
-                <svg className="w-4 h-4" viewBox="0 0 24 24">
-                  <path
-                    fill="#4285F4"
-                    d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                  />
-                  <path
-                    fill="#34A853"
-                    d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                  />
-                  <path
-                    fill="#FBBC05"
-                    d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
-                  />
-                  <path
-                    fill="#EA4335"
-                    d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
-                  />
-                </svg>
-              )}
-              <span>Continue with Google</span>
-            </button>
-
-            {/* 1-Click Master Admin Login Shortcut (Prudhvi) */}
-            <button
-              type="button"
-              onClick={handleQuickMasterLogin}
-              disabled={loading}
-              className="w-full py-2 px-3 bg-gradient-to-r from-indigo-50 to-purple-50 hover:from-indigo-100 hover:to-purple-100 border border-indigo-200 rounded-xl text-[11px] font-bold text-indigo-900 flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-2xs"
-            >
-              <ShieldCheck className="w-4 h-4 text-indigo-600" />
-              <span>1-Click Master Admin Login (Prudhvi)</span>
-            </button>
-
-            {/* Divider */}
-            <div className="relative flex items-center justify-center my-3">
-              <div className="w-full border-t border-slate-200" />
-              <span className="bg-white px-3 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                Or with email
-              </span>
-            </div>
           </div>
         )}
 
@@ -517,5 +435,6 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
 
       </div>
     </div>
+    </Portal>
   );
 }

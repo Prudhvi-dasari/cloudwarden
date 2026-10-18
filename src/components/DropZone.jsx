@@ -2,7 +2,7 @@ import { useState, useCallback, useRef } from 'react';
 import { useDropzone } from 'react-dropzone';
 import {
   UploadCloud, FilePlus, FolderPlus, ShieldCheck,
-  Zap, Lock, AlertTriangle, Layers, CheckCircle2
+  Zap, Lock, AlertTriangle, CheckCircle2
 } from 'lucide-react';
 
 const DANGEROUS_EXTENSIONS = new Set([
@@ -11,12 +11,11 @@ const DANGEROUS_EXTENSIONS = new Set([
   'ps1', 'ps2', 'apk'
 ]);
 
-export default function DropZone({ onFilesSelected, maxSizeBytes = 5 * 1024 * 1024 * 1024 }) {
+export default function DropZone({ onFilesSelected, variant = 'card' }) {
   const [securityAlert, setSecurityAlert] = useState(null);
   const fileInputRef = useRef(null);
   const folderInputRef = useRef(null);
 
-  // Security guard: blocks executable binaries and malicious payloads
   const filterSafeFiles = useCallback((rawFiles) => {
     const safe = [];
     const blocked = [];
@@ -30,7 +29,7 @@ export default function DropZone({ onFilesSelected, maxSizeBytes = 5 * 1024 * 10
     }
 
     if (blocked.length > 0) {
-      setSecurityAlert(`Security Guard: Blocked ${blocked.length} executable file(s) (.${blocked.map(n => n.split('.').pop()).join(', .')}) to prevent malware.`);
+      setSecurityAlert(`Blocked ${blocked.length} executable file(s) for your safety.`);
       setTimeout(() => setSecurityAlert(null), 8000);
     }
     return safe;
@@ -40,9 +39,7 @@ export default function DropZone({ onFilesSelected, maxSizeBytes = 5 * 1024 * 10
     (acceptedFiles) => {
       if (acceptedFiles?.length > 0) {
         const safeFiles = filterSafeFiles(acceptedFiles);
-        if (safeFiles.length > 0) {
-          onFilesSelected(safeFiles);
-        }
+        if (safeFiles.length > 0) onFilesSelected(safeFiles);
       }
     },
     [onFilesSelected, filterSafeFiles]
@@ -74,7 +71,7 @@ export default function DropZone({ onFilesSelected, maxSizeBytes = 5 * 1024 * 10
     if (e) e.stopPropagation();
     try {
       open();
-    } catch (err) {
+    } catch {
       fileInputRef.current?.click();
     }
   };
@@ -86,14 +83,7 @@ export default function DropZone({ onFilesSelected, maxSizeBytes = 5 * 1024 * 10
 
   return (
     <div className="w-full relative z-20">
-      {/* Hidden Native File & Folder Inputs */}
-      <input
-        ref={fileInputRef}
-        type="file"
-        multiple
-        className="hidden"
-        onChange={handleNativeFileChange}
-      />
+      <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleNativeFileChange} />
       <input
         ref={folderInputRef}
         type="file"
@@ -105,94 +95,122 @@ export default function DropZone({ onFilesSelected, maxSizeBytes = 5 * 1024 * 10
         onChange={handleFolderChange}
       />
 
-      {/* Security alert banner if malicious file dropped */}
       {securityAlert && (
-        <div className="w-full mb-3.5 p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold rounded-2xl flex items-center gap-2.5 shadow-sm animate-fadeIn">
-          <AlertTriangle className="w-4 h-4 shrink-0 text-rose-600" />
+        <div className="w-full mb-3.5 p-3 bg-[#c47a7a]/15 border border-[#c47a7a]/40 text-[#f5f0e8] text-xs font-semibold rounded-2xl flex items-center gap-2.5 animate-fadeIn">
+          <AlertTriangle className="w-4 h-4 shrink-0 text-[#c47a7a]" />
           <span className="flex-1 leading-snug">{securityAlert}</span>
         </div>
       )}
 
-      {/* Modern, Tactile Drop Area */}
-      <div
-        {...getRootProps()}
-        onClick={triggerFileSelect}
-        className={`group relative rounded-3xl border-2 border-dashed transition-all duration-200 cursor-pointer p-6 sm:p-10 text-center select-none ${
-          isDragActive
-            ? 'border-indigo-600 bg-indigo-50/70 shadow-xl shadow-indigo-500/10 scale-[1.01]'
-            : 'border-slate-300/90 hover:border-indigo-500 bg-white hover:bg-slate-50/50 shadow-xl shadow-slate-900/5'
-        }`}
-      >
-        <input {...getInputProps()} />
-
-        {/* Central Icon Badge */}
-        <div className="flex items-center justify-center mb-4">
-          <div className={`w-16 h-16 sm:w-20 sm:h-20 rounded-2xl flex items-center justify-center transition-all duration-300 shadow-xs ${
-            isDragActive
-              ? 'bg-indigo-600 text-white scale-110 shadow-lg shadow-indigo-600/30'
-              : 'bg-indigo-50 text-indigo-600 border border-indigo-100 group-hover:scale-105 group-hover:bg-indigo-600 group-hover:text-white group-hover:border-transparent'
-          }`}>
-            <UploadCloud className="w-8 h-8 sm:w-10 sm:h-10 stroke-[2.2]" />
-          </div>
-        </div>
-
-        {/* Heading & Subtitle */}
-        <div className="space-y-1.5 mb-6">
-          <h3 className="text-base sm:text-lg font-bold text-slate-900 tracking-tight">
-            {isDragActive ? 'Release to upload your files' : 'Drop your files or folders here'}
-          </h3>
-          <p className="text-xs sm:text-sm text-slate-500 font-medium max-w-sm mx-auto leading-relaxed">
-            Fast, end-to-end encrypted transfer. Upload videos, archives, or project assets up to 5 GB free.
-          </p>
-        </div>
-
-        {/* Action Buttons Hub */}
-        <div
-          onClick={(e) => e.stopPropagation()}
-          className="flex flex-col sm:flex-row items-center justify-center gap-2.5 max-w-xs sm:max-w-md mx-auto"
-        >
-          <button
-            type="button"
+      {variant === 'orbit' ? (
+        <div className="flex flex-col items-center">
+          <div
+            {...getRootProps()}
             onClick={triggerFileSelect}
-            className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs sm:text-sm font-bold flex items-center justify-center gap-2 shadow-sm shadow-indigo-600/25 transition-all active:scale-98 cursor-pointer"
+            role="button"
+            aria-label="Start, add files"
+            className={`relative w-[260px] h-[260px] sm:w-[340px] sm:h-[340px] cursor-pointer select-none orbit-breathe ${
+              isDragActive ? 'scale-105' : ''
+            } transition-transform duration-300`}
           >
-            <FilePlus className="w-4 h-4" />
-            <span>Browse Files</span>
-          </button>
-
+            <input {...getInputProps()} />
+            <div className="absolute inset-0 rounded-full border border-[rgba(196,165,116,0.25)]" />
+            <div
+              className={`absolute inset-[14px] rounded-full border-[10px] transition-colors ${
+                isDragActive ? 'border-[#f5f0e8]' : 'border-[#c4a574]'
+              }`}
+            />
+            <div className="absolute inset-[42px] rounded-full bg-[#141311] border border-white/10 flex flex-col items-center justify-center text-[#c4a574] shadow-[inset_0_0_40px_rgba(196,165,116,0.08)]">
+              <span className="font-display text-4xl sm:text-5xl font-semibold tracking-tight text-[#f5f0e8]">
+                {isDragActive ? 'Drop' : 'Start'}
+              </span>
+              <span className="mt-2 text-[11px] font-medium text-[#6b665c] uppercase tracking-[0.18em]">
+                Transfer
+              </span>
+            </div>
+          </div>
+          <p className="mt-5 text-sm font-medium text-[#a39e94]">
+            Click or drag files into the ring
+          </p>
           <button
             type="button"
             onClick={triggerFolderSelect}
-            className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs sm:text-sm font-bold flex items-center justify-center gap-2 border border-slate-200/80 transition-all active:scale-98 cursor-pointer"
+            className="mt-3 text-sm font-semibold text-[#c4a574] underline-offset-4 hover:underline cursor-pointer"
           >
-            <FolderPlus className="w-4 h-4 text-slate-600" />
-            <span>Select Folder</span>
+            or choose a folder
           </button>
         </div>
+      ) : (
+        <div
+          {...getRootProps()}
+          onClick={triggerFileSelect}
+          className={`group relative rounded-[28px] bg-white text-[#1c1917] shadow-[0_30px_70px_-28px_rgba(20,16,70,0.55)] cursor-pointer p-6 sm:p-8 text-center select-none transition-transform duration-300 ${
+            isDragActive ? 'scale-[1.02]' : ''
+          }`}
+        >
+          <input {...getInputProps()} />
 
-        {/* Trust & Spec Badges */}
-        <div className="mt-6 pt-5 border-t border-slate-100 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-[11px] font-semibold text-slate-500">
-          <span className="inline-flex items-center gap-1.5 text-slate-700">
-            <Zap className="w-3.5 h-3.5 text-amber-500" />
-            <span>Up to 5 GB Free</span>
-          </span>
-          <span className="w-1 h-1 rounded-full bg-slate-300 hidden sm:inline" />
-          <span className="inline-flex items-center gap-1.5 text-slate-700">
-            <Lock className="w-3.5 h-3.5 text-indigo-600" />
-            <span>TLS 1.3 / AES-256</span>
-          </span>
-          <span className="w-1 h-1 rounded-full bg-slate-300 hidden sm:inline" />
-          <span className="inline-flex items-center gap-1.5 text-slate-700">
-            <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-            <span>Malware Scanned</span>
-          </span>
-          <span className="w-1 h-1 rounded-full bg-slate-300 hidden sm:inline" />
-          <span className="inline-flex items-center gap-1.5 text-slate-700">
-            <CheckCircle2 className="w-3.5 h-3.5 text-sky-600" />
-            <span>No Account Required</span>
-          </span>
+          <div className={`drop-orbit ${isDragActive ? 'is-hot' : ''}`}>
+            <svg className="drop-orbit-svg" viewBox="0 0 120 120" aria-hidden="true">
+              <circle className="orbit-dash" cx="60" cy="60" r="54" />
+              <circle className="orbit-dash inner" cx="60" cy="60" r="46" />
+            </svg>
+            <span className="drop-orbit-core">
+              <UploadCloud className="w-7 h-7 sm:w-8 sm:h-8 stroke-[2.2]" />
+            </span>
+          </div>
+
+          <div className="space-y-1.5 mb-6">
+            <h3 className="text-base sm:text-lg font-display font-semibold text-[#1c1917] tracking-tight">
+              {isDragActive ? 'Release to add your files' : 'Drop files or folders here'}
+            </h3>
+            <p className="text-xs sm:text-sm text-[#57534e] font-medium max-w-sm mx-auto leading-relaxed">
+              Or browse. Folders work too. Up to 6 GB, no account.
+            </p>
+          </div>
+
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="flex flex-col sm:flex-row items-center justify-center gap-2.5 max-w-xs sm:max-w-md mx-auto"
+          >
+            <button
+              type="button"
+              onClick={triggerFileSelect}
+              className="w-full sm:w-auto px-5 py-2.5 rounded-full bg-[#1c1917] text-white text-xs sm:text-sm font-semibold flex items-center justify-center gap-2 cursor-pointer hover:bg-black"
+            >
+              <FilePlus className="w-4 h-4" />
+              Browse Files
+            </button>
+            <button
+              type="button"
+              onClick={triggerFolderSelect}
+              className="w-full sm:w-auto px-5 py-2.5 rounded-full bg-[#f4f1ea] hover:bg-[#ebe6dc] text-[#1c1917] text-xs sm:text-sm font-semibold flex items-center justify-center gap-2 border border-black/10 cursor-pointer"
+            >
+              <FolderPlus className="w-4 h-4" />
+              Select Folder
+            </button>
+          </div>
+
+          <div className="mt-6 pt-5 border-t border-black/8 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-[11px] font-semibold text-[#78716c]">
+            <span className="inline-flex items-center gap-1.5">
+              <Zap className="w-3.5 h-3.5" />
+              6 GB free
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <Lock className="w-3.5 h-3.5" />
+              Encrypted
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <ShieldCheck className="w-3.5 h-3.5" />
+              No ads
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              No signup
+            </span>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

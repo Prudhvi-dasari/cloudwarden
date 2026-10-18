@@ -5,11 +5,11 @@ import {
   Image as ImageIcon, Film, Music, FileText, ArrowRight, RefreshCw,
   PlusCircle, Lock, User, UserCheck, LogIn, Edit3
 } from 'lucide-react';
-import { publicSupabase } from '../lib/supabase';
-import { activeStorageProvider } from '../lib/storageProvider';
+import { supabase } from '../lib/supabase';
 import { useToast } from './Toast';
 import FilePreviewModal from './FilePreviewModal';
-import { getGuestTransferIds } from '../lib/guestSession';
+import { deleteOwnedTransfer, loadOwnedTransfers, renameOwnedTransfer } from '../lib/guestSession';
+import Portal from './Portal';
 
 function formatBytes(bytes) {
   if (!bytes || bytes === 0) return '0 Bytes';
@@ -51,60 +51,10 @@ export default function MyUploadsDrawer({ isOpen, onClose, user, onOpenAuth, onS
 
     setLoading(true);
     try {
-      const isValidUUID = (str) => typeof str === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
-      const isUidValid = user.id && isValidUUID(user.id);
-
-      let query = publicSupabase.from('transfers').select('*');
-      if (isUidValid && user.email) {
-        query = query.or(`user_id.eq.${user.id},sender_email.eq.${user.email}`);
-      } else if (user.email) {
-        query = query.eq('sender_email', user.email);
-      } else if (isUidValid) {
-        query = query.eq('user_id', user.id);
-      }
-
-      const { data, error } = await query
-        .order('created_at', { ascending: false })
-        .limit(50);
-
-      if (error) throw error;
-
-      const allRows = data || [];
-
-      // Group by share_id
-      const grouped = {};
-      allRows.forEach((row) => {
-        if (!grouped[row.share_id]) {
-          grouped[row.share_id] = {
-            shareId: row.share_id,
-            createdAt: row.created_at,
-            expiresAt: row.expires_at,
-            subject: row.subject,
-            message: row.message,
-            passwordHash: row.password_hash,
-            transferType: row.transfer_type || 'link',
-            senderEmail: row.sender_email,
-            files: [],
-            totalSize: 0,
-            downloadCount: row.download_count || 0,
-          };
-        }
-        grouped[row.share_id].files.push({
-          id: row.id,
-          name: row.file_name,
-          size: row.file_size,
-          path: row.file_path,
-          type: row.content_type,
-          file_name: row.file_name,
-          file_size: row.file_size,
-          file_path: row.file_path,
-          content_type: row.content_type,
-          share_id: row.share_id,
-        });
-        grouped[row.share_id].totalSize += (row.file_size || 0);
-      });
-
-      setTransfers(Object.values(grouped));
+      const { data: sessionWrap } = await supabase.auth.getSession();
+      const accessToken = sessionWrap?.session?.access_token;
+      const rows = await loadOwnedTransfers(accessToken);
+      setTransfers(rows);
     } catch (err) {
       console.warn('Failed to load user uploads:', err);
       setTransfers([]);
@@ -125,10 +75,12 @@ export default function MyUploadsDrawer({ isOpen, onClose, user, onOpenAuth, onS
     const newName = prompt('Enter new transfer name:', currentName || '');
     if (!newName || !newName.trim() || newName.trim() === currentName) return;
     try {
-      await publicSupabase
-        .from('transfers')
-        .update({ subject: newName.trim() })
-        .eq('share_id', shareId);
+      const { data: sessionWrap } = await supabase.auth.getSession();
+      await renameOwnedTransfer({
+        shareId,
+        subject: newName.trim(),
+        accessToken: sessionWrap?.session?.access_token,
+      });
       setTransfers(prev => prev.map(t => t.shareId === shareId ? { ...t, subject: newName.trim() } : t));
       addToast('Transfer renamed successfully ✏️', 'success');
     } catch (e) {
@@ -139,23 +91,23 @@ export default function MyUploadsDrawer({ isOpen, onClose, user, onOpenAuth, onS
   const handleDeleteTransfer = async (t) => {
     if (!confirm(`Permanently delete this transfer (${t.files.length} files)?`)) return;
     try {
-      for (const f of t.files) {
-        if (f.path) {
-          await activeStorageProvider.deleteFile(f.path);
-        }
-      }
-      await publicSupabase.from('transfers').delete().eq('share_id', t.shareId);
+      const { data: sessionWrap } = await supabase.auth.getSession();
+      await deleteOwnedTransfer({
+        shareId: t.shareId,
+        accessToken: sessionWrap?.session?.access_token,
+      });
       setTransfers(prev => prev.filter(item => item.shareId !== t.shareId));
       addToast('Transfer permanently deleted 🗑️', 'info');
     } catch (err) {
-      alert('Delete failed: ' + err.message);
+      addToast(err.message || 'Delete failed.', 'error');
     }
   };
 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/60 backdrop-blur-xs animate-fadeIn">
+    <Portal>
+    <div className="fixed inset-0 z-[10000] flex justify-end bg-slate-950/60 backdrop-blur-xs animate-fadeIn">
       
       {/* Background Click to Dismiss */}
       <div className="fixed inset-0" onClick={onClose} />
@@ -341,7 +293,13 @@ export default function MyUploadsDrawer({ isOpen, onClose, user, onOpenAuth, onS
 
                           {/* Quick Preview Button */}
                           <button
-                            onClick={() => setPreviewingFile({ ...file, share_id: t.shareId })}
+                            onClick={() => setPreviewingFile({
+                              id: file.id,
+                              file_name: file.name,
+                              file_size: file.size,
+                              content_type: file.type,
+                              share_id: t.shareId,
+                            })}
                             className="px-2 py-1 rounded-lg bg-white border border-slate-200 hover:border-indigo-400 text-slate-700 font-bold text-[11px] flex items-center gap-1 shrink-0 shadow-2xs"
                             title="Preview file"
                           >
@@ -428,5 +386,6 @@ export default function MyUploadsDrawer({ isOpen, onClose, user, onOpenAuth, onS
         />
       )}
     </div>
+    </Portal>
   );
 }

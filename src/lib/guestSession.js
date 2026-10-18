@@ -3,7 +3,6 @@
  * Generates secure, high-entropy Guest identifiers (e.g. 'Guest-X7K92')
  * and handles guest-to-registered-user transfer migration.
  */
-import { publicSupabase } from './supabase';
 
 const GUEST_ID_KEY = 'itransfer_guest_id';
 const GUEST_TRANSFERS_KEY = 'itransfer_guest_transfers';
@@ -71,42 +70,154 @@ export function getGuestTransferIds() {
   }
 }
 
-/**
- * Migrate guest transfers to a newly registered / logged-in user
- */
-export async function migrateGuestTransfersToUser(user) {
-  if (!user || !user.email) return { migratedCount: 0 };
+const SECRET_KEY = 'itransfer_transfer_secrets';
 
-  const guestId = getOrCreateGuestId();
-  const guestShareIds = getGuestTransferIds();
-
-  if (guestShareIds.length === 0) return { migratedCount: 0 };
-
+function readSecrets() {
   try {
-    const isValidUUID = (str) => typeof str === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
-    const validUserId = user.id && isValidUUID(user.id) ? user.id : null;
-
-    // Update transfers matching either the guest email tag or tracked guest share IDs
-    const { data, error } = await publicSupabase
-      .from('transfers')
-      .update({
-        user_id: validUserId,
-        sender_email: user.email,
-      })
-      .in('share_id', guestShareIds);
-
-    if (error) {
-      console.warn('Guest transfer migration note:', error.message);
-    }
-
-    // Clear guest transfer tracking once successfully migrated
-    try {
-      localStorage.removeItem(GUEST_TRANSFERS_KEY);
-    } catch (e) {}
-
-    return { migratedCount: guestShareIds.length };
-  } catch (err) {
-    console.error('Failed to migrate guest transfers:', err);
-    return { migratedCount: 0, error: err.message };
+    const raw = localStorage.getItem(SECRET_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
   }
+}
+
+function writeSecrets(secrets) {
+  try {
+    localStorage.setItem(SECRET_KEY, JSON.stringify(secrets));
+  } catch {
+    /* private mode */
+  }
+}
+
+/** Keep the claim token and delete token for the browser that created the transfer. */
+export function saveTransferSecrets(shareId, { claimToken, deleteToken } = {}) {
+  if (!shareId || (!claimToken && !deleteToken)) return;
+  const secrets = readSecrets();
+  const current = secrets[shareId] || {};
+  secrets[shareId] = {
+    claimToken: claimToken || current.claimToken || null,
+    deleteToken: deleteToken || current.deleteToken || null,
+  };
+  writeSecrets(secrets);
+}
+
+export function getTransferSecrets(shareId) {
+  return readSecrets()[shareId] || null;
+}
+
+/**
+ * Claim guest transfers with one-time tokens. A share id or email is not accepted.
+ */
+export async function claimGuestTransfers(accessToken) {
+  if (!accessToken) return { claimed: 0 };
+  const secrets = readSecrets();
+  let claimed = 0;
+  for (const [shareId, value] of Object.entries(secrets)) {
+    if (!value?.claimToken) continue;
+    const res = await fetch('/api/r2?action=claim', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({ token: value.claimToken }),
+    });
+    if (!res.ok) continue;
+    secrets[shareId] = { ...value, claimToken: null };
+    claimed += 1;
+  }
+  writeSecrets(secrets);
+  return { claimed };
+}
+
+export async function deleteOwnedTransfer({ shareId, accessToken } = {}) {
+  const secrets = shareId ? getTransferSecrets(shareId) : null;
+  const headers = { 'Content-Type': 'application/json' };
+  if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
+  const res = await fetch('/api/r2?action=delete-own', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      shareId,
+      token: secrets?.deleteToken || undefined,
+    }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'This transfer could not be deleted.');
+  if (shareId && secrets) {
+    const all = readSecrets();
+    if (all[shareId]) {
+      all[shareId] = { ...all[shareId], deleteToken: null };
+      writeSecrets(all);
+    }
+  }
+  return data;
+}
+
+/**
+ * Older callers passed a share-id list. Ownership now requires the claim token.
+ */
+export async function loadOwnedTransfers(accessToken) {
+  if (!accessToken) return [];
+  const res = await fetch('/api/r2?action=my-transfers', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'Could not load transfers.');
+  return Array.isArray(data.transfers) ? data.transfers : [];
+}
+
+export async function renameOwnedTransfer({ shareId, subject, accessToken }) {
+  const res = await fetch('/api/r2?action=rename-transfer', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+    },
+    body: JSON.stringify({ shareId, subject }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'This transfer could not be renamed.');
+  return data;
+}
+
+async function accountRequest(action, { accessToken, method = 'GET', body } = {}) {
+  const res = await fetch(`/api/r2?action=${action}`, {
+    method,
+    headers: {
+      ...(body ? { 'Content-Type': 'application/json' } : {}),
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'That request could not be completed.');
+  return data;
+}
+
+export function createFileRequest({ accessToken, title, instructions }) {
+  return accountRequest('create-request', {
+    accessToken,
+    method: 'POST',
+    body: { title, instructions },
+  });
+}
+
+export function loadFileRequests(accessToken) {
+  return accountRequest('my-requests', { accessToken });
+}
+
+export function closeFileRequest({ accessToken, requestId }) {
+  return accountRequest('close-request', {
+    accessToken,
+    method: 'POST',
+    body: { requestId },
+  });
+}
+
+export async function migrateGuestTransfersToUser(user, accessToken) {
+  if (!user || !accessToken) return { migratedCount: 0 };
+  const result = await claimGuestTransfers(accessToken);
+  return { migratedCount: result.claimed };
 }

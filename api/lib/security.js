@@ -130,55 +130,20 @@ export function generateSecureShareId(length = 10) {
 /**
  * Validate Tier Limits & Expiry
  */
-export function validateTierConstraints({ fileSize = 0, expiryHours = 168, userPlan = 'free' }) {
-  const planLimits = {
-    free: {
-      maxBytes: 5 * 1024 * 1024 * 1024, // 5 GB
-      allowedHours: [1, 24, 72, 168], // Max 7 days
-      maxDays: 7,
-      name: 'Free Tier',
-    },
-    trial: {
-      maxBytes: 15 * 1024 * 1024 * 1024, // 15 GB
-      allowedHours: [1, 24, 72, 168, 336], // Max 14 days
-      maxDays: 14,
-      name: '7-Day Pro Trial',
-    },
-    pro: {
-      maxBytes: 25 * 1024 * 1024 * 1024, // 25 GB
-      allowedHours: [1, 24, 72, 168, 720, 0], // Max 30 days & Permanent
-      maxDays: 30,
-      name: 'iTransfer Pro',
-    },
-  };
-
-  const limit = planLimits[userPlan] || planLimits.free;
-
-  // 1. File Size Verification
-  if (fileSize > limit.maxBytes) {
-    const maxGB = Math.round(limit.maxBytes / (1024 * 1024 * 1024));
+export function validateTierConstraints({ fileSize = 0, expiryHours = 168 }) {
+  const maxBytes = 6_000_000_000;
+  if (fileSize > maxBytes) {
     return {
       valid: false,
-      error: `File size exceeds your ${limit.name} limit (${maxGB} GB). Upgrade to Pro for up to 25 GB transfers.`,
+      error: 'This transfer is larger than the 6 GB free limit.',
     };
   }
 
-  // 2. Expiration Verification
-  const isAllowedExpiry = limit.allowedHours.includes(Number(expiryHours));
-  if (!isAllowedExpiry && Number(expiryHours) > 0) {
-    const maxHours = Math.max(...limit.allowedHours.filter(h => h > 0));
-    if (Number(expiryHours) > maxHours) {
-      return {
-        valid: false,
-        error: `Expiration of ${expiryHours}h exceeds your ${limit.name} retention limit (${limit.maxDays} days).`,
-      };
-    }
-  }
-
-  if (Number(expiryHours) === 0 && userPlan !== 'pro') {
+  const hours = Number(expiryHours);
+  if (!Number.isFinite(hours) || hours <= 0 || hours > 168) {
     return {
       valid: false,
-      error: 'Permanent storage vault (never expire) is an exclusive iTransfer Pro feature.',
+      error: 'Links can last at most 7 days. Longer retention is not available yet.',
     };
   }
 

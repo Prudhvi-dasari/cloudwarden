@@ -1,17 +1,13 @@
 {
   "name": "iTransfer — Fast & Secure File Sharing",
   "short_name": "iTransfer",
-  "description": "Send large files up to 25GB at gigabit speed. AES-256 encrypted link sharing, direct email transfer, and zero-compression P2P device transfer.",
+  "description": "Send large files free up to 6 GB. Password protection, expiry up to 7 days, and device transfer. Larger plans are not available yet.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0a1744",
-  "theme_color": "#4f46e5",
+  "background_color": "#0c0b0a",
+  "theme_color": "#0c0b0a",
   "orientation": "portrait-primary",
-  "categories": [
-    "productivity",
-    "utilities",
-    "business"
-  ],
+  "categories": ["productivity", "utilities", "business"],
   "icons": [
     {
       "src": "/favicon.svg",
@@ -25,7 +21,7 @@
       "name": "Send Files",
       "short_name": "Send",
       "description": "Upload and share large files instantly",
-      "url": "/?action=send",
+      "url": "/",
       "icons": [{ "src": "/favicon.svg", "sizes": "any" }]
     },
     {

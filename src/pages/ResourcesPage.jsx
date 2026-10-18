@@ -7,152 +7,91 @@ import ProfileModal from '../components/ProfileModal';
 import { getStoredUser, clearUserSession } from '../lib/authSession';
 import {
   BookOpen, Video, Smartphone, Laptop, Mail, Link2,
-  ShieldCheck, ArrowRight, Sparkles, Send, HelpCircle, FileText
+  ArrowRight, ShieldCheck, Hash, QrCode, Scale
 } from 'lucide-react';
+
+const GUIDES = [
+  { title: 'Send large video without compression', path: '/send-large-video', tag: 'Media', icon: Video },
+  { title: 'iPhone to Windows', path: '/iphone-to-windows', tag: 'Devices', icon: Smartphone },
+  { title: 'Android to Mac', path: '/android-to-mac', tag: 'Devices', icon: Laptop },
+  { title: 'Send files by email', path: '/send-files-by-email', tag: 'Email', icon: Mail },
+  { title: 'Create sharing links', path: '/create-file-sharing-link', tag: 'Links', icon: Link2 },
+  { title: 'Request files from clients', path: '/file-request', tag: 'Workflow', icon: BookOpen },
+  { title: 'Send files on WhatsApp', path: '/send-files-whatsapp', tag: 'India', icon: Mail },
+  { title: 'WeTransfer alternative (India)', path: '/best-wetransfer-alternative-india', tag: 'Compare', icon: Scale },
+  { title: 'QR device transfer', path: '/qr-transfer', tag: 'P2P', icon: QrCode },
+  { title: 'Checksum verifier', path: '/checksum', tag: 'Trust', icon: Hash },
+  { title: 'Security overview', path: '/security', tag: 'Trust', icon: ShieldCheck },
+  { title: 'Full comparison', path: '/compare', tag: 'Compare', icon: Scale },
+];
 
 export default function ResourcesPage() {
   const [user, setUser] = useState(() => getStoredUser());
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [authMode, setAuthMode] = useState('login');
   const [isProfileOpen, setIsProfileOpen] = useState(false);
-  const [currentTheme, setCurrentTheme] = useState(() => getStoredUser()?.user_metadata?.theme || 'indigo');
-
-  const guides = [
-    {
-      title: 'How to Send Large Video Files Without Compression',
-      desc: 'Learn how to share 4K videos, ProRes files, and wedding footage without quality loss or file size limits.',
-      path: '/send-large-video',
-      tag: 'Video & Media',
-      icon: Video,
-    },
-    {
-      title: 'Transfer Files Between iPhone and Windows PC',
-      desc: 'Seamlessly send photos, videos, and PDFs between iOS devices and Windows computers without cables or iTunes.',
-      path: '/iphone-to-windows',
-      tag: 'Cross-Platform',
-      icon: Smartphone,
-    },
-    {
-      title: 'Transfer Files Between Android and Mac',
-      desc: 'Overcome Android File Transfer bugs and wirelessly stream high-res files straight into macOS Finder.',
-      path: '/android-to-mac',
-      tag: 'Cross-Platform',
-      icon: Laptop,
-    },
-    {
-      title: 'How to Send Files by Email Without 25MB Limits',
-      desc: 'Bypass Gmail, Outlook, and Apple Mail attachment restrictions with automated high-speed email dispatch.',
-      path: '/send-files-by-email',
-      tag: 'Email Delivery',
-      icon: Mail,
-    },
-    {
-      title: 'Create Secure Shareable Download Links',
-      desc: 'Best practices for setting custom expiration dates, password protection, and tracking link downloads.',
-      path: '/create-file-sharing-link',
-      tag: 'Security & Links',
-      icon: Link2,
-    },
-    {
-      title: 'How to Collect & Request Files from Clients',
-      desc: 'Create secure upload portals and drop links so clients can send large files directly to your storage without signing up.',
-      path: '/file-request',
-      tag: 'Client Workflow',
-      icon: BookOpen,
-    },
-  ];
 
   return (
-    <div className="min-h-screen bg-slate-50/50 flex flex-col font-sans text-slate-900 bg-dot-grid relative overflow-hidden">
-      
-      <div className="ambient-orb-1" />
-      <div className="ambient-orb-2" />
-
-      <Navbar
+    <div className="min-h-screen flex flex-col text-white relative overflow-hidden bg-[#07080d]">
+      <div className="page-sky" aria-hidden="true" />
+<Navbar
         user={user}
         onOpenAuth={(mode) => { setAuthMode(mode); setIsAuthOpen(true); }}
         onOpenProfile={() => setIsProfileOpen(true)}
       />
 
       <main className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 py-12 sm:py-16 z-10 relative">
-        
-        {/* Header */}
-        <div className="text-center max-w-2xl mx-auto mb-14 animate-fadeIn">
-          <div className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold theme-bg-light theme-text mb-4 border border-indigo-100/80 shadow-2xs">
-            <BookOpen className="w-3.5 h-3.5" /> Transfer Guides & Knowledge Hub
-          </div>
-          <h1 className="text-4xl sm:text-5xl font-black text-slate-900 tracking-tight mb-4 leading-tight">
-            Guides & Best Practices
+        <div className="text-center max-w-2xl mx-auto mb-12">
+          <h1 className="font-display text-4xl sm:text-5xl font-semibold text-white tracking-tight italic mb-3">
+            Resources
           </h1>
-          <p className="text-base sm:text-lg text-slate-600 font-medium leading-relaxed">
-            Practical walkthroughs for fast, secure file transfers across any device, operating system, and file format.
+          <p className="text-white/55 font-medium">
+            Guides and tools to send files faster — every page links back to a free transfer.
           </p>
         </div>
 
-        {/* Guides List */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-          {guides.map((guide, idx) => {
-            const Icon = guide.icon;
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-12">
+          {GUIDES.map((g) => {
+            const Icon = g.icon;
             return (
               <Link
-                key={idx}
-                to={guide.path}
-                className="custom-card p-6 bg-white/85 hover:bg-white transition-all flex flex-col justify-between group"
+                key={g.path}
+                to={g.path}
+                className="custom-card p-5 hover:border-[#c4a574]/40 transition-colors group"
               >
-                <div>
-                  <div className="flex items-center justify-between mb-3.5">
-                    <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center group-hover:bg-indigo-600 group-hover:text-white transition-colors">
-                      <Icon className="w-5 h-5" />
-                    </div>
-                    <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
-                      {guide.tag}
-                    </span>
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-9 h-9 rounded-xl bg-[#c4a574]/12 text-[#c4a574] flex items-center justify-center">
+                    <Icon className="w-4 h-4" />
                   </div>
-
-                  <h3 className="text-base font-bold text-slate-900 mb-1.5 group-hover:text-indigo-600 transition-colors">
-                    {guide.title}
-                  </h3>
-
-                  <p className="text-sm text-slate-500 font-medium leading-relaxed mb-4">
-                    {guide.desc}
-                  </p>
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-white/45">{g.tag}</span>
                 </div>
-
-                <div className="flex items-center gap-1.5 text-xs font-bold text-indigo-600 group-hover:translate-x-1 transition-transform">
-                  <span>Read Guide</span>
-                  <ArrowRight className="w-4 h-4" />
-                </div>
+                <h2 className="text-sm font-semibold text-white group-hover:text-[#c4a574] transition-colors mb-2">
+                  {g.title}
+                </h2>
+                <span className="inline-flex items-center gap-1 text-xs font-semibold text-[#c4a574]">
+                  Read <ArrowRight className="w-3.5 h-3.5" />
+                </span>
               </Link>
             );
           })}
         </div>
 
-        {/* CTA Banner */}
-        <div className="mt-14 custom-card p-8 sm:p-12 text-center bg-white/90 shadow-md">
-          <h2 className="text-2xl sm:text-3xl font-black text-slate-900 mb-3">
-            Need custom help with your transfer workflow?
-          </h2>
-          <p className="text-sm sm:text-base text-slate-600 max-w-md mx-auto mb-6 font-medium">
-            Explore our Help Center or contact our 24/7 technical team.
-          </p>
-          <div className="flex flex-wrap justify-center gap-3.5">
-            <Link
-              to="/help"
-              className="theme-btn-primary px-7 py-3.5 text-sm font-bold shadow-md inline-flex items-center gap-2"
-            >
-              <HelpCircle className="w-4 h-4" />
-              <span>Visit Help Center</span>
-            </Link>
-            <Link
-              to="/"
-              className="px-7 py-3.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-800 text-sm font-bold transition-colors"
-            >
-              <span>Send Files Now</span>
-            </Link>
-          </div>
+        <div className="text-center">
+          <Link to="/" className="theme-btn-primary inline-flex items-center gap-2 px-6 py-3 rounded-full text-sm font-semibold">
+            Transfer files free
+            <ArrowRight className="w-4 h-4" />
+          </Link>
         </div>
-
       </main>
+
+      
+      <div className="relative z-10 max-w-6xl mx-auto px-4 sm:px-6 pb-12">
+        <div className="pt-8 border-t border-white/10">
+          <Link to="/" className="inline-flex items-center gap-2 rounded-full bg-white text-black text-sm font-semibold px-5 py-3 hover:bg-white/90">
+            Send a file
+          </Link>
+        </div>
+      </div>
 
       <Footer />
 
@@ -162,7 +101,6 @@ export default function ResourcesPage() {
         initialMode={authMode}
         onAuthSuccess={(u) => setUser(u)}
       />
-
       <ProfileModal
         isOpen={isProfileOpen}
         onClose={() => setIsProfileOpen(false)}
@@ -171,8 +109,6 @@ export default function ResourcesPage() {
           await clearUserSession();
           setUser(null);
         }}
-        currentTheme={currentTheme}
-        onThemeChange={(t) => setCurrentTheme(t)}
       />
     </div>
   );

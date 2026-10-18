@@ -1,7 +1,6 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
-import { activeStorageProvider, sanitizeStoragePath } from '../lib/storageProvider';
-import { supabase, publicSupabase, applyTheme } from '../lib/supabase';
+import { applyTheme } from '../lib/supabase';
 import Navbar from '../components/Navbar';
 import AuthModal from '../components/AuthModal';
 import ProfileModal from '../components/ProfileModal';
@@ -15,22 +14,49 @@ import DashboardView from '../components/DashboardView';
 import P2PTransferView from '../components/P2PTransferView';
 import MyUploadsDrawer from '../components/MyUploadsDrawer';
 import FloatingUploadDock from '../components/FloatingUploadDock';
-import Footer from '../components/Footer';
-import { getStoredUser, persistUserSession, clearUserSession, isUserPro, isAdmin, isUserOnTrial, getUserPlanLimits } from '../lib/authSession';
+import { clearUserSession, isAdmin } from '../lib/authSession';
+import { useAccount } from '../lib/AccountContext';
 import { playSuccessChime } from '../lib/sound';
-import { detectClientGeo } from '../lib/geo';
+import { detectClientGeo, guessVisitorPlace } from '../lib/geo';
 import { generateTransferSlug, formatLiveSlugPreview } from '../lib/slug';
-import { getOrCreateGuestId, trackGuestTransfer } from '../lib/guestSession';
+import { getOrCreateGuestId, saveTransferSecrets, trackGuestTransfer } from '../lib/guestSession';
 import { TransferManager } from '../lib/transferManager';
 import PersistentTransferManager from '../components/PersistentTransferManager';
+import TransferSuccessModal from '../components/TransferSuccessModal';
+import FlagBearer from '../components/FlagBearer';
+import SkyScene from '../components/SkyScene';
+import StoryLane from '../components/StoryLane';
+import Footer from '../components/Footer';
+import { useToast } from '../components/Toast';
 import {
   Mail, Link2, Lock, Send, ShieldCheck, Zap, Sparkles,
-  CheckCircle2, Crown, Wifi, ArrowRight, Laptop, Smartphone,
+  CheckCircle2, Wifi, ArrowRight, Laptop, Smartphone,
   RefreshCw, Eye, EyeOff, HardDrive, Inbox, FolderPlus,
   HelpCircle, ChevronDown, Check, Globe, Layers, BarChart2,
   Code, Key, Clock, Star, Users, ArrowUpRight, Copy, CheckCircle,
   FileCheck, Server, AlertCircle
 } from 'lucide-react';
+
+const SEND_STORY = {
+  link: {
+    title: 'Send a file. They get a link.',
+    line: '6 GB free. No signup. A password can gate the download.',
+    bubble: 'Drop a file here. You get a link in seconds.',
+    steps: ['You drop it', 'A link leaves', 'They open it'],
+  },
+  email: {
+    title: 'Too big for the inbox.',
+    line: 'The mail carries the link. The file stays on it, up to 6 GB.',
+    bubble: 'Drop the file, add their email, and we send the link.',
+    steps: ['You drop it', 'We mail the link', 'They download it'],
+  },
+  device: {
+    title: 'Phone to laptop. Nothing stored.',
+    line: 'Both screens stay on this page. The file goes straight across.',
+    bubble: 'Open iTransfer on both devices and pair with a short code.',
+    steps: ['Open both screens', 'Pair a code', 'Nothing is stored'],
+  },
+};
 
 function formatBytes(bytes) {
   if (!bytes || bytes === 0) return '0 Bytes';
@@ -47,15 +73,15 @@ const FAQS = [
   },
   {
     q: 'Is iTransfer completely free to use?',
-    a: 'Yes! You can transfer up to 5 GB per transfer 100% free with no registration, no watermarks, and zero ads. For larger transfers up to 25 GB, extended retention (up to permanent storage), and priority bandwidth, you can upgrade to iTransfer Pro.',
+    a: 'Yes. You can send up to 6 GB per transfer with no account. Links last up to 7 days. Larger transfers and longer retention are not available yet.',
   },
   {
     q: 'How are my files protected from hackers and eavesdropping?',
-    a: 'All files are encrypted in-transit via TLS 1.3 and encrypted on disk using AES-256. If you enable password protection, files can only be unlocked with your secret passphrase. In addition, incoming uploads are automatically verified against malware, ransomware, and malicious executables.',
+    a: 'Files travel over TLS 1.3 and are stored with AES-256 at rest on Cloudflare R2. Optional password protection gates downloads (hashed on our servers — not zero-knowledge E2EE). Dangerous executables are blocked on upload.',
   },
   {
     q: 'How long do transfer download links remain active?',
-    a: 'Free guest transfers remain accessible for 7 days (or 1h, 24h, 3d depending on your preference). After expiration, files are cryptographically wiped from our cloud storage. Pro users can choose 14 days, 30 days, or permanent vault storage.',
+    a: 'A free transfer stays available for the time you choose, up to 7 days. After that the link stops working. Longer retention is not available yet.',
   },
   {
     q: 'Can I upload entire folders with nested subdirectories?',
@@ -66,6 +92,12 @@ const FAQS = [
     a: 'Device P2P transfers files directly between your devices (e.g., iPhone to Windows PC or Mac to Android) over your local network using WebRTC. Files never touch any cloud server, providing infinite transfer speeds with zero storage limits.',
   },
 ];
+
+async function sha256Hex(text) {
+  const bytes = new TextEncoder().encode(text);
+  const hash = await crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(hash), (b) => b.toString(16).padStart(2, '0')).join('');
+}
 
 const EXPIRY_PRESETS = [
   { hours: 1, label: '1 Hour', subtitle: 'Flash access' },
@@ -79,24 +111,31 @@ const EXPIRY_PRESETS = [
 
 export default function HomePage() {
   const [searchParams] = useSearchParams();
-  const [user, setUser] = useState(() => getStoredUser());
+  const { user, setUser } = useAccount();
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [authMode, setAuthMode] = useState('signin');
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isPaymentOpen, setIsPaymentOpen] = useState(false);
   const [isAdminPanelOpen, setIsAdminPanelOpen] = useState(false);
-  const [currentTheme, setCurrentTheme] = useState(() => getStoredUser()?.user_metadata?.theme || 'indigo');
+  const [currentTheme, setCurrentTheme] = useState(() => user?.user_metadata?.theme || 'indigo');
   const [activeNavTab, setActiveNavTab] = useState('transfer');
 
   // Mode Selection: 'link' | 'email' | 'device'
-  const [mainMode, setMainMode] = useState(searchParams.get('p2p') ? 'device' : 'link');
+  const [mainMode, setMainMode] = useState(
+    searchParams.get('mode') === 'device' || searchParams.get('p2p') === 'true' || searchParams.get('room')
+      ? 'device'
+      : 'link'
+  );
 
   // Geolocation
-  const [clientGeo, setClientGeo] = useState({ flag: '🇮🇳', countryName: 'India', edgeRegion: 'Mumbai Edge' });
-
-  useEffect(() => {
-    detectClientGeo().then(g => { if (g) setClientGeo(g); });
-  }, []);
+  const [clientGeo, setClientGeo] = useState(() => guessVisitorPlace());
+  const [scrollY, setScrollY] = useState(0);
+  const [storyChapter, setStoryChapter] = useState('hero');
+  const [chapterProgress, setChapterProgress] = useState(0);
+  // React-owned visibility — classList is-in is wiped on re-render
+  const [revealed, setRevealed] = useState(() => new Set(['hero']));
+  const pageRef = useRef(null);
+  const uploadLock = useRef(false);
 
   // Drawer & Upload Queue State
   const [isMyUploadsOpen, setIsMyUploadsOpen] = useState(false);
@@ -104,7 +143,7 @@ export default function HomePage() {
 
   // Form State
   const [files, setFiles] = useState([]);
-  const [senderEmail, setSenderEmail] = useState(() => getStoredUser()?.email || '');
+  const [senderEmail, setSenderEmail] = useState(() => user?.email || '');
   const [recipientEmails, setRecipientEmails] = useState('');
   const [subject, setSubject] = useState('');
   const [message, setMessage] = useState('');
@@ -130,9 +169,12 @@ export default function HomePage() {
   const [telemetry, setTelemetry] = useState(null);
   const [shareData, setShareData] = useState(null);
   const [openFaq, setOpenFaq] = useState(0);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
+  const { addToast } = useToast();
 
-  const [isPaused] = useState(false);
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
+  const showOrbit = view === 'form' && files.length === 0 && mainMode !== 'device';
 
   useEffect(() => {
     function handleOnline() { setIsOffline(false); }
@@ -153,57 +195,79 @@ export default function HomePage() {
     } else if (view === 'complete') {
       document.title = `✅ Transfer Ready! • iTransfer`;
     } else {
-      document.title = `iTransfer — Free Secure File Transfer up to 25 GB`;
+      document.title = `iTransfer — Send Large Files Free (6 GB)`;
     }
   }, [view, progress, activeBackgroundUploads]);
 
-  // Init Auth listener
   useEffect(() => {
-    const cached = getStoredUser();
-    if (cached) {
-      setUser(cached);
-      setSenderEmail(cached.email || '');
-      const userTheme = cached.user_metadata?.theme || 'indigo';
-      setCurrentTheme(userTheme);
-      applyTheme(userTheme);
+    if (!user) {
+      setSenderEmail('');
+      return;
     }
+    setSenderEmail(user.email || '');
+    const userTheme = user.user_metadata?.theme || 'indigo';
+    setCurrentTheme(userTheme);
+    applyTheme(userTheme);
+  }, [user]);
 
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (session?.user) {
-        const persisted = await persistUserSession(session.user);
-        setUser(persisted);
-        const userTheme = persisted.user_metadata?.theme || 'indigo';
-        setCurrentTheme(userTheme);
-        applyTheme(userTheme);
-        setSenderEmail(persisted.email || '');
-      }
-    });
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (session?.user) {
-        const persisted = await persistUserSession(session.user);
-        setUser(persisted);
-        setSenderEmail(persisted.email || '');
-        const userTheme = persisted.user_metadata?.theme || 'indigo';
-        setCurrentTheme(userTheme);
-        applyTheme(userTheme);
-      } else if (event === 'SIGNED_OUT') {
-        try { localStorage.removeItem('itransfer_user_session'); } catch (e) {}
-        setUser(null);
-        setSenderEmail('');
-        setActiveNavTab('transfer');
-        setIsProfileOpen(false);
-      }
-    });
-
-    return () => subscription.unsubscribe();
+  useEffect(() => {
+    detectClientGeo().then((g) => { if (g) setClientGeo(g); });
   }, []);
 
-  const isPro = isUserPro(user);
+  useEffect(() => {
+    let ticking = false;
+    const onScroll = () => {
+      if (ticking) return;
+      ticking = true;
+      window.requestAnimationFrame(() => {
+        const y = window.scrollY || 0;
+        setScrollY(y);
+        const nodes = pageRef.current?.querySelectorAll('[data-chapter]');
+        if (nodes?.length) {
+          const mid = window.innerHeight * 0.42;
+          let best = 'hero';
+          let bestScore = Infinity;
+          let prog = 0;
+          const nextRevealed = new Set();
+          nodes.forEach((node) => {
+            const id = node.getAttribute('data-chapter') || 'hero';
+            const rect = node.getBoundingClientRect();
+            const center = rect.top + rect.height * 0.35;
+            const score = Math.abs(center - mid);
+            if (score < bestScore) {
+              bestScore = score;
+              best = id;
+              prog = Math.min(1, Math.max(0, (window.innerHeight - rect.top) / (window.innerHeight + rect.height * 0.5)));
+            }
+            if (rect.top < window.innerHeight * 0.88 && rect.bottom > 60) {
+              nextRevealed.add(id);
+            }
+          });
+          nextRevealed.add('hero');
+          setStoryChapter(best);
+          setChapterProgress(prog);
+          setRevealed((prev) => {
+            if (prev.size === nextRevealed.size && [...nextRevealed].every((k) => prev.has(k))) return prev;
+            return nextRevealed;
+          });
+        }
+        ticking = false;
+      });
+    };
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', onScroll, { passive: true });
+    return () => {
+      window.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', onScroll);
+    };
+  }, []);
+
+  const chapterClass = (id, extra = '') =>
+    `chapter-reveal ${revealed.has(id) ? 'is-in' : ''} ${extra}`.trim();
+
   const isMasterAdmin = isAdmin(user);
-  const isOnTrial = isUserOnTrial(user);
-  const planLimits = getUserPlanLimits(user);
-  const maxSizeBytes = planLimits.maxFileSizeBytes;
+  const maxSizeBytes = 6_000_000_000;
 
   const handleFilesSelected = useCallback((newFiles) => {
     setFiles(prev => [...prev, ...newFiles]);
@@ -214,7 +278,8 @@ export default function HomePage() {
   }, []);
 
   const handleOpenAuth = (mode) => {
-    setAuthMode(mode);
+    const next = mode === 'signup' || mode === 'register' ? 'register' : 'login';
+    setAuthMode(next);
     setIsAuthOpen(true);
   };
 
@@ -260,27 +325,21 @@ export default function HomePage() {
   };
 
   const handleUploadLinkTransfer = async () => {
-    if (files.length === 0) return;
+    if (uploadLock.current || files.length === 0) return;
 
     if (mainMode === 'email' && !recipientEmails.trim()) {
-      alert('Please enter at least one recipient email address.');
+      addToast('Please enter at least one recipient email address.', 'error');
       return;
     }
 
     if (enablePassword && !password.trim()) {
-      alert('Please enter a password for protection, or uncheck "Password Protect".');
+      addToast('Enter a password, or turn off password protection.', 'error');
       return;
     }
 
     const totalSize = files.reduce((acc, f) => acc + f.size, 0);
     if (totalSize > maxSizeBytes) {
-      if (!isPro) {
-        if (confirm(`This transfer is ${formatBytes(totalSize)}, which exceeds the 5 GB Free limit. Would you like to upgrade to Pro for 25 GB transfers?`)) {
-          setIsPaymentOpen(true);
-        }
-        return;
-      }
-      alert(`Total size exceeds 25 GB limit.`);
+      addToast(`This transfer is larger than the 6 GB free limit (${formatBytes(totalSize)}).`, 'error');
       return;
     }
 
@@ -292,30 +351,44 @@ export default function HomePage() {
     const finalTransferName = subject.trim() || `Transfer-${generatedSlug.slice(0, 6).toUpperCase()}`;
 
     // 2. Instantiate Persistent TransferManager
+    const safeExpiry = expiryHours > 0 && expiryHours <= 168 ? expiryHours : 168;
     const manager = new TransferManager({
       shareId: generatedSlug,
       transferName: finalTransferName,
-      expiryHours,
+      expiryHours: safeExpiry,
       isGuest,
       guestId,
       userDisplayName,
       concurrency: 3,
       apiBase: '/api/r2',
+      password: enablePassword ? password.trim() : '',
+      senderEmail: user?.email || `guest:${guestId}`,
+      transferType: mainMode,
     });
 
+    uploadLock.current = true;
     setActiveTransferManager(manager);
     manager.addFiles(files);
     setTransferSnapshot(manager.getSnapshot());
-    setIsTransferManagerOpen(true);
+    setIsTransferManagerOpen(false);
+    setShowSuccessModal(false);
     setView('progress');
     setUploadStatus('uploading');
 
     // Subscribe to state changes
     manager.on('stateChanged', (snap) => {
       setTransferSnapshot(snap);
-      setProgress(snap.overallProgress);
-      setUploadSpeed(snap.speedStr);
-      setTimeRemaining(snap.timeRemainingStr);
+      setProgress(snap.overallProgress || 0);
+      setUploadSpeed(snap.aggregateSpeed > 0 ? snap.speedStr : '');
+      setTimeRemaining(snap.aggregateSpeed > 0 && snap.etaSeconds > 0 ? snap.timeRemainingStr : '');
+      setCurrentFileName(snap.activeFileName || snap.files?.find((f) => f.status === 'uploading')?.name || snap.files?.[0]?.name || '');
+      setUploadStatus((prev) => {
+        if (prev === 'complete') return prev;
+        if (snap.overallStatus === 'paused') return 'paused';
+        if (snap.overallStatus === 'error') return 'error';
+        if (snap.overallStatus === 'complete') return 'confirming';
+        return 'uploading';
+      });
     });
 
     manager.on('transferComplete', async (snap) => {
@@ -323,47 +396,26 @@ export default function HomePage() {
       const completedFiles = snap.files.filter(f => f.status === 'completed');
       if (completedFiles.length === 0) return;
 
-      const expiresAt = expiryHours === 0
-        ? new Date(Date.now() + 100 * 365 * 24 * 60 * 60 * 1000).toISOString()
-        : new Date(Date.now() + expiryHours * 60 * 60 * 1000).toISOString();
-      const pwdHash = enablePassword && password.trim() ? password.trim() : null;
-      const isValidUUID = (str) => typeof str === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
-      const validUserId = (user?.id && isValidUUID(user.id)) ? user.id : null;
+      const expiresAt = manager.expiresAt
+        || new Date(Date.now() + safeExpiry * 60 * 60 * 1000).toISOString();
+      const pwdHash = enablePassword && password.trim() ? await sha256Hex(password.trim()) : null;
 
-      const insertPayloads = completedFiles.map((f) => ({
-        share_id: generatedSlug,
-        file_name: f.name,
-        file_size: f.size,
-        file_path: f.fileId || sanitizeStoragePath(`${generatedSlug}/${f.name}`),
-        content_type: f.type || 'application/octet-stream',
-        subject: finalTransferName,
-        message: message || null,
-        sender_email: user?.email || `guest:${guestId}`,
-        recipient_emails: recipientEmails || null,
-        password_hash: pwdHash,
-        user_id: validUserId,
-        transfer_type: mainMode,
-        max_downloads: maxDownloads,
-        expires_at: expiresAt,
-      }));
-
-      try {
-        let { error: insertErr } = await publicSupabase.from('transfers').insert(insertPayloads);
-        if (insertErr) {
-          const sanitized = insertPayloads.map(p => ({ ...p, user_id: null }));
-          await publicSupabase.from('transfers').insert(sanitized);
-        }
-      } catch (e) {
-        console.warn('DB insert catch:', e);
+      setUploadStatus('confirming');
+      setProgress(100);
+      if (!completedFiles.every((file) => file.serverRecorded && file.fileId)) {
+        uploadLock.current = false;
+        setUploadStatus('error');
+        addToast('The files uploaded, but the link could not be saved. Try again.', 'error');
+        return;
       }
+      saveTransferSecrets(manager.shareId || generatedSlug, {
+        claimToken: manager.claimToken,
+        deleteToken: manager.deleteToken,
+      });
 
-      // Local Cache Backup so download links always work seamlessly
-      try {
-        localStorage.setItem('itransfer_transfer_' + generatedSlug, JSON.stringify(insertPayloads));
-      } catch (e) {}
-
+      const publishedShareId = manager.shareId || generatedSlug;
       if (isGuest) {
-        trackGuestTransfer(generatedSlug);
+        trackGuestTransfer(publishedShareId);
       }
 
       let emailResult = null;
@@ -377,7 +429,7 @@ export default function HomePage() {
               recipientEmails,
               subject: finalTransferName,
               message,
-              shareId: generatedSlug,
+              shareId: publishedShareId,
               fileCount: completedFiles.length,
               totalSize: snap.totalBytes,
               expiresAt,
@@ -394,7 +446,7 @@ export default function HomePage() {
 
       const formattedFiles = completedFiles.map(f => ({ name: f.name, size: f.size, type: f.type }));
       setShareData({
-        shareId: generatedSlug,
+        shareId: publishedShareId,
         fileCount: completedFiles.length,
         totalSize: snap.totalBytes,
         expiresAt,
@@ -411,10 +463,25 @@ export default function HomePage() {
       });
       setUploadStatus('complete');
       setView('complete');
+      setShowSuccessModal(false);
       setTransferSnapshot(manager.getSnapshot());
     });
 
     manager.start();
+  };
+
+  const handlePauseUpload = () => {
+    if (!activeTransferManager) return;
+    if (uploadStatus === 'paused') activeTransferManager.resumeAll();
+    else activeTransferManager.pauseAll();
+  };
+
+  const handleRetryUpload = () => {
+    if (!activeTransferManager || !transferSnapshot) return;
+    transferSnapshot.files
+      .filter((file) => file.status === 'error')
+      .forEach((file) => activeTransferManager.retryFile(file.id));
+    activeTransferManager.start();
   };
 
   const handleCancelUpload = () => {
@@ -422,6 +489,7 @@ export default function HomePage() {
       activeTransferManager.cancelAll();
       setActiveTransferManager(null);
     }
+    uploadLock.current = false;
     setIsTransferManagerOpen(false);
     setView('form');
     setProgress(0);
@@ -439,11 +507,25 @@ export default function HomePage() {
     setShareData(null);
     setProgress(0);
     setUploadStatus('idle');
+    uploadLock.current = false;
+    setShowSuccessModal(false);
+    setShowAdvancedOptions(false);
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#F8FAFC] text-slate-900 selection:bg-indigo-600 selection:text-white">
-      {/* Primary Navigation Bar */}
+    <div ref={pageRef} className="min-h-screen flex flex-col bg-transparent text-white relative">
+      {activeNavTab !== 'dashboard' && (
+        <>
+          <SkyScene scrollY={scrollY} chapter={storyChapter} timeZone={clientGeo.timeZone} />
+          <StoryLane
+            chapter={view === 'form' ? storyChapter : 'hero'}
+            progress={chapterProgress}
+            journey={view === 'form' ? null : (uploadStatus === 'complete' ? 1 : (progress || 0) / 100)}
+            phase={view === 'form' ? 'idle' : uploadStatus}
+          />
+        </>
+      )}
+
       <Navbar
         user={user}
         onOpenAuth={handleOpenAuth}
@@ -453,282 +535,286 @@ export default function HomePage() {
         onOpenMyUploads={() => setIsMyUploadsOpen(true)}
       />
 
-      {/* Dashboard View Toggle */}
       {activeNavTab === 'dashboard' ? (
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full flex-1">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full flex-1 relative z-10">
           <DashboardView user={user} onStartTransfer={() => setActiveNavTab('transfer')} />
         </div>
       ) : (
         <>
-          {/* =========================================================================
-              1. HERO SECTION (MODERN, CLEAN, PROFESSIONAL SAAS AESTHETIC)
-              ========================================================================= */}
-          <section className="relative w-full bg-[#0A0E1A] text-white pt-8 sm:pt-14 pb-16 sm:pb-24 px-4 sm:px-6 overflow-hidden">
-            {/* Subtle Ambient Radial Backlight */}
-            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] sm:w-[900px] h-[350px] sm:h-[450px] bg-gradient-to-b from-indigo-500/15 via-indigo-600/5 to-transparent rounded-full blur-3xl pointer-events-none" />
+          <section
+            data-chapter="hero"
+            className={chapterClass(
+              'hero',
+              `relative -mt-16 min-h-[100svh] w-full px-4 sm:px-6 pt-36 pb-16 z-10 overflow-hidden text-white${view === 'progress' ? ' hero-sending' : ''}`,
+            )}
+          >
+            <div className="hidden lg:block absolute right-0 xl:right-[1%] bottom-0 z-[2] w-[420px] xl:w-[500px]">
+              <FlagBearer countryCode={clientGeo.countryCode} countryName={clientGeo.countryName} />
+            </div>
+            <div className="relative z-10 mx-auto w-full max-w-lg text-center">
+              <div className="mb-5">
+                {(() => {
+                  const story = SEND_STORY[mainMode] || SEND_STORY.link;
+                  let title = story.title;
+                  let line = story.line;
+                  if (view === 'progress') {
+                    title = 'Your file is leaving.';
+                    line = 'Stay on this page until the link is ready.';
+                  } else if (view === 'complete') {
+                    title = 'The link is ready.';
+                    line = 'Send it. It closes when the time you chose runs out.';
+                  } else if (files.length > 0 && mainMode === 'email') {
+                    title = 'Add who should get it.';
+                    line = 'We mail the link. The file never sits in their inbox.';
+                  } else if (files.length > 0 && mainMode === 'link') {
+                    title = 'One step from a link.';
+                    line = 'Name it if you want. A password can gate the download.';
+                  }
+                  return (
+                    <>
+                      <p className="text-[11px] uppercase tracking-[0.22em] text-white/80 mb-3">
+                        {clientGeo.detected && clientGeo.countryName
+                          ? `${clientGeo.flag} You're in ${clientGeo.countryName}`
+                          : 'Your location isn’t shown'}
+                      </p>
+                      <h1 className="text-4xl sm:text-5xl font-semibold tracking-tight text-white leading-[1.05] mb-3">
+                        {title}
+                      </h1>
+                      <p className="text-sm sm:text-base text-white/85 mb-4 max-w-md mx-auto">
+                        {line}
+                      </p>
+                      {files.length === 0 && view === 'form' && (
+                        <ol className="story-steps">
+                          {story.steps.map((step, index) => (
+                            <li key={step} className="story-step">
+                              <i>{index + 1}</i>
+                              {step}
+                            </li>
+                          ))}
+                        </ol>
+                      )}
+                    </>
+                  );
+                })()}
 
-            {/* Subtle Dot Grid Background Pattern */}
-            <div
-              className="absolute inset-0 opacity-[0.14] pointer-events-none"
-              style={{
-                backgroundImage: 'radial-gradient(#94A3B8 1px, transparent 1px)',
-                backgroundSize: '24px 24px',
-              }}
-            />
-
-            {/* Content Container */}
-            <div className="relative z-10 max-w-4xl mx-auto text-center">
-              
-              {/* Trust & Node Badge */}
-              <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/5 border border-white/10 text-white text-[11px] font-semibold backdrop-blur-md mb-5 shadow-sm">
-                <span className="flex h-2 w-2 relative">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400" />
-                </span>
-                <span className="text-white/90">Cloudflare Global Edge</span>
-                <span className="text-white/30">•</span>
-                <span className="text-white/70">Zero Egress Fees</span>
-                <span className="text-white/30">•</span>
-                <span className="text-emerald-400 font-bold">100% Free up to 5 GB</span>
+                <div className="noir-segment inline-flex gap-1 mb-5">
+                  {[
+                    { id: 'link', label: 'Link', icon: Link2 },
+                    { id: 'email', label: 'Email', icon: Mail },
+                    { id: 'device', label: 'Device', icon: Wifi },
+                  ].map((m) => {
+                    const Icon = m.icon;
+                    return (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() => {
+                          setMainMode(m.id);
+                          if (m.id !== 'device') setView('form');
+                        }}
+                        className={`noir-segment-item px-3.5 sm:px-4 py-2 flex items-center gap-1.5 cursor-pointer ${
+                          mainMode === m.id ? 'active' : ''
+                        }`}
+                      >
+                        <Icon className="w-3.5 h-3.5" />
+                        {m.label}
+                      </button>
+                    );
+                  })}
+                  <Link
+                    to="/receive"
+                    className="noir-segment-item px-3.5 sm:px-4 py-2 flex items-center gap-1.5 hover:text-white"
+                  >
+                    <Inbox className="w-3.5 h-3.5" />
+                    Request
+                  </Link>
+                </div>
               </div>
 
-              {/* Confident Headline */}
-              <h1 className="text-2xl sm:text-4xl md:text-5xl font-black tracking-tight text-white leading-tight sm:leading-tight mb-3">
-                Send large files with zero compression
-              </h1>
+              {files.length === 0 && view === 'form' && (
+                <p className="story-bubble">
+                  {(SEND_STORY[mainMode] || SEND_STORY.link).bubble}
+                </p>
+              )}
+              {files.length > 0 && view === 'form' && mainMode !== 'device' && (
+                <p className="story-bubble">
+                  {mainMode === 'email'
+                    ? 'Add their email. We send the link, not the file.'
+                    : 'Name it if you want, then create the link.'}
+                </p>
+              )}
 
-              {/* Reassuring Subtitle */}
-              <p className="text-xs sm:text-base text-slate-300 font-normal max-w-xl mx-auto leading-relaxed mb-6">
-                Direct browser-to-edge cloud streaming with TLS 1.3 encryption. Upload videos, archives, and project files without registration.
-              </p>
-
-              {/* Mode Switcher Segmented Control */}
-              <div className="inline-flex p-1 bg-white/10 backdrop-blur-md rounded-2xl border border-white/15 shadow-xl gap-1 mb-6">
-                <button
-                  type="button"
-                  onClick={() => { setMainMode('link'); setView('form'); }}
-                  className={`px-3.5 sm:px-4 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer ${
-                    mainMode === 'link'
-                      ? 'bg-white text-slate-950 shadow-md scale-[1.02]'
-                      : 'text-white/80 hover:text-white hover:bg-white/10'
-                  }`}
-                >
-                  <Link2 className="w-3.5 h-3.5 text-indigo-600" />
-                  <span>Share Link</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => { setMainMode('email'); setView('form'); }}
-                  className={`px-3.5 sm:px-4 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer ${
-                    mainMode === 'email'
-                      ? 'bg-white text-slate-950 shadow-md scale-[1.02]'
-                      : 'text-white/80 hover:text-white hover:bg-white/10'
-                  }`}
-                >
-                  <Mail className="w-3.5 h-3.5 text-purple-600" />
-                  <span>Email Send</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setMainMode('device')}
-                  className={`px-3.5 sm:px-4 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer ${
-                    mainMode === 'device'
-                      ? 'bg-white text-slate-950 shadow-md scale-[1.02]'
-                      : 'text-white/80 hover:text-white hover:bg-white/10'
-                  }`}
-                >
-                  <Wifi className="w-3.5 h-3.5 text-teal-600" />
-                  <span>Device P2P</span>
-                </button>
-
-                <Link
-                  to="/receive"
-                  className="px-3.5 sm:px-4 py-1.5 rounded-xl font-bold text-xs text-white/80 hover:text-white hover:bg-white/10 transition-all flex items-center gap-1.5"
-                >
-                  <Inbox className="w-3.5 h-3.5 text-rose-300" />
-                  <span>Request</span>
-                </Link>
-              </div>
-
-              {/* Central Transfer Card Console */}
-              <div className="max-w-lg mx-auto w-full text-left">
+              <div className="w-full">
                 {mainMode === 'device' ? (
-                  <div className="bg-white rounded-3xl p-5 sm:p-7 text-slate-900 shadow-2xl border border-slate-200/90">
-                    <P2PTransferView />
+                  <div className="custom-card p-5 sm:p-7 w-full max-w-lg">
+                    <P2PTransferView initialRoom={searchParams.get('room') || undefined} />
                   </div>
                 ) : (
                   <>
                     {view === 'form' && files.length === 0 && (
-                      <DropZone onFilesSelected={handleFilesSelected} maxSizeBytes={maxSizeBytes} />
+                      <DropZone onFilesSelected={handleFilesSelected} variant="card" />
                     )}
 
                     {view === 'form' && files.length > 0 && (
-                      <div className="bg-white rounded-3xl p-5 sm:p-7 text-slate-900 shadow-2xl border border-slate-200/90 animate-scale-in">
-                        {/* Email Fields (when email mode selected) */}
+                      <div className="custom-card p-5 sm:p-7 w-full max-w-lg animate-scale-in">
                         {mainMode === 'email' && (
-                          <div className="mb-4 p-3.5 bg-slate-50 border border-slate-200 rounded-2xl space-y-2.5">
+                          <div className="mb-4 p-3.5 bg-white/5 border border-white/10 rounded-2xl space-y-2.5">
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                               <div>
-                                <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">
-                                  Recipient Email <span className="text-rose-500">*</span>
+                                <label className="block text-[11px] font-semibold text-white/55 uppercase tracking-wider mb-1">
+                                  Recipient <span className="text-[#c47a7a]">*</span>
                                 </label>
                                 <input
                                   type="email"
-                                  required
                                   value={recipientEmails}
                                   onChange={(e) => setRecipientEmails(e.target.value)}
                                   placeholder="colleague@company.com"
-                                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-semibold focus:outline-none focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600"
+                                  className="noir-input w-full px-3 py-2 text-xs font-medium"
                                 />
                               </div>
                               <div>
-                                <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">
-                                  Your Email
+                                <label className="block text-[11px] font-semibold text-white/55 uppercase tracking-wider mb-1">
+                                  Your email
                                 </label>
                                 <input
                                   type="email"
                                   value={senderEmail}
                                   onChange={(e) => setSenderEmail(e.target.value)}
                                   placeholder="you@company.com"
-                                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-semibold focus:outline-none focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600"
+                                  className="noir-input w-full px-3 py-2 text-xs font-medium"
                                 />
                               </div>
                             </div>
                           </div>
                         )}
 
-                        {/* File List Component */}
                         <FileList
                           files={files}
                           onRemoveFile={handleRemoveFile}
                           onAddMore={handleFilesSelected}
                           maxSizeBytes={maxSizeBytes}
+                          maxSizeLabel="6 GB"
                         />
 
-                        {/* Transfer Title / Project Name */}
-                        <div className="space-y-1.5 pt-1">
-                          <div className="flex items-center justify-between">
-                            <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
-                              <span>Project Title</span>
-                            </label>
-                            <span className="text-[10px] text-slate-400 font-semibold">Custom Link Preview</span>
-                          </div>
+                        <div className="space-y-1.5 pt-3">
+                          <label className="text-[11px] font-semibold text-white/55 uppercase tracking-wider">
+                            Title
+                          </label>
                           <input
                             type="text"
                             value={subject}
                             onChange={(e) => setSubject(e.target.value)}
-                            placeholder="e.g. Q4 Brand Assets Final"
-                            className="w-full px-3.5 py-2.5 bg-slate-50 hover:bg-slate-100/80 focus:bg-white border border-slate-200 focus:border-indigo-600 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none transition-all"
+                            placeholder="e.g. Brand assets"
+                            className="noir-input w-full px-3.5 py-2.5 text-xs font-medium"
                           />
-                          {/* Live Link Badge */}
-                          <div className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50/70 border border-indigo-100 rounded-xl text-[11px] font-medium text-indigo-950">
-                            <Link2 className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
-                            <span className="text-slate-500 font-semibold truncate">Link:</span>
-                            <span className="font-mono font-bold text-indigo-700 truncate">itransfer.iprudhvi.in/d/{formatLiveSlugPreview(subject)}</span>
+                          <div className="flex items-center gap-1.5 px-3 py-1.5 bg-white/8 border border-white/15 rounded-xl text-[11px] font-medium text-white">
+                            <Link2 className="w-3.5 h-3.5 shrink-0" />
+                            <span className="font-mono truncate">/d/{formatLiveSlugPreview(subject)}</span>
                           </div>
                         </div>
 
-                        {/* Expiration Options */}
-                        <div className="space-y-2 pt-3">
-                          <div className="flex items-center justify-between">
-                            <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
-                              <Clock className="w-3.5 h-3.5 text-indigo-600" />
-                              <span>Transfer Expiration</span>
-                            </label>
-                            <span className="text-[10px] text-slate-400 font-semibold">Auto-wipes from storage</span>
-                          </div>
+                        <button
+                          type="button"
+                          onClick={() => setShowAdvancedOptions((v) => !v)}
+                          className="mt-4 w-full flex items-center justify-between px-3 py-2.5 rounded-xl border border-white/10 text-xs font-semibold text-white/55 hover:text-white hover:bg-white/5 cursor-pointer"
+                        >
+                          <span className="flex items-center gap-2">
+                            <Lock className="w-3.5 h-3.5 text-white" />
+                            Options · password, expiry, message
+                          </span>
+                          <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showAdvancedOptions ? 'rotate-180' : ''}`} />
+                        </button>
 
-                          <div className="grid grid-cols-2 xs:grid-cols-4 gap-2">
-                            {EXPIRY_PRESETS.map((preset) => {
-                              const isSelected = expiryHours === preset.hours;
-                              return (
-                                <button
-                                  key={preset.hours}
-                                  type="button"
-                                  onClick={() => {
-                                    if (preset.pro && !isPro) {
-                                      setIsPaymentOpen(true);
-                                      return;
-                                    }
-                                    if (preset.trial && !isPro && !isOnTrial) {
-                                      setIsPaymentOpen(true);
-                                      return;
-                                    }
-                                    setExpiryHours(preset.hours);
-                                  }}
-                                  className={`p-2.5 rounded-xl border text-left transition-all relative overflow-hidden flex flex-col justify-between cursor-pointer ${
-                                    isSelected
-                                      ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
-                                      : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700'
-                                  }`}
-                                >
-                                  <div className="flex items-center justify-between gap-1 w-full mb-0.5">
-                                    <span className={`text-xs font-bold truncate ${isSelected ? 'text-white' : 'text-slate-900'}`}>
-                                      {preset.label}
-                                    </span>
-                                    {((preset.pro && !isPro) || (preset.trial && !isPro && !isOnTrial)) && (
-                                      <Crown className="w-3 h-3 text-amber-500 shrink-0" />
-                                    )}
+                        {showAdvancedOptions && (
+                          <div className="mt-3 space-y-3 animate-fadeIn">
+                            <div className="space-y-2">
+                              <label className="text-[11px] font-semibold text-white/55 uppercase tracking-wider flex items-center gap-1.5">
+                                <Clock className="w-3.5 h-3.5 text-white" />
+                                Expiration
+                              </label>
+                              <div className="grid grid-cols-2 gap-2">
+                                {EXPIRY_PRESETS.map((preset) => {
+                                  const unavailable = preset.hours === 0 || preset.hours > 168;
+                                  const isSelected = expiryHours === preset.hours;
+                                  return (
+                                    <button
+                                      key={preset.hours}
+                                      type="button"
+                                      disabled={unavailable}
+                                      onClick={() => {
+                                        if (unavailable) return;
+                                        setExpiryHours(preset.hours);
+                                      }}
+                                      className={`p-2.5 rounded-xl border text-left ${
+                                        unavailable
+                                          ? 'bg-white/5 border-white/10 text-white/30 cursor-not-allowed'
+                                          : isSelected
+                                            ? 'bg-white text-black border-white cursor-pointer'
+                                            : 'bg-white/5 border-white/10 text-white/70 hover:border-white/40 cursor-pointer'
+                                      }`}
+                                    >
+                                      <span className="text-xs font-semibold block">{preset.label}</span>
+                                      <span className="text-[10px] opacity-80">{unavailable ? 'Not available yet' : preset.subtitle}</span>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+
+                            <div className="p-3.5 bg-white/5 rounded-2xl border border-white/10">
+                              <label className="flex items-center justify-between cursor-pointer">
+                                <div className="flex items-center gap-2.5">
+                                  <Lock className="w-4 h-4 text-white" />
+                                  <div>
+                                    <p className="text-xs font-semibold text-white">Password protection</p>
+                                    <p className="text-[10px] text-white/40">Free on every transfer</p>
                                   </div>
-                                  <span className={`text-[10px] font-medium truncate ${isSelected ? 'text-indigo-100' : 'text-slate-500'}`}>
-                                    {preset.subtitle}
-                                  </span>
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-
-                        {/* Password Protection Card */}
-                        <div className="mt-3.5 p-3.5 bg-slate-50 rounded-2xl border border-slate-200/80 transition-all">
-                          <label className="flex items-center justify-between cursor-pointer select-none">
-                            <div className="flex items-center gap-2.5">
-                              <div className="w-8 h-8 rounded-xl bg-white border border-slate-200 flex items-center justify-center text-slate-700 shadow-2xs">
-                                <Lock className="w-4 h-4" />
-                              </div>
-                              <div>
-                                <p className="text-xs font-bold text-slate-900">Password Protection</p>
-                                <p className="text-[10px] text-slate-500 font-medium">Require secret passphrase to unlock</p>
-                              </div>
+                                </div>
+                                <input
+                                  type="checkbox"
+                                  checked={enablePassword}
+                                  onChange={(e) => setEnablePassword(e.target.checked)}
+                                  className="w-4 h-4 rounded accent-[#c4a574] cursor-pointer"
+                                />
+                              </label>
+                              {enablePassword && (
+                                <div className="mt-3 relative">
+                                  <input
+                                    type={showPassword ? 'text' : 'password'}
+                                    value={password}
+                                    onChange={(e) => setPassword(e.target.value)}
+                                    placeholder="Unlock passphrase"
+                                    className="noir-input w-full pl-3 pr-9 py-2 text-xs font-medium"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => setShowPassword(!showPassword)}
+                                    className="absolute right-3 top-2 text-white/40 cursor-pointer"
+                                  >
+                                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                                  </button>
+                                </div>
+                              )}
                             </div>
-                            <input
-                              type="checkbox"
-                              checked={enablePassword}
-                              onChange={(e) => setEnablePassword(e.target.checked)}
-                              className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+
+                            <textarea
+                              value={message}
+                              onChange={(e) => setMessage(e.target.value)}
+                              placeholder="Optional message for recipients"
+                              rows={2}
+                              className="noir-input w-full px-3 py-2 text-xs font-medium resize-none"
                             />
-                          </label>
-                          {enablePassword && (
-                            <div className="mt-3 pt-3 border-t border-slate-200 relative animate-fadeIn">
-                              <input
-                                type={showPassword ? 'text' : 'password'}
-                                required
-                                value={password}
-                                onChange={(e) => setPassword(e.target.value)}
-                                placeholder="Enter unlock passphrase"
-                                className="w-full pl-3 pr-9 py-2 bg-white border border-slate-300 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:border-indigo-600"
-                              />
-                              <button
-                                type="button"
-                                onClick={() => setShowPassword(!showPassword)}
-                                className="absolute right-3 top-5 text-slate-400 hover:text-slate-600 cursor-pointer"
-                              >
-                                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                              </button>
-                            </div>
-                          )}
-                        </div>
+                          </div>
+                        )}
 
-                        {/* Submit Action Button */}
                         <button
                           type="button"
                           onClick={handleUploadLinkTransfer}
-                          className="w-full mt-4 py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs sm:text-sm rounded-xl shadow-lg shadow-indigo-600/25 flex items-center justify-center gap-2 transition-all active:scale-[0.99] cursor-pointer"
+                          className="w-full mt-4 py-3.5 theme-btn-primary font-semibold text-sm rounded-full flex items-center justify-center gap-2 cursor-pointer"
                         >
                           <span className="truncate">
-                            {mainMode === 'email' ? 'Send Transfer' : 'Create Download Link'} • {files.length} {files.length === 1 ? 'file' : 'files'} ({formatBytes(files.reduce((a, f) => a + f.size, 0))})
+                            {mainMode === 'email' ? 'Send transfer' : 'Create download link'} · {files.length}{' '}
+                            {files.length === 1 ? 'file' : 'files'} ({formatBytes(files.reduce((a, f) => a + f.size, 0))})
                           </span>
                           <ArrowRight className="w-4 h-4 shrink-0" />
                         </button>
@@ -736,24 +822,25 @@ export default function HomePage() {
                     )}
 
                     {view === 'progress' && (
-                      <div className="bg-white rounded-3xl p-5 sm:p-7 text-slate-900 shadow-2xl border border-slate-200/90">
+                      <div className="w-full max-w-lg send-shell">
                         <UploadProgress
                           progress={progress}
                           fileName={currentFileName}
                           uploadSpeed={uploadSpeed}
                           timeRemaining={timeRemaining}
                           status={uploadStatus}
-                          isPaused={isPaused}
+                          isPaused={uploadStatus === 'paused'}
                           isOffline={isOffline}
-                          telemetry={telemetry}
                           onRunInBackground={handleRunInBackground}
                           onCancel={handleCancelUpload}
+                          onPause={handlePauseUpload}
+                          onRetry={handleRetryUpload}
                         />
                       </div>
                     )}
 
                     {view === 'complete' && shareData && (
-                      <div className="bg-white rounded-3xl p-5 sm:p-7 text-slate-900 shadow-2xl border border-slate-200/90">
+                      <div className="custom-card p-5 sm:p-7 w-full max-w-lg">
                         <ShareLink
                           shareId={shareData.shareId}
                           fileCount={shareData.fileCount}
@@ -775,221 +862,142 @@ export default function HomePage() {
                   </>
                 )}
               </div>
-
-            </div>
-          </section>
-
-          {/* =========================================================================
-              2. TRUST & INFRASTRUCTURE STATS BAR
-              ========================================================================= */}
-          <section className="bg-white border-b border-slate-200/80 py-6 px-4 sm:px-6">
-            <div className="max-w-6xl mx-auto grid grid-cols-2 md:grid-cols-4 gap-4 sm:gap-6 text-center">
-              <div className="p-3">
-                <p className="text-xl sm:text-2xl font-black text-slate-900">5 GB Free</p>
-                <p className="text-xs text-slate-500 font-medium mt-0.5">No signup required</p>
-              </div>
-              <div className="p-3">
-                <p className="text-xl sm:text-2xl font-black text-indigo-600">300+ Cities</p>
-                <p className="text-xs text-slate-500 font-medium mt-0.5">Cloudflare Anycast edge</p>
-              </div>
-              <div className="p-3">
-                <p className="text-xl sm:text-2xl font-black text-emerald-600">TLS 1.3 + AES</p>
-                <p className="text-xs text-slate-500 font-medium mt-0.5">Encrypted at rest & in transit</p>
-              </div>
-              <div className="p-3">
-                <p className="text-xl sm:text-2xl font-black text-slate-900">Auto-Purged</p>
-                <p className="text-xs text-slate-500 font-medium mt-0.5">Zero permanent logging</p>
-              </div>
-            </div>
-          </section>
-
-          {/* =========================================================================
-              3. ARCHITECTURAL PILLARS OF TRUST
-              ========================================================================= */}
-          <section className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-16 sm:py-24">
-            <div className="text-center max-w-2xl mx-auto mb-12 sm:mb-16 space-y-3">
-              <span className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-indigo-600 bg-indigo-50 border border-indigo-100 px-3 py-1 rounded-full">
-                <ShieldCheck className="w-3.5 h-3.5" />
-                Enterprise Security & Privacy
-              </span>
-              <h2 className="text-2xl sm:text-3xl md:text-4xl font-black text-slate-900 tracking-tight">
-                Engineered for speed, built for privacy
-              </h2>
-              <p className="text-sm text-slate-500 font-medium leading-relaxed">
-                Unlike ad-supported transfer tools that throttle bandwidth and harvest data, iTransfer is designed around zero-knowledge principles and direct edge streaming.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-xs hover:shadow-md transition-all">
-                <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center mb-4">
-                  <Server className="w-5 h-5" />
-                </div>
-                <h3 className="text-base font-bold text-slate-900 mb-1.5">Direct Edge Streaming</h3>
-                <p className="text-xs text-slate-500 font-medium leading-relaxed">
-                  Uploads stream directly to Cloudflare R2 object storage with zero egress fees and zero intermediary server bottlenecks.
-                </p>
-              </div>
-
-              <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-xs hover:shadow-md transition-all">
-                <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center mb-4">
-                  <Lock className="w-5 h-5" />
-                </div>
-                <h3 className="text-base font-bold text-slate-900 mb-1.5">Passphrase Protection</h3>
-                <p className="text-xs text-slate-500 font-medium leading-relaxed">
-                  Protect confidential archives with client-side passwords. Only recipients with the passphrase can decrypt download tokens.
-                </p>
-              </div>
-
-              <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-xs hover:shadow-md transition-all">
-                <div className="w-10 h-10 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center mb-4">
-                  <Clock className="w-5 h-5" />
-                </div>
-                <h3 className="text-base font-bold text-slate-900 mb-1.5">Cryptographic Shredding</h3>
-                <p className="text-xs text-slate-500 font-medium leading-relaxed">
-                  Transfers are strictly ephemeral. Once the 7 or 30 day expiration window ends, files are permanently deleted.
-                </p>
-              </div>
-
-              <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-xs hover:shadow-md transition-all">
-                <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center mb-4">
-                  <ShieldCheck className="w-5 h-5" />
-                </div>
-                <h3 className="text-base font-bold text-slate-900 mb-1.5">Anti-Malware Shield</h3>
-                <p className="text-xs text-slate-500 font-medium leading-relaxed">
-                  Incoming payloads are automatically screened to block dangerous executables and malware, safeguarding your recipients.
-                </p>
-              </div>
-            </div>
-          </section>
-
-          {/* =========================================================================
-              4. HONEST COMPARISON MATRIX
-              ========================================================================= */}
-          <section className="bg-slate-100/60 border-y border-slate-200/80 py-16 sm:py-24">
-            <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
-              <div className="text-center max-w-xl mx-auto mb-10 sm:mb-14 space-y-2">
-                <h2 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
-                  Why professionals choose iTransfer
-                </h2>
-                <p className="text-xs sm:text-sm text-slate-500 font-medium">
-                  Compare our transparent free tier with legacy transfer alternatives.
-                </p>
-              </div>
-
-              <div className="bg-white rounded-2xl border border-slate-200/90 shadow-sm overflow-hidden">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs sm:text-sm border-collapse">
-                    <thead>
-                      <tr className="border-b border-slate-200 bg-slate-50">
-                        <th className="py-3.5 px-4 sm:px-6 font-bold text-slate-900">Feature</th>
-                        <th className="py-3.5 px-4 font-bold text-indigo-600 bg-indigo-50/50">iTransfer</th>
-                        <th className="py-3.5 px-4 font-medium text-slate-600">WeTransfer</th>
-                        <th className="py-3.5 px-4 font-medium text-slate-600">SendGB</th>
-                        <th className="py-3.5 px-4 font-medium text-slate-600">Google Drive</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      <tr>
-                        <td className="py-3 px-4 sm:px-6 font-semibold text-slate-900">Free File Size Limit</td>
-                        <td className="py-3 px-4 font-bold text-indigo-600 bg-indigo-50/30">5 GB</td>
-                        <td className="py-3 px-4 text-slate-600">2 GB</td>
-                        <td className="py-3 px-4 text-slate-600">5 GB</td>
-                        <td className="py-3 px-4 text-slate-600">Uses 15 GB account storage</td>
-                      </tr>
-                      <tr>
-                        <td className="py-3 px-4 sm:px-6 font-semibold text-slate-900">Sign-Up Required?</td>
-                        <td className="py-3 px-4 font-bold text-emerald-600 bg-indigo-50/30">No (Instant Guest)</td>
-                        <td className="py-3 px-4 text-slate-600">No (with nags)</td>
-                        <td className="py-3 px-4 text-slate-600">No</td>
-                        <td className="py-3 px-4 text-rose-600 font-medium">Yes (Google Account)</td>
-                      </tr>
-                      <tr>
-                        <td className="py-3 px-4 sm:px-6 font-semibold text-slate-900">Password Protection</td>
-                        <td className="py-3 px-4 font-bold text-emerald-600 bg-indigo-50/30">Included Free</td>
-                        <td className="py-3 px-4 text-rose-500">Paid ($12/mo)</td>
-                        <td className="py-3 px-4 text-slate-600">Included</td>
-                        <td className="py-3 px-4 text-slate-500">Not supported natively</td>
-                      </tr>
-                      <tr>
-                        <td className="py-3 px-4 sm:px-6 font-semibold text-slate-900">Third-Party Ads</td>
-                        <td className="py-3 px-4 font-bold text-emerald-600 bg-indigo-50/30">Zero Ads</td>
-                        <td className="py-3 px-4 text-slate-600">Full-screen ads</td>
-                        <td className="py-3 px-4 text-slate-600">Banner ads</td>
-                        <td className="py-3 px-4 text-slate-600">Workspace upsells</td>
-                      </tr>
-                      <tr>
-                        <td className="py-3 px-4 sm:px-6 font-semibold text-slate-900">Infrastructure</td>
-                        <td className="py-3 px-4 font-bold text-indigo-600 bg-indigo-50/30">Cloudflare Global Edge</td>
-                        <td className="py-3 px-4 text-slate-600">AWS Standard</td>
-                        <td className="py-3 px-4 text-slate-600">Standard Hosting</td>
-                        <td className="py-3 px-4 text-slate-600">Google Cloud</td>
-                      </tr>
-                    </tbody>
-                  </table>
+              <div className="lg:hidden mt-8 flex justify-center">
+                <div className="w-[280px]">
+                  <FlagBearer countryCode={clientGeo.countryCode} countryName={clientGeo.countryName} />
                 </div>
               </div>
             </div>
           </section>
 
-          {/* =========================================================================
-              5. FAQ ACCORDION SECTION
-              ========================================================================= */}
-          <section className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-16 sm:py-24 w-full">
-            <div className="text-center max-w-xl mx-auto mb-10 space-y-2">
-              <span className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-emerald-700 bg-emerald-50 border border-emerald-100 px-3 py-1 rounded-full">
-                <HelpCircle className="w-3.5 h-3.5" />
-                Frequently Asked Questions
-              </span>
-              <h2 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
-                Questions? We have answers.
-              </h2>
+          <section data-chapter="ways" className="move-stage relative z-10 text-white">
+            <div className={chapterClass('ways', 'max-w-6xl mx-auto px-4 sm:px-6 py-16 sm:py-24')}>
+              <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-10">
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.22em] text-white/45 mb-3">How it moves</p>
+                  <h2 className="text-4xl sm:text-6xl font-semibold tracking-tight leading-[0.95] max-w-xl">Four ways. One link when you need it.</h2>
+                </div>
+                <p className="text-sm text-white/50 max-w-xs">Pick a path. The file leaves your screen and arrives as a link, a mail, or a direct handoff.</p>
+              </div>
+
+              <div className="move-rail">
+                <span className="move-beam" aria-hidden="true" />
+                {[
+                  { n: '01', title: 'Link', body: 'A download link in seconds. Copy it, send it on WhatsApp, or show a QR.', href: '/', Icon: Link2 },
+                  { n: '02', title: 'Email', body: 'Past the 25 MB inbox limit. The file stays on the link, not in the mail.', href: '/send-files-by-email', Icon: Mail },
+                  { n: '03', title: 'Device', body: 'Phone to laptop on the same network. Nothing is stored.', href: '/?mode=device', Icon: Wifi },
+                  { n: '04', title: 'Request', body: 'A portal so a client can send files back to you.', href: '/receive', Icon: Inbox },
+                ].map((item, i) => (
+                  <Link key={item.n} to={item.href} className="move-card" style={{ animationDelay: `${i * 90}ms` }}>
+                    <span className="move-index">{item.n}</span>
+                    <span className="move-icon" style={{ animationDelay: `${i * 0.35}s` }}>
+                      <item.Icon className="w-5 h-5" />
+                    </span>
+                    <span className="move-title">{item.title}</span>
+                    <span className="move-body">{item.body}</span>
+                    <span className="move-go">Open <ArrowRight className="w-3.5 h-3.5" /></span>
+                  </Link>
+                ))}
+              </div>
             </div>
+          </section>
 
-            <div className="space-y-3">
-              {FAQS.map((faq, idx) => {
-                const isOpen = openFaq === idx;
-                return (
-                  <div
-                    key={idx}
-                    className={`bg-white rounded-2xl overflow-hidden transition-all duration-200 border ${
-                      isOpen ? 'border-indigo-300 shadow-md shadow-indigo-500/5' : 'border-slate-200/80 hover:border-slate-300 shadow-2xs'
-                    }`}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => setOpenFaq(isOpen ? null : idx)}
-                      className="w-full p-4 sm:p-5 flex items-center justify-between text-left font-bold text-xs sm:text-sm text-slate-900 hover:text-indigo-600 transition-colors gap-3 cursor-pointer"
-                    >
-                      <span>{faq.q}</span>
-                      <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 transition-transform ${
-                        isOpen ? 'bg-indigo-50 text-indigo-600 rotate-180' : 'bg-slate-100 text-slate-400'
-                      }`}>
-                        <ChevronDown className="w-3.5 h-3.5" />
-                      </div>
-                    </button>
+          <section data-chapter="security" className="close-band relative z-10 text-white">
+            <div className="max-w-6xl mx-auto px-4 sm:px-6 py-16 sm:py-20">
+              <div className={chapterClass('security', 'mb-14')}>
+                <p className="text-[11px] uppercase tracking-[0.22em] text-white/40 mb-4">Security</p>
+                <h2 className="text-4xl sm:text-6xl font-semibold tracking-tight leading-[0.95] max-w-2xl">Locked on the way. Gone when you say.</h2>
+                <p className="mt-5 text-sm sm:text-base text-white/55 max-w-xl leading-relaxed">
+                  Three things that matter. A password only gates the download — it is not zero-knowledge encryption.
+                </p>
+                <div className="mt-8 grid sm:grid-cols-3 gap-3">
+                  {[
+                    ['In transit', 'TLS 1.3 on the way up. AES-256 at rest on Cloudflare R2.'],
+                    ['Password gate', 'Optional. Hashed on our side. Blocks the download page until it matches.'],
+                    ['Gone on expiry', 'When the link dies, the files are deleted. Executables never upload.'],
+                  ].map(([t, d]) => (
+                    <div key={t} className="rounded-2xl border border-white/10 bg-[#17192e] px-5 py-5">
+                      <p className="text-lg font-semibold tracking-tight">{t}</p>
+                      <p className="mt-2 text-[15px] text-white/75 leading-relaxed">{d}</p>
+                    </div>
+                  ))}
+                </div>
+                <Link to="/security" className="inline-flex items-center gap-2 mt-6 text-sm font-semibold rounded-full bg-white text-black px-5 py-2.5 hover:bg-white/90">
+                  Security details <ArrowRight className="w-4 h-4" />
+                </Link>
+              </div>
 
-                    {isOpen && (
-                      <div className="px-4 sm:px-5 pb-5 text-xs sm:text-sm text-slate-600 font-normal leading-relaxed border-t border-slate-100 pt-3 animate-fadeIn">
-                        {faq.a}
-                      </div>
-                    )}
+              <div data-chapter="arrive" className={chapterClass('arrive')}>
+                <div className="flex items-end justify-between gap-4 mb-6">
+                  <div>
+                    <p className="text-[11px] uppercase tracking-[0.22em] text-white/40 mb-3">Compare</p>
+                    <h2 className="text-3xl sm:text-5xl font-semibold tracking-tight">Against the usual options.</h2>
                   </div>
-                );
-              })}
+                  <Link to="/compare" className="hidden sm:inline-flex text-sm font-semibold underline underline-offset-4">Full comparison</Link>
+                </div>
+
+                <div className="compare-board hidden sm:block">
+                  <div className="compare-head">
+                    <span />
+                    <span className="compare-us">iTransfer</span>
+                    <span>WeTransfer</span>
+                    <span>SendGB</span>
+                  </div>
+                  {[
+                    ['Free size', '6 GB + device', '2 GB', '5 GB'],
+                    ['Password', 'Free', 'Paid', 'Included'],
+                    ['Phone to laptop', 'Yes', 'No', 'No'],
+                    ['Ads', 'None', 'Full screen', 'Banners'],
+                  ].map((row) => (
+                    <div key={row[0]} className="compare-row">
+                      <span>{row[0]}</span>
+                      <span className="compare-us">{row[1]}</span>
+                      <span>{row[2]}</span>
+                      <span>{row[3]}</span>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="sm:hidden space-y-3">
+                  {[
+                    ['Free size', '6 GB + device', 'WeTransfer 2 GB · SendGB 5 GB'],
+                    ['Password', 'Free', 'WeTransfer paid · SendGB included'],
+                    ['Phone to laptop', 'Yes', 'WeTransfer no · SendGB no'],
+                    ['Ads', 'None', 'WeTransfer full screen · SendGB banners'],
+                  ].map(([label, us, them]) => (
+                    <div key={label} className="rounded-2xl border border-white/10 bg-[#17192e] px-4 py-4">
+                      <p className="text-[11px] uppercase tracking-[0.14em] text-white/40 mb-2">{label}</p>
+                      <p className="text-base font-semibold text-white">iTransfer · {us}</p>
+                      <p className="mt-1 text-sm text-white/45">{them}</p>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="mt-6 flex flex-wrap items-center gap-3">
+                  <Link to="/pricing" className="inline-flex rounded-full bg-white text-black text-sm font-semibold px-5 py-3 hover:bg-white/90 transition-colors">
+                    See pricing
+                  </Link>
+                  <Link to="/compare" className="sm:hidden text-sm font-semibold underline underline-offset-4">
+                    Full comparison
+                  </Link>
+                </div>
+              </div>
             </div>
           </section>
+
         </>
       )}
 
-      {/* Floating Upload Dock for Multitasking */}
+      <div className={chapterClass('arrive', 'relative z-10')}>
+        <Footer />
+      </div>
+
       <FloatingUploadDock
         activeUploads={activeBackgroundUploads}
         onStartAnother={handleRunInBackground}
-        onDismissUpload={(id) => setActiveBackgroundUploads(prev => prev.filter(q => q.id !== id))}
+        onDismissUpload={(id) => setActiveBackgroundUploads((prev) => prev.filter((q) => q.id !== id))}
       />
 
-      {/* Slide-over My Uploads Explorer Drawer */}
       <MyUploadsDrawer
         isOpen={isMyUploadsOpen}
         onClose={() => setIsMyUploadsOpen(false)}
@@ -1001,7 +1009,20 @@ export default function HomePage() {
         }}
       />
 
-      <Footer />
+      <TransferSuccessModal
+        open={showSuccessModal && !!shareData}
+        shareId={shareData?.shareId}
+        fileCount={shareData?.fileCount}
+        totalSize={shareData?.totalSize}
+        expiresAt={shareData?.expiresAt}
+        subject={shareData?.subject}
+        onClose={() => setShowSuccessModal(false)}
+        onSendAnother={handleReset}
+        onViewDashboard={() => {
+          setShowSuccessModal(false);
+          setActiveNavTab('dashboard');
+        }}
+      />
 
       <AuthModal
         isOpen={isAuthOpen}
@@ -1017,6 +1038,7 @@ export default function HomePage() {
         onSignOut={handleSignOut}
         currentTheme={currentTheme}
         onThemeChange={(t) => setCurrentTheme(t)}
+        onAccountChange={setUser}
         onOpenUpgrade={() => setIsPaymentOpen(true)}
         onOpenAdmin={() => setIsAdminPanelOpen(true)}
       />
@@ -1028,7 +1050,6 @@ export default function HomePage() {
         onUpgradeSuccess={(updated) => setUser(updated)}
       />
 
-      {/* Persistent Transfer Manager Modal Overlay */}
       {isTransferManagerOpen && activeTransferManager && (
         <PersistentTransferManager
           manager={activeTransferManager}

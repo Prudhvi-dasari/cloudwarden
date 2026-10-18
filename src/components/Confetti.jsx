@@ -18,14 +18,14 @@ export default function Confetti({ duration = 6000 }) {
     ctx.scale(dpr, dpr);
 
     const colors = [
-      '#6366f1', // Indigo
-      '#8b5cf6', // Violet
-      '#ec4899', // Pink
-      '#06b6d4', // Cyan
-      '#10b981', // Emerald
-      '#f59e0b', // Amber Gold
-      '#3b82f6', // Blue
-      '#a855f7', // Purple
+      '#c4a574', // Champagne gold
+      '#d4b88a',
+      '#f5f0e8', // Ivory
+      '#e8dfd0',
+      '#b08d5a',
+      '#8fbc8f', // Soft success
+      '#a39e94',
+      '#f0e6d4',
     ];
 
     const particles = [];

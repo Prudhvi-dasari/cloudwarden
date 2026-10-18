@@ -1,15 +1,11 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import Navbar from '../components/Navbar';
-import Footer from '../components/Footer';
+import PageFrame from '../components/PageFrame';
 import AuthModal from '../components/AuthModal';
 import ProfileModal from '../components/ProfileModal';
 import PaymentModal from '../components/PaymentModal';
 import { getStoredUser, clearUserSession, isUserPro } from '../lib/authSession';
-import {
-  Crown, Check, Zap, ArrowLeft, ShieldCheck, Sparkles,
-  Users, Building, CheckCircle2, ArrowRight, HelpCircle
-} from 'lucide-react';
+import { Crown, Check } from 'lucide-react';
 
 export default function PricingPage() {
   const [user, setUser] = useState(() => getStoredUser());
@@ -17,291 +13,113 @@ export default function PricingPage() {
   const [authMode, setAuthMode] = useState('signup');
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isPaymentOpen, setIsPaymentOpen] = useState(false);
-  const [billingCycle, setBillingCycle] = useState('yearly'); // 'monthly' | 'yearly'
+  const [billingCycle, setBillingCycle] = useState('yearly');
 
   const userIsPro = isUserPro(user);
 
   return (
-    <div className="min-h-screen bg-slate-50/50 flex flex-col font-sans text-slate-900 bg-dot-grid relative overflow-hidden">
-      
-      <div className="ambient-orb-1" />
-      <div className="ambient-orb-2" />
-
-      <Navbar
+    <>
+      <PageFrame
         user={user}
         onOpenAuth={(m) => { setAuthMode(m); setIsAuthOpen(true); }}
         onOpenProfile={() => setIsProfileOpen(true)}
-      />
-
-      <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-12 sm:py-16 z-10 relative">
-        
-        {/* Active Pro Member Banner */}
+        eyebrow="Pricing"
+        title="Simple plans for individuals and teams"
+        subtitle="6 GB free with no signup. Links last up to 7 days. Larger plans are not available yet."
+        nextLabel="Send a file"
+        nextTo="/"
+      >
         {userIsPro && (
-          <div className="mb-10 p-6 sm:p-7 bg-gradient-to-r from-amber-500 via-amber-400 to-yellow-400 rounded-3xl text-slate-950 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xl animate-fadeIn border border-amber-300">
-            <div className="flex items-center gap-3.5 text-center sm:text-left">
-              <div className="w-12 h-12 rounded-2xl bg-slate-950 text-amber-400 flex items-center justify-center font-black text-xl shrink-0 shadow-md">
-                👑
-              </div>
-              <div>
-                <h3 className="text-lg sm:text-xl font-black">You are an Active PRO Member</h3>
-                <p className="text-xs sm:text-sm font-semibold text-slate-950/80">
-                  Your account has unlimited 25 GB transfers, extended retention, and gigabit speed unlocked.
-                </p>
-              </div>
+          <div className="rounded-2xl border border-white/40 bg-white/10 px-5 py-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div>
+              <p className="font-semibold text-white">You are on Pro</p>
+              <p className="text-sm text-white/55 mt-1">Uploads are still limited to 6 GB and 7 days until paid plans are available.</p>
             </div>
-            <Link
-              to="/"
-              className="px-5 py-2.5 rounded-xl bg-slate-950 text-white font-bold text-xs hover:bg-slate-900 transition-colors shrink-0 shadow-md"
-            >
-              Transfer Files Now
-            </Link>
+            <Link to="/" className="rounded-full bg-white text-black text-xs font-semibold px-4 py-2">Transfer now</Link>
           </div>
         )}
 
-        {/* Header */}
-        <div className="text-center max-w-2xl mx-auto mb-12 animate-fadeIn">
-          <div className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold theme-bg-light theme-text mb-4 border border-indigo-100/80 shadow-2xs">
-            <Sparkles className="w-3.5 h-3.5" /> Honest & Transparent Pricing
-          </div>
-          <h1 className="text-4xl sm:text-5xl font-black text-slate-900 tracking-tight mb-4 leading-tight">
-            Simple plans for individuals and teams
-          </h1>
-          <p className="text-base sm:text-lg text-slate-600 font-medium leading-relaxed mb-8">
-            Send files for free with zero signup. Upgrade for massive 25 GB limits, permanent storage, and custom branding.
-          </p>
-
-          {/* Billing Switcher */}
-          <div className="inline-flex items-center p-1.5 bg-white/90 backdrop-blur-md rounded-2xl border border-slate-200 shadow-2xs gap-2">
+        <div className="flex justify-start">
+          <div className="inline-flex items-center p-1 rounded-full border border-white/10 bg-white/5 gap-1">
             <button
+              type="button"
               onClick={() => setBillingCycle('monthly')}
-              className={`px-5 py-2 rounded-xl text-sm font-bold transition-all ${
-                billingCycle === 'monthly'
-                  ? 'theme-btn-primary shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/80'
-              }`}
+              className={`px-4 py-2 rounded-full text-sm font-semibold transition-colors ${billingCycle === 'monthly' ? 'bg-white text-black' : 'text-white/60 hover:text-white'}`}
             >
-              Monthly Billing
+              Monthly
             </button>
             <button
+              type="button"
               onClick={() => setBillingCycle('yearly')}
-              className={`px-5 py-2 rounded-xl text-sm font-bold flex items-center gap-1.5 transition-all ${
-                billingCycle === 'yearly'
-                  ? 'theme-btn-primary shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/80'
-              }`}
+              className={`px-4 py-2 rounded-full text-sm font-semibold transition-colors flex items-center gap-2 ${billingCycle === 'yearly' ? 'bg-white text-black' : 'text-white/60 hover:text-white'}`}
             >
-              <span>Yearly Billing</span>
-              <span className="text-xs bg-emerald-500 text-white font-extrabold px-2 py-0.5 rounded-full">
-                Save 33%
-              </span>
+              Yearly
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white text-black">Save 33%</span>
             </button>
           </div>
         </div>
 
-        {/* 3 Tier Pricing Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-16 items-stretch">
-          
-          {/* 1. FREE PLAN */}
-          <div className="custom-card p-6 sm:p-8 flex flex-col justify-between bg-white/90">
-            <div>
-              <div className="flex items-center justify-between mb-4">
-                <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Free Tier</span>
-                <span className="bg-slate-100 text-slate-700 text-xs font-bold px-2.5 py-1 rounded-full">
-                  No Signup Required
-                </span>
-              </div>
-
-              <div className="mb-6">
-                <span className="text-4xl sm:text-5xl font-black text-slate-900">$0</span>
-                <span className="text-sm text-slate-500 font-semibold"> / forever</span>
-              </div>
-
-              <p className="text-xs sm:text-sm text-slate-500 font-medium mb-6">
-                Perfect for quick, one-off file transfers without creating an account.
-              </p>
-
-              <ul className="space-y-3.5 text-sm text-slate-700 font-medium mb-8">
-                <li className="flex items-center gap-2.5">
-                  <Check className="w-4.5 h-4.5 text-emerald-600 shrink-0" />
-                  <span><strong>5 GB</strong> per transfer</span>
-                </li>
-                <li className="flex items-center gap-2.5">
-                  <Check className="w-4.5 h-4.5 text-emerald-600 shrink-0" />
-                  <span><strong>Unlimited</strong> Direct Device P2P</span>
-                </li>
-                <li className="flex items-center gap-2.5">
-                  <Check className="w-4.5 h-4.5 text-emerald-600 shrink-0" />
-                  <span>Files stored for up to <strong>7 days</strong></span>
-                </li>
-                <li className="flex items-center gap-2.5">
-                  <Check className="w-4.5 h-4.5 text-emerald-600 shrink-0" />
-                  <span>Password protection & self-destruct</span>
-                </li>
-                <li className="flex items-center gap-2.5">
-                  <Check className="w-4.5 h-4.5 text-emerald-600 shrink-0" />
-                  <span>In-browser media streaming</span>
-                </li>
-              </ul>
-            </div>
-
-            <Link
-              to="/"
-              className="w-full py-3.5 rounded-xl border border-slate-300 font-bold text-sm text-slate-800 hover:bg-slate-50 text-center block transition-colors"
-            >
-              Start Free Transfer
-            </Link>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-stretch">
+          <div className="custom-card p-6 sm:p-7 flex flex-col">
+            <p className="text-[11px] uppercase tracking-[0.16em] text-white/40 font-semibold">Free</p>
+            <p className="mt-3 text-4xl font-semibold tracking-tight">$0</p>
+            <p className="text-sm text-white/50 mt-1">No signup required</p>
+            <ul className="mt-6 space-y-3 text-sm text-white/70 flex-1">
+              {['6 GB per transfer', 'Device transfer on your network', 'Up to 7 days', 'Password protection', 'No ads'].map((f) => (
+                <li key={f} className="flex gap-2"><Check className="w-4 h-4 text-white shrink-0 mt-0.5" />{f}</li>
+              ))}
+            </ul>
+            <Link to="/" className="mt-6 w-full py-3 rounded-full border border-white/15 text-sm font-semibold text-center hover:bg-white/5">Start free</Link>
           </div>
 
-          {/* 2. PRO PLAN (HIGHLIGHTED) */}
-          <div className="custom-card p-6 sm:p-8 flex flex-col justify-between border-2 border-indigo-500 shadow-xl relative overflow-hidden bg-white">
-            <div className="absolute top-0 right-0 bg-gradient-to-l from-indigo-600 to-purple-600 text-white text-xs font-black px-4 py-1 rounded-bl-xl uppercase tracking-wider">
-              Most Popular
-            </div>
-
-            <div>
-              <div className="flex items-center gap-2 mb-4">
-                <Crown className="w-5 h-5 text-amber-500" />
-                <span className="text-xs font-bold text-indigo-700 uppercase tracking-wider">iTransfer Pro</span>
-              </div>
-
-              <div className="mb-6">
-                <span className="text-4xl sm:text-5xl font-black text-slate-900">
-                  {billingCycle === 'yearly' ? '$6.66' : '$9.99'}
-                </span>
-                <span className="text-sm text-slate-500 font-semibold"> / month (or ₹799)</span>
-              </div>
-
-              <p className="text-xs sm:text-sm text-slate-500 font-medium mb-6">
-                For creators, freelancers, and power users needing huge limits, long expiry, and permanent storage.
-              </p>
-
-              <ul className="space-y-3.5 text-sm text-slate-800 font-medium mb-8">
-                <li className="flex items-center gap-2.5">
-                  <Check className="w-4.5 h-4.5 text-emerald-600 shrink-0" />
-                  <span><strong>25 GB</strong> per transfer</span>
-                </li>
-                <li className="flex items-center gap-2.5">
-                  <Check className="w-4.5 h-4.5 text-emerald-600 shrink-0" />
-                  <span><strong>♾️ Never Expire (Permanent) Storage</strong></span>
-                </li>
-                <li className="flex items-center gap-2.5">
-                  <Check className="w-4.5 h-4.5 text-emerald-600 shrink-0" />
-                  <span>Files stored for <strong>30 Days & 1 Year</strong></span>
-                </li>
-                <li className="flex items-center gap-2.5">
-                  <Check className="w-4.5 h-4.5 text-emerald-600 shrink-0" />
-                  <span>Full Private Upload History & Media Previews</span>
-                </li>
-                <li className="flex items-center gap-2.5">
-                  <Check className="w-4.5 h-4.5 text-emerald-600 shrink-0" />
-                  <span>Custom Themes, Invoicing & Priority Speeds</span>
-                </li>
-                <li className="flex items-center gap-2.5">
-                  <Check className="w-4.5 h-4.5 text-emerald-600 shrink-0" />
-                  <span>Instant UPI, Cards & PayPal Checkout</span>
-                </li>
-              </ul>
-            </div>
-
+          <div className="custom-card p-6 sm:p-7 flex flex-col border-white/35 relative">
+            <span className="absolute top-4 right-4 text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full bg-white text-black">Popular</span>
+            <p className="text-[11px] uppercase tracking-[0.16em] text-white font-semibold flex items-center gap-1.5">
+              <Crown className="w-3.5 h-3.5" /> Pro
+            </p>
+            <p className="mt-3 text-4xl font-semibold tracking-tight">
+              {billingCycle === 'yearly' ? '$6.66' : '$9.99'}
+            </p>
+            <p className="text-sm text-white/50 mt-1">/ month · or ₹799</p>
+            <ul className="mt-6 space-y-3 text-sm text-white/80 flex-1">
+              {['Not available yet', 'No larger transfer size yet', 'No longer retention yet', 'No paid storage quota yet', 'Same 6 GB limit as Free'].map((f) => (
+                <li key={f} className="flex gap-2"><Check className="w-4 h-4 text-white shrink-0 mt-0.5" />{f}</li>
+              ))}
+            </ul>
             {userIsPro ? (
-              <div className="py-3 px-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-center font-bold text-sm flex items-center justify-center gap-2">
-                <Crown className="w-4 h-4 fill-emerald-600 text-emerald-600" />
-                <span>Your Active Plan (PRO)</span>
-              </div>
+              <div className="mt-6 py-3 rounded-full bg-white/10 text-center text-sm font-semibold">Your active plan</div>
             ) : (
-              <button
-                onClick={() => setIsPaymentOpen(true)}
-                className="theme-btn-primary w-full py-3.5 rounded-xl text-sm font-black shadow-md text-center block transition-all active:scale-98"
-              >
-                Upgrade to Pro Instantly
+              <button type="button" disabled className="mt-6 w-full py-3 rounded-full bg-white/15 text-white/70 text-sm font-semibold cursor-not-allowed">
+                Not available yet
               </button>
             )}
           </div>
 
-          {/* 3. TEAMS & ENTERPRISE PLAN */}
-          <div className="custom-card p-6 sm:p-8 flex flex-col justify-between bg-white/90">
-            <div>
-              <div className="flex items-center justify-between mb-4">
-                <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Teams & Business</span>
-                <span className="bg-purple-100 text-purple-700 text-xs font-bold px-2.5 py-1 rounded-full">
-                  Custom Domain
-                </span>
-              </div>
-
-              <div className="mb-6">
-                <span className="text-4xl sm:text-5xl font-black text-slate-900">
-                  {billingCycle === 'yearly' ? '$15.99' : '$19.99'}
-                </span>
-                <span className="text-sm text-slate-500 font-semibold"> / user / month</span>
-              </div>
-
-              <p className="text-xs sm:text-sm text-slate-500 font-medium mb-6">
-                For creative agencies and companies wanting custom branding, subdomains, and admin controls.
-              </p>
-
-              <ul className="space-y-3.5 text-sm text-slate-700 font-medium mb-8">
-                <li className="flex items-center gap-2.5">
-                  <Check className="w-4.5 h-4.5 text-emerald-600 shrink-0" />
-                  <span><strong>50 GB</strong> per transfer</span>
-                </li>
-                <li className="flex items-center gap-2.5">
-                  <Check className="w-4.5 h-4.5 text-emerald-600 shrink-0" />
-                  <span>Custom branding & your domain</span>
-                </li>
-                <li className="flex items-center gap-2.5">
-                  <Check className="w-4.5 h-4.5 text-emerald-600 shrink-0" />
-                  <span>Shared team workspace & audit logs</span>
-                </li>
-                <li className="flex items-center gap-2.5">
-                  <Check className="w-4.5 h-4.5 text-emerald-600 shrink-0" />
-                  <span>Centralized team billing & invoices</span>
-                </li>
-                <li className="flex items-center gap-2.5">
-                  <Check className="w-4.5 h-4.5 text-emerald-600 shrink-0" />
-                  <span>Dedicated support line</span>
-                </li>
-              </ul>
-            </div>
-
-            <Link
-              to="/teams"
-              className="w-full py-3.5 rounded-xl border border-slate-300 font-bold text-sm text-slate-800 hover:bg-slate-50 text-center block transition-colors"
-            >
-              Learn About Teams
-            </Link>
+          <div className="custom-card p-6 sm:p-7 flex flex-col">
+            <p className="text-[11px] uppercase tracking-[0.16em] text-white/40 font-semibold">Teams</p>
+            <p className="mt-3 text-4xl font-semibold tracking-tight">
+              {billingCycle === 'yearly' ? '$15.99' : '$19.99'}
+            </p>
+            <p className="text-sm text-white/50 mt-1">/ user / month</p>
+            <ul className="mt-6 space-y-3 text-sm text-white/70 flex-1">
+              {['Not available yet', 'No team storage quota yet', 'No shared workspace yet', 'No team billing yet', 'Same 6 GB limit as Free'].map((f) => (
+                <li key={f} className="flex gap-2"><Check className="w-4 h-4 text-white shrink-0 mt-0.5" />{f}</li>
+              ))}
+            </ul>
+            <Link to="/teams" className="mt-6 w-full py-3 rounded-full border border-white/15 text-sm font-semibold text-center hover:bg-white/5">Learn about Teams</Link>
           </div>
-
         </div>
+      </PageFrame>
 
-      </main>
-
-      <Footer />
-
-      <AuthModal
-        isOpen={isAuthOpen}
-        onClose={() => setIsAuthOpen(false)}
-        initialMode={authMode}
-        onAuthSuccess={(u) => setUser(u)}
-      />
-
+      <AuthModal isOpen={isAuthOpen} onClose={() => setIsAuthOpen(false)} initialMode={authMode} onAuthSuccess={(u) => setUser(u)} />
       <ProfileModal
         isOpen={isProfileOpen}
         onClose={() => setIsProfileOpen(false)}
         user={user}
-        onSignOut={() => {
-          clearUserSession();
-          setUser(null);
-        }}
+        onSignOut={() => { clearUserSession(); setUser(null); }}
         onOpenUpgrade={() => setIsPaymentOpen(true)}
       />
-
-      <PaymentModal
-        isOpen={isPaymentOpen}
-        onClose={() => setIsPaymentOpen(false)}
-        user={user}
-        onUpgradeSuccess={(updated) => setUser(updated)}
-      />
-
-    </div>
+      <PaymentModal isOpen={isPaymentOpen} onClose={() => setIsPaymentOpen(false)} user={user} onUpgradeSuccess={(u) => setUser(u)} />
+    </>
   );
 }

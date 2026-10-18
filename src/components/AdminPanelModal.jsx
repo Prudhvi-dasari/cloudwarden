@@ -4,8 +4,9 @@ import {
   Check, RefreshCw, PlusCircle, Trash2, ArrowUpRight, UserCheck,
   UserX, Sparkles, Filter, Lock
 } from 'lucide-react';
-import { publicSupabase } from '../lib/supabase';
+import { supabase } from '../lib/supabase';
 import { useToast } from './Toast';
+import Portal from './Portal';
 
 function formatBytes(bytes) {
   if (!bytes || bytes === 0) return '0 Bytes';
@@ -35,11 +36,15 @@ export default function AdminPanelModal({ isOpen, onClose, user }) {
   const fetchAdminData = async () => {
     setLoading(true);
     try {
-      // 1. Fetch unique uploaders from transfers table
-      const { data: transferRows, error } = await publicSupabase
-        .from('transfers')
-        .select('sender_email, user_id, file_size, created_at')
-        .order('created_at', { ascending: false });
+      const { data: sessionWrap } = await supabase.auth.getSession();
+      const summaryRes = await fetch('/api/r2?action=admin-summary', {
+        headers: sessionWrap?.session?.access_token
+          ? { Authorization: `Bearer ${sessionWrap.session.access_token}` }
+          : {},
+      });
+      const summary = await summaryRes.json().catch(() => ({}));
+      const transferRows = summaryRes.ok ? summary.uploaders : [];
+      const error = summaryRes.ok ? null : new Error(summary.error || 'Summary unavailable');
 
       // Build consolidated user profiles
       const userMap = {};
@@ -56,7 +61,7 @@ export default function AdminPanelModal({ isOpen, onClose, user }) {
 
       if (!error && transferRows) {
         transferRows.forEach((row) => {
-          const em = (row.sender_email || 'guest@itransfer.in').toLowerCase();
+          const em = (row.email || 'guest@itransfer.in').toLowerCase();
           if (!userMap[em]) {
             userMap[em] = {
               email: em,
@@ -64,11 +69,11 @@ export default function AdminPanelModal({ isOpen, onClose, user }) {
               role: em === 'iprudhvichowdary@gmail.com' ? 'admin' : 'user',
               uploadsCount: 0,
               totalBytes: 0,
-              lastActive: row.created_at,
+              lastActive: row.lastActive,
             };
           }
-          userMap[em].uploadsCount += 1;
-          userMap[em].totalBytes += (row.file_size || 0);
+          userMap[em].uploadsCount += row.uploadsCount || 0;
+          userMap[em].totalBytes += row.totalBytes || 0;
         });
       }
 
@@ -166,7 +171,8 @@ export default function AdminPanelModal({ isOpen, onClose, user }) {
   });
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/75 backdrop-blur-md animate-fadeIn">
+    <Portal>
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-3 sm:p-4 bg-slate-950/75 backdrop-blur-md animate-fadeIn">
       <div className="relative w-full max-w-4xl max-h-[92vh] flex flex-col bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden animate-scale-in">
         
         {/* Header */}
@@ -224,7 +230,7 @@ export default function AdminPanelModal({ isOpen, onClose, user }) {
 
           <div className="p-3.5 bg-white border border-indigo-200 rounded-2xl shadow-2xs">
             <span className="text-[11px] font-bold text-indigo-700 uppercase tracking-wider">Vault Storage</span>
-            <p className="text-xl sm:text-2xl font-black text-indigo-900 mt-0.5">5 TB Dedicated</p>
+            <p className="text-xl sm:text-2xl font-black text-indigo-900 mt-0.5">6 GB / 7 days</p>
           </div>
         </div>
 
@@ -384,5 +390,6 @@ export default function AdminPanelModal({ isOpen, onClose, user }) {
         </div>
       </div>
     </div>
+    </Portal>
   );
 }

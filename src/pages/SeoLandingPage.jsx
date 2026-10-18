@@ -2,14 +2,14 @@ import { Link } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
 import SeoHead from '../components/SeoHead';
-import { Send, Shield, Zap, CheckCircle2, ArrowRight, Smartphone, Laptop, Lock, Wifi, Mail, Link2, Inbox, Sparkles, HelpCircle } from 'lucide-react';
+import { Send, Shield, Zap, CheckCircle2, ArrowRight, Sparkles } from 'lucide-react';
 
 const LANDING_DATA = {
   'send-large-files': {
-    title: 'Send Large Files Online Free (Up to 25GB) | iTransfer',
+    title: 'Send Large Files Online Free (Up to 6 GB) | iTransfer',
     metaDesc: 'Transfer huge files, 4K videos, and large zip archives across any device without compression or quality loss.',
     h1: 'Send Large Files Without Compression',
-    subtitle: 'Transfer up to 25GB directly between devices or via auto-expiring links. Zero signup required.',
+    subtitle: 'Send up to 6 GB by link, or move a file device to device. No signup. Links last up to 7 days.',
     feature1: 'Chunked TUS upload handles multi-GB files smoothly',
     feature2: 'Auto-resumes automatically if WiFi drops mid-upload',
     feature3: 'Original resolution & quality preserved 100%',
@@ -29,7 +29,7 @@ const LANDING_DATA = {
     h1: 'Create Instant File Sharing Links',
     subtitle: 'Upload files and get a secure, shareable link in seconds. No account needed.',
     feature1: 'One-click copy and instant QR code for mobile downloads',
-    feature2: 'Custom expiration times from 24 hours to 30 days',
+    feature2: 'Expiry from 1 hour up to 7 days',
     feature3: 'Self-destruct limits (purge after 1, 5, or 10 downloads)',
   },
   'file-request': {
@@ -84,7 +84,7 @@ const LANDING_DATA = {
     subtitle: 'Faster transfers, direct P2P connection, and auto-resumable uploads.',
     feature1: 'Disconnection-proof resumable uploads',
     feature2: 'Optional password protection & self-destruct limits',
-    feature3: 'Up to 25GB per transfer with zero subscription forced',
+    feature3: 'Up to 6 GB per cloud transfer, with no account',
   },
   'transfernow-alternative': {
     title: 'TransferNow Alternative with Direct P2P & Link Sharing | iTransfer',
@@ -132,22 +132,58 @@ const LANDING_DATA = {
     feature3: 'Ideal for photographers and video editors',
   },
   'how-to-send-large-files': {
-    title: 'How to Send Large Files Online Free (Step-by-Step, Up to 25GB) | iTransfer',
+    title: 'How to Send Large Files Online Free (Step-by-Step, Up to 6 GB) | iTransfer',
     metaDesc: 'Learn how to send large files, heavy videos, and archives online for free without registration. Instant shareable link & direct P2P.',
     h1: 'How to Send Large Files Online for Free',
-    subtitle: 'Step-by-step guide & instant gigabit tool to transfer up to 25GB with zero signup.',
-    feature1: 'Drag & drop any file up to 25GB directly',
+    subtitle: 'Send up to 6 GB with no signup. Links last up to 7 days.',
+    feature1: 'Drag and drop a file up to 6 GB',
     feature2: 'Create instant link or send straight to recipient email',
     feature3: '100% free with no account required',
   },
   'file-transfer-free': {
-    title: '[100% Free] Send Files Online Free (Up to 25GB, No Sign Up) — iTransfer',
-    metaDesc: 'Send files online completely free up to 25GB. No registration, no credit card, and no hidden fees. Instant download link.',
-    h1: '100% Free File Transfer Online',
-    subtitle: 'Send large files up to 25GB with zero account required. Fast, encrypted, and free forever.',
+    title: 'Send Files Online Free (6 GB, No Sign Up) — iTransfer',
+    metaDesc: 'Send files online free up to 6 GB. No registration, optional password, and expiry up to 7 days.',
+    h1: 'Free file transfer online',
+    subtitle: 'Send up to 6 GB with no account. Links last up to 7 days.',
     feature1: 'No email or password needed to upload',
-    feature2: 'Generates instant shareable links in seconds',
-    feature3: 'AES-256 encrypted security with auto-expiration',
+    feature2: 'Instant shareable links',
+    feature3: 'TLS + AES-256 at rest with auto-expiration',
+  },
+  'send-files-whatsapp': {
+    title: 'Send Large Files on WhatsApp via Link | iTransfer',
+    metaDesc: 'Bypass WhatsApp size limits. Upload once, share a secure download link in any chat.',
+    h1: 'Send large files on WhatsApp',
+    subtitle: 'Create a link in seconds and paste it into WhatsApp — no compression, no app install.',
+    feature1: 'Works with WhatsApp Web and mobile',
+    feature2: 'Optional password before download',
+    feature3: 'Free up to 6 GB per transfer',
+  },
+  'send-folder-online': {
+    title: 'Send Folders Online Free | iTransfer',
+    metaDesc: 'Upload entire folders with nested structure preserved. Share one link with recipients.',
+    h1: 'Send folders online',
+    subtitle: 'Select a folder, keep the directory tree, and share a single download link.',
+    feature1: 'Nested folder structure preserved',
+    feature2: 'ZIP-all download for recipients',
+    feature3: 'No signup required',
+  },
+  'expire-file-link': {
+    title: 'Auto-Expiring File Links & Password Gates | iTransfer',
+    metaDesc: 'Create download links that expire in hours or days, with free password protection.',
+    h1: 'Expiring file links',
+    subtitle: 'Choose from 1 hour up to 7 days. Longer retention is not available yet.',
+    feature1: '1 hour to 7 day free expiry',
+    feature2: 'Free password protection',
+    feature3: 'Objects purged after expiry',
+  },
+  'best-wetransfer-alternative-india': {
+    title: 'Best WeTransfer Alternative in India | iTransfer',
+    metaDesc: 'Send up to 6 GB with no signup, plus device transfer and no ads. Larger plans are not available yet.',
+    h1: 'WeTransfer alternative for India',
+    subtitle: 'Fast edge transfers, free passwords, device P2P, and Pro with UPI — built for Indian creators and teams.',
+    feature1: 'Free 6 GB cloud transfer, plus device transfer',
+    feature2: 'UPI-ready Pro upgrades',
+    feature3: 'Mumbai edge · no signup nags',
   },
 };
 
@@ -155,96 +191,101 @@ export default function SeoLandingPage({ pageKey }) {
   const data = LANDING_DATA[pageKey] || LANDING_DATA['airdrop-alternative'];
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col font-sans text-slate-900">
+    <div className="min-h-screen flex flex-col text-white relative overflow-hidden bg-[#07080d]">
+      <div className="page-sky" aria-hidden="true" />
       <SeoHead
         customTitle={data.title}
         customDescription={data.metaDesc}
         customCanonical={`https://itransfer.iprudhvi.in/${pageKey}`}
       />
-      
-      {/* Navbar */}
-      <header className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-slate-200/80">
+<header className="sticky top-0 z-40 bg-transparent border-b border-white/10 relative">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <Link to="/" className="flex items-center gap-2">
             <div className="w-10 h-10 rounded-xl theme-btn-primary flex items-center justify-center shadow-md">
-              <Send className="w-5 h-5 text-white" />
+              <Send className="w-5 h-5 text-[#0c0b0a]" />
             </div>
-            <span className="text-xl font-black tracking-tight text-slate-900">iTransfer</span>
+            <span className="text-xl font-display font-semibold tracking-tight text-white italic">iTransfer</span>
           </Link>
 
           <Link
             to="/"
-            className="theme-btn-primary px-4 py-2 text-xs font-bold shadow-xs inline-flex items-center gap-1.5"
+            className="theme-btn-primary px-4 py-2 text-xs font-semibold rounded-full inline-flex items-center gap-1.5"
           >
-            <span>Open Transfer App</span>
+            <span>Transfer Files Free</span>
             <ArrowRight className="w-3.5 h-3.5" />
           </Link>
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="flex-1 max-w-4xl w-full mx-auto px-4 sm:px-6 py-12">
-        
+      <main className="flex-1 max-w-4xl w-full mx-auto px-4 sm:px-6 py-12 relative z-10">
+
         <div className="text-center max-w-3xl mx-auto mb-10">
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold theme-bg-light theme-text mb-3 border border-indigo-100 shadow-2xs">
-            <Sparkles className="w-3.5 h-3.5" /> {data.h1}
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold theme-bg-light theme-text mb-3 border border-[#c4a574]/25">
+            <Sparkles className="w-3.5 h-3.5" /> SEO Guide
           </span>
-          <h1 className="text-3xl sm:text-5xl font-black text-slate-900 tracking-tight mb-3">
+          <h1 className="text-3xl sm:text-5xl font-display font-semibold text-white tracking-tight mb-3">
             {data.h1}
           </h1>
-          <p className="text-sm sm:text-base text-slate-600 max-w-xl mx-auto leading-relaxed">
+          <p className="text-sm sm:text-base text-white/55 max-w-xl mx-auto leading-relaxed">
             {data.subtitle}
           </p>
         </div>
 
-        {/* Action Card */}
-        <div className="custom-card p-8 sm:p-10 text-center max-w-xl mx-auto mb-12 border-2 border-indigo-500 shadow-xl relative overflow-hidden">
+        <div className="custom-card p-8 sm:p-10 text-center max-w-xl mx-auto mb-12 border-[#c4a574]/30 relative overflow-hidden">
           <div className="w-16 h-16 rounded-2xl theme-btn-primary flex items-center justify-center mx-auto mb-4 shadow-md">
-            <Send className="w-8 h-8 text-white" />
+            <Send className="w-8 h-8 text-[#0c0b0a]" />
           </div>
 
-          <h3 className="text-xl font-black text-slate-900 mb-2">Ready to Transfer?</h3>
-          <p className="text-xs text-slate-500 mb-6 max-w-sm mx-auto">
+          <h3 className="text-xl font-display font-semibold text-white mb-2">Ready to Transfer?</h3>
+          <p className="text-xs text-white/55 mb-6 max-w-sm mx-auto">
             Choose between direct device streaming, email delivery, or an instant download link.
           </p>
 
           <Link
             to="/"
-            className="theme-btn-primary w-full py-4 text-sm font-bold shadow-md inline-flex items-center justify-center gap-2"
+            className="theme-btn-primary w-full py-4 text-sm font-semibold rounded-full inline-flex items-center justify-center gap-2"
           >
             <span>Start Transferring on iTransfer</span>
             <ArrowRight className="w-4 h-4" />
           </Link>
         </div>
 
-        {/* Core Capabilities */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-12">
           <div className="custom-card p-6 space-y-2">
-            <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
+            <div className="w-10 h-10 rounded-xl bg-[#8fbc8f]/15 text-[#8fbc8f] flex items-center justify-center">
               <CheckCircle2 className="w-5 h-5" />
             </div>
-            <h3 className="font-bold text-sm text-slate-900">{data.feature1}</h3>
-            <p className="text-xs text-slate-500 leading-relaxed">Engineered for maximum reliability across mobile and desktop devices.</p>
+            <h3 className="font-semibold text-sm text-white">{data.feature1}</h3>
+            <p className="text-xs text-white/55 leading-relaxed">Engineered for maximum reliability across mobile and desktop devices.</p>
           </div>
 
           <div className="custom-card p-6 space-y-2">
-            <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+            <div className="w-10 h-10 rounded-xl theme-bg-light theme-text flex items-center justify-center">
               <Shield className="w-5 h-5" />
             </div>
-            <h3 className="font-bold text-sm text-slate-900">{data.feature2}</h3>
-            <p className="text-xs text-slate-500 leading-relaxed">Protected with auto-expiration and optional password encryption.</p>
+            <h3 className="font-semibold text-sm text-white">{data.feature2}</h3>
+            <p className="text-xs text-white/55 leading-relaxed">Protected with auto-expiration and optional password encryption.</p>
           </div>
 
           <div className="custom-card p-6 space-y-2">
-            <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center font-bold">
+            <div className="w-10 h-10 rounded-xl bg-[#c4a574]/15 theme-text flex items-center justify-center">
               <Zap className="w-5 h-5" />
             </div>
-            <h3 className="font-bold text-sm text-slate-900">{data.feature3}</h3>
-            <p className="text-xs text-slate-500 leading-relaxed">Full original quality preserved with zero compression or downscaling.</p>
+            <h3 className="font-semibold text-sm text-white">{data.feature3}</h3>
+            <p className="text-xs text-white/55 leading-relaxed">Full original quality preserved with zero compression or downscaling.</p>
           </div>
         </div>
 
       </main>
+
+      
+      <div className="relative z-10 max-w-6xl mx-auto px-4 sm:px-6 pb-12">
+        <div className="pt-8 border-t border-white/10">
+          <Link to="/" className="inline-flex items-center gap-2 rounded-full bg-white text-black text-sm font-semibold px-5 py-3 hover:bg-white/90">
+            Send a file
+          </Link>
+        </div>
+      </div>
 
       <Footer />
 
