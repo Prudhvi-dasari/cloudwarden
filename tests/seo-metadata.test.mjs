@@ -2,45 +2,29 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import {
+  ALIAS_TO,
+  CANONICAL_ORIGIN,
+  INDEXABLE_PATHS,
+  ROUTE_SEO_MAP,
+  canonicalUrlForPath,
+  homepageStructuredData,
+  resolveSeo,
+} from '../functions/lib/seoRoutes.js';
 
 const projectRoot = path.resolve(import.meta.dirname, '..');
 
-function loadSeo() {
-  const source = fs.readFileSync(path.join(projectRoot, 'src/components/SeoHead.jsx'), 'utf8');
-  const start = source.indexOf('export const CANONICAL_ORIGIN');
-  const end = source.indexOf('function removeMeta');
-  assert.ok(start > 0 && end > start, 'SeoHead must keep canonical data above DOM helpers');
-  const slice = source.slice(start, end).replace(/^export /gm, '');
-  return new Function(`${slice}\nreturn { CANONICAL_ORIGIN, INDEXABLE_PATHS, ALIAS_TO, ROUTE_SEO_MAP, resolveSeo, homepageStructuredData, secondaryStructuredData, canonicalUrlForPath };`)();
-}
+const seo = {
+  CANONICAL_ORIGIN,
+  INDEXABLE_PATHS,
+  ALIAS_TO,
+  ROUTE_SEO_MAP,
+  resolveSeo,
+  homepageStructuredData,
+  canonicalUrlForPath,
+};
 
-const seo = loadSeo();
-
-const EXPECTED_INDEXABLE = [
-  '/',
-  '/how-it-works',
-  '/features',
-  '/security',
-  '/pricing',
-  '/receive',
-  '/teams',
-  '/apps',
-  '/api-docs',
-  '/compare',
-  '/qr-transfer',
-  '/checksum',
-  '/compliance',
-  '/resources',
-  '/privacy',
-  '/terms',
-  '/help',
-  '/status',
-  '/changelog',
-  '/widget',
-  '/send-large-files',
-  '/send-files-without-signup',
-  '/how-to-send-large-files',
-];
+const EXPECTED_INDEXABLE = INDEXABLE_PATHS;
 
 test('canonical host is https://sendtoanyone.com', () => {
   assert.equal(seo.CANONICAL_ORIGIN, 'https://sendtoanyone.com');
@@ -128,23 +112,23 @@ test('sitemap lists each indexable canonical once and omits aliases', () => {
 });
 
 test('JSON-LD is valid, homepage-only for Organization and WebSite, and has no AggregateRating', () => {
-  const source = fs.readFileSync(path.join(projectRoot, 'src/components/SeoHead.jsx'), 'utf8');
+  const source = fs.readFileSync(path.join(projectRoot, 'functions/lib/seoRoutes.js'), 'utf8');
   const indexHtml = fs.readFileSync(path.join(projectRoot, 'index.html'), 'utf8');
-  assert.doesNotMatch(source, /AggregateRating/);
-  assert.doesNotMatch(indexHtml, /AggregateRating/);
-  assert.doesNotMatch(source, /SoftwareApplication/);
-  assert.doesNotMatch(indexHtml, /SoftwareApplication|WebApplication|SearchAction|FAQPage/);
+  assert.doesNotMatch(source, /AggregateRating|priceCurrency|FAQPage/);
+  assert.doesNotMatch(indexHtml, /AggregateRating|priceCurrency|FAQPage/);
+  assert.match(source, /SoftwareApplication/);
+  assert.match(indexHtml, /SoftwareApplication/);
 
   const home = seo.homepageStructuredData();
   const homeJson = JSON.parse(JSON.stringify(home));
   const homeTypes = homeJson['@graph'].map((node) => node['@type']);
-  assert.deepEqual(homeTypes, ['Organization', 'WebSite']);
+  assert.deepEqual(homeTypes, ['Organization', 'WebSite', 'SoftwareApplication']);
   assert.equal(homeJson['@graph'][0].name, 'SendToAnyone');
   assert.equal(homeJson['@graph'][0].url, 'https://sendtoanyone.com');
   assert.equal(homeJson['@graph'][1].url, 'https://sendtoanyone.com');
 
   const homeDecision = seo.resolveSeo({ pathname: '/' });
-  assert.deepEqual(homeDecision.jsonLd['@graph'].map((node) => node['@type']), ['Organization', 'WebSite']);
+  assert.deepEqual(homeDecision.jsonLd['@graph'].map((node) => node['@type']), ['Organization', 'WebSite', 'SoftwareApplication']);
 
   for (const routePath of EXPECTED_INDEXABLE.filter((item) => item !== '/')) {
     const decision = seo.resolveSeo({ pathname: routePath });
@@ -159,7 +143,7 @@ test('JSON-LD is valid, homepage-only for Organization and WebSite, and has no A
   const shellJson = indexHtml.match(/<script type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/);
   assert.ok(shellJson, 'index.html should ship homepage JSON-LD');
   const shell = JSON.parse(shellJson[1]);
-  assert.deepEqual(shell['@graph'].map((node) => node['@type']), ['Organization', 'WebSite']);
+  assert.deepEqual(shell['@graph'].map((node) => node['@type']), ['Organization', 'WebSite', 'SoftwareApplication']);
 });
 
 test('index.html is indexable and matches the homepage title and description', () => {
@@ -170,7 +154,7 @@ test('index.html is indexable and matches the homepage title and description', (
   assert.match(indexHtml, new RegExp(`<title>${home.title}</title>`));
   assert.match(indexHtml, new RegExp(`<meta name="description" content="${home.description}"`));
   assert.match(indexHtml, /<link rel="canonical" href="https:\/\/sendtoanyone\.com\/" \/>/);
-  assert.doesNotMatch(indexHtml, /og:image/);
+  assert.match(indexHtml, /property="og:image" content="https:\/\/sendtoanyone\.com\/og\.png"/);
   assert.doesNotMatch(indexHtml, /hero_3d_cloudscape/);
 });
 

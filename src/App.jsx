@@ -1,5 +1,6 @@
 import { lazy, Suspense } from 'react';
-import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
+import { BrowserRouter, Navigate, Routes, Route, useLocation } from 'react-router-dom';
+import { REDIRECTS } from '../functions/lib/seoRoutes.js';
 import ErrorBoundary from './components/ErrorBoundary';
 import { ToastProvider } from './components/Toast';
 import ScrollToTop from './components/ScrollToTop';
@@ -33,29 +34,16 @@ const StatusPage = lazy(() => import('./pages/StatusPage'));
 const ChangelogPage = lazy(() => import('./pages/ChangelogPage'));
 const QrTransferPage = lazy(() => import('./pages/QrTransferPage'));
 const SeoLandingPage = lazy(() => import('./pages/SeoLandingPage'));
+const StaticGuide = lazy(() => import('./pages/StaticGuide'));
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
 
-const SEO_KEYS = [
-  'send-large-files',
-  'send-files-by-email',
-  'create-file-sharing-link',
-  'iphone-to-windows',
-  'android-to-mac',
-  'phone-to-laptop',
-  'airdrop-alternative',
-  'wetransfer-alternative',
-  'transfernow-alternative',
-  'p2p-file-transfer',
-  'send-large-video',
-  'send-files-without-signup',
-  'send-files-without-compression',
-  'file-request',
-  'how-to-send-large-files',
-  'file-transfer-free',
-  'send-files-whatsapp',
-  'send-folder-online',
-  'expire-file-link',
-  'best-wetransfer-alternative-india',
+const GUIDE_PATHS = [
+  '/about',
+  '/wetransfer-alternative',
+  '/send-large-video',
+  '/send-files-whatsapp',
+  '/file-request',
+  '/send-files-by-email',
 ];
 
 function Stage({ children }) {
@@ -117,15 +105,16 @@ export default function App() {
             <Route path="/vs-transfernow" element={<ComparePage />} />
             <Route path="/status" element={<StatusPage />} />
             <Route path="/changelog" element={<ChangelogPage />} />
-            <Route path="/qr-transfer" element={<QrTransferPage />} />
-
-            {/* High-Intent SEO & Guide Landing Routes */}
-            {SEO_KEYS.map((key) => (
-              <Route
-                key={key}
-                path={`/${key}`}
-                element={<SeoLandingPage pageKey={key} />}
-              />
+            <Route path="/phone-to-laptop" element={<QrTransferPage />} />
+            <Route path="/about" element={<StaticGuide path="/about" nextTo="/help" nextLabel="Contact" />} />
+            {GUIDE_PATHS.filter((path) => path !== '/about').map((path) => (
+              <Route key={path} path={path} element={<StaticGuide path={path} />} />
+            ))}
+            <Route path="/send-large-files" element={<SeoLandingPage pageKey="send-large-files" />} />
+            <Route path="/send-files-without-signup" element={<SeoLandingPage pageKey="send-files-without-signup" />} />
+            <Route path="/how-to-send-large-files" element={<SeoLandingPage pageKey="how-to-send-large-files" />} />
+            {Object.entries(REDIRECTS).map(([from, to]) => (
+              <Route key={from} path={from} element={<Navigate to={to} replace />} />
             ))}
 
             {/* 404 Route */}

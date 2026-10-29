@@ -87,7 +87,7 @@ export default function TermsPage() {
           <article ref={articleRef} className="ds-prose">
             <Clause index={0}>
               <p>
-                By accessing, browsing, or using the SendToAnyone platform (accessible at <a href="https://sendtoanyone.com">https://sendtoanyone.com</a>), mobile apps, web widgets, or APIs, you agree to be bound by these Terms and Conditions and our Privacy Policy. If you do not agree, you must immediately discontinue using the service.
+                By accessing or using the SendToAnyone website at <a href="https://sendtoanyone.com">https://sendtoanyone.com</a>, you agree to these Terms and Conditions and the Privacy Policy. There is no mobile app, desktop app, hosted widget, or public API. If you do not agree, stop using the site.
               </p>
             </Clause>
 

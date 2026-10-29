@@ -1,68 +1,6 @@
-# ==============================================================================
-# SendToAnyone robots.txt — crawl rules for the public site
-# Official Domain: https://sendtoanyone.com
-# ==============================================================================
-
 User-agent: *
 Allow: /
 Allow: /transfers
-Allow: /how-it-works
-Allow: /features
-Allow: /security
-Allow: /pricing
-Allow: /receive
-Allow: /widget
-Allow: /teams
-Allow: /apps
-Allow: /api-docs
-Allow: /resources
-Allow: /checksum
-Allow: /compliance
-Allow: /compare
-Allow: /vs-wetransfer
-Allow: /vs-transfernow
-Allow: /status
-Allow: /changelog
-Allow: /qr-transfer
-Allow: /privacy
-Allow: /terms
-Allow: /contact
-Allow: /help
-
-# Programmatic SEO Landing Pages
-Allow: /send-large-files
-Allow: /send-files-by-email
-Allow: /create-file-sharing-link
-Allow: /file-request
-Allow: /iphone-to-windows
-Allow: /android-to-mac
-Allow: /phone-to-laptop
-Allow: /airdrop-alternative
-Allow: /wetransfer-alternative
-Allow: /transfernow-alternative
-Allow: /p2p-file-transfer
-Allow: /send-large-video
-Allow: /send-files-without-signup
-Allow: /send-files-without-compression
-Allow: /how-to-send-large-files
-Allow: /file-transfer-free
-Allow: /send-files-whatsapp
-Allow: /send-folder-online
-Allow: /expire-file-link
-Allow: /best-wetransfer-alternative-india
-Allow: /terms-and-conditions
-Allow: /tos
-
-# Alias URLs stay crawlable so the noindex tag can be read. robots.txt is not a lock.
-
-# Static Assets
-Allow: /images/
-Allow: /favicon.svg
-Allow: /icons.svg
-Allow: /manifest.json
-Allow: /sitemap.xml
-
-# Protect Private & Temporary Download Endpoints (Conserves Crawl Budget)
 Disallow: /api/
 Disallow: /download/
 Disallow: /d/
@@ -71,12 +9,9 @@ Disallow: /admin
 Disallow: /*?*token=*
 Disallow: /*?*key=*
 
-# Crawl-Delay (Polite rate for general bots)
-Crawl-delay: 1
-
-# Search Engine Specific Optimization
 User-agent: Googlebot
 Allow: /
+Allow: /transfers
 Disallow: /api/
 Disallow: /download/
 Disallow: /d/
@@ -84,15 +19,10 @@ Disallow: /request/
 Disallow: /admin
 Disallow: /*?*token=*
 Disallow: /*?*key=*
-
-User-agent: Googlebot-Image
-Allow: /images/
-Allow: /*.jpg$
-Allow: /*.png$
-Allow: /*.svg$
 
 User-agent: Bingbot
 Allow: /
+Allow: /transfers
 Disallow: /api/
 Disallow: /download/
 Disallow: /d/
@@ -101,6 +31,4 @@ Disallow: /admin
 Disallow: /*?*token=*
 Disallow: /*?*key=*
 
-# Primary XML Sitemap & Host
 Sitemap: https://sendtoanyone.com/sitemap.xml
-Host: https://sendtoanyone.com

@@ -117,21 +117,16 @@ test('public/sitemap.xml contains only canonical indexable URLs and zero private
     '/contact',
     '/vs-wetransfer',
     '/vs-transfernow',
-    '/file-request',
-    '/send-large-video',
     '/send-folder-online',
-    '/send-files-whatsapp',
     '/send-files-without-compression',
     '/file-transfer-free',
     '/create-file-sharing-link',
-    '/send-files-by-email',
     '/expire-file-link',
     '/iphone-to-windows',
     '/android-to-mac',
-    '/phone-to-laptop',
+    '/qr-transfer',
     '/airdrop-alternative',
     '/p2p-file-transfer',
-    '/wetransfer-alternative',
     '/transfernow-alternative',
     '/best-wetransfer-alternative-india',
   ];
@@ -149,8 +144,8 @@ test('all sitemap URLs have matching route definitions and metadata mappings in 
     m => m[1] || '/'
   );
 
-  const seoHeadContent = fs.readFileSync(path.join(projectRoot, 'src/components/SeoHead.jsx'), 'utf8');
-  const routeMapKeys = [...seoHeadContent.matchAll(/'(\/[^']*)':\s*{/g)].map(m => m[1]);
+  const seoHeadContent = fs.readFileSync(path.join(projectRoot, 'functions/lib/seoRoutes.js'), 'utf8');
+  const routeMapKeys = [...seoHeadContent.matchAll(/'(\/[^']*)':\s*page\(/g)].map(m => m[1]);
 
   const seoLandingContent = fs.readFileSync(path.join(projectRoot, 'src/pages/SeoLandingPage.jsx'), 'utf8');
   const landingSlugs = [...seoLandingContent.matchAll(/'([a-z0-9-]+)':\s*{/g)].map(m => '/' + m[1]);

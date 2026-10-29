@@ -48,6 +48,7 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
 
   useEffect(() => {
     if (!isOpen) return;
+    window.dispatchEvent(new Event('sta-auth-needed'));
     setMode(normalizeMode(initialMode));
     setError(null);
     setSuccessMsg('');

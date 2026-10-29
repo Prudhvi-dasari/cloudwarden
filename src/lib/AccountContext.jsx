@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState } from 'react';
-import { supabase, applyTheme } from './supabase';
+import { applyTheme } from './theme';
 import { clearUserSession, getStoredUser, syncAccount } from './authSession';
 import { identifyMinilytics } from './minilytics';
 
@@ -32,23 +32,31 @@ export function AccountProvider({ children }) {
 
     identifyMinilytics(getStoredUser());
 
-    supabase.auth.getSession().then(({ data }) => {
+    let subscription = null;
+    let started = false;
+    async function listen() {
+      if (started) return;
+      started = true;
+      const { supabase } = await import('./supabase.js');
+      if (!alive) return;
+      const { data } = await supabase.auth.getSession();
       if (!alive) return;
       if (data.session?.user) applySession(data.session.user);
-      else setUser(null);
-    });
+      const auth = supabase.auth.onAuthStateChange((event, session) => {
+        if (session?.user) setTimeout(() => { applySession(session.user); }, 0);
+        else if (event === 'SIGNED_OUT') setTimeout(() => { applySession(null); }, 0);
+      });
+      subscription = auth.data.subscription;
+    }
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (session?.user) {
-        setTimeout(() => { applySession(session.user); }, 0);
-      } else if (event === 'SIGNED_OUT') {
-        setTimeout(() => { applySession(null); }, 0);
-      }
-    });
+    if (getStoredUser()) listen();
+    const onNeed = () => { listen(); };
+    window.addEventListener('sta-auth-needed', onNeed);
 
     return () => {
       alive = false;
-      subscription.unsubscribe();
+      subscription?.unsubscribe();
+      window.removeEventListener('sta-auth-needed', onNeed);
     };
   }, []);
 

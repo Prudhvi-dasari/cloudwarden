@@ -1,0 +1,21 @@
+/vs-wetransfer /wetransfer-alternative 301
+/best-wetransfer-alternative-india /wetransfer-alternative 301
+/transfernow-alternative /compare 301
+/vs-transfernow /compare 301
+/send-files-without-compression /send-large-video 301
+/file-transfer-free /send-large-files 301
+/send-folder-online /send-large-files 301
+/create-file-sharing-link /send-large-files 301
+/qr-transfer /phone-to-laptop 301
+/iphone-to-windows /phone-to-laptop 301
+/android-to-mac /phone-to-laptop 301
+/airdrop-alternative /phone-to-laptop 301
+/p2p-file-transfer /phone-to-laptop 301
+/expire-file-link /how-to-send-large-files 301
+/terms-and-conditions /terms 301
+/tos /terms 301
+/contact /help 301
+
+# www.sendtoanyone.com cannot be redirected from this file. Add a proxied DNS
+# record for www and a Cloudflare Redirect Rule to https://sendtoanyone.com/$1.
+# The Pages middleware also 301s www when the request reaches this project.

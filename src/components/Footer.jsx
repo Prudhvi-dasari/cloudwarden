@@ -9,7 +9,9 @@ const GROUPS = [
       { to: '/', label: 'Transfer' },
       { to: '/receive', label: 'Request files' },
       { to: '/?mode=device', label: 'Device' },
-      { to: '/qr-transfer', label: 'QR transfer' },
+      { to: '/phone-to-laptop', label: 'Phone to laptop' },
+      { to: '/send-files-whatsapp', label: 'WhatsApp' },
+      { to: '/wetransfer-alternative', label: 'WeTransfer alternative' },
       { to: '/send-large-files', label: 'Large files' },
       { to: '/send-files-without-signup', label: 'No account' },
     ],
@@ -40,6 +42,7 @@ const GROUPS = [
   {
     title: 'Company',
     links: [
+      { to: '/about', label: 'About' },
       { to: '/help', label: 'Help' },
       { to: '/status', label: 'Status' },
       { to: '/changelog', label: 'Changelog' },

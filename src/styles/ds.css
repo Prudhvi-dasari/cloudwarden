@@ -878,8 +878,6 @@ html:has(.ds-page) body {
 .ds-word {
   display: inline-block;
   white-space: nowrap;
-  animation: dsWordIn 0.8s var(--ds-ease-out) both;
-  animation-delay: calc(var(--i, 0) * 70ms + 80ms);
 }
 
 .ds-squiggle-word {

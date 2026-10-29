@@ -7,6 +7,7 @@ import P2PTransferView from '../components/P2PTransferView';
 import { getStoredUser, clearUserSession } from '../lib/authSession';
 import { ArrowRight, RefreshCw, Smartphone } from 'lucide-react';
 import { generateP2PCode } from '../lib/p2p';
+import { ROUTE_SEO_MAP } from '../../functions/lib/seoRoutes.js';
 
 export default function QrTransferPage() {
   const [user, setUser] = useState(() => getStoredUser());
@@ -31,10 +32,10 @@ export default function QrTransferPage() {
         user={user}
         onOpenAuth={(mode) => { setAuthMode(mode); setIsAuthOpen(true); }}
         onOpenProfile={() => setIsProfileOpen(true)}
-        eyebrow="Device transfer · QR"
-        title="Scan the code. Send across."
+        eyebrow="Phone to laptop"
+        title="Move files from your phone to your laptop, no cable"
         accent={2}
-        subtitle="Open this page on your laptop and scan the code with your phone. The file moves between the two browsers over WebRTC. Nothing is stored on SendToAnyone."
+        subtitle="Open this page on your laptop and scan the code with your phone. Works from iPhone to Windows and Android to Mac, in the browser. Nothing is stored as a download link."
       >
         <section className="grid gap-6 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] items-start" aria-label="Pair two devices">
           <div className="ds-frame" data-reveal>
@@ -111,6 +112,15 @@ export default function QrTransferPage() {
             </li>
           </ol>
         </section>
+
+        <article className="ds-prose max-w-3xl">
+          {(ROUTE_SEO_MAP['/phone-to-laptop'].sections || []).map((section) => (
+            <section key={section.h2}>
+              <h2>{section.h2}</h2>
+              {section.paragraphs.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
+            </section>
+          ))}
+        </article>
 
         <div className="ds-grid cols-2" data-reveal>
           <div className="ds-callout">
