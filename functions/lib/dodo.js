@@ -1,9 +1,11 @@
 import { CANONICAL_ORIGIN, publicOrigin } from './canonicalHost.js';
 import { previewBlockResponse } from './previewGuard.js';
-import { allowanceForStatus, STORAGE_POLICY } from './storagePolicy.js';
-import { handleDodoWebhook, productMap } from './dodoWebhook.js';
+import { STORAGE_POLICY } from './storagePolicy.js';
+import { handleDodoWebhook } from './dodoWebhook.js';
+import { CHECKOUT_PLANS, entitlementAllows, isCheckoutCode, normalizeCheckoutCode, offerFor, productIdFor, productMap } from './plans.js';
+import { recordProductEvent } from './productEvents.js';
 
-const PLANS = new Set(['monthly', 'yearly']);
+const PLANS = new Set(['monthly', 'yearly', ...CHECKOUT_PLANS.map((plan) => plan.code)]);
 
 function envGet(env, key) {
   if (env && env[key]) return env[key];
@@ -47,10 +49,12 @@ export function checkoutPurchasable(env) {
 }
 
 export function transferAllowance(entitlement) {
-  const allowance = allowanceForStatus(entitlement?.status);
+  const allowance = entitlementAllows(entitlement || {});
   return {
-    bytes: allowance.bytes,
-    hours: allowance.hours,
+    bytes: allowance.transferBytes,
+    hours: allowance.retentionHours,
+    storageBytes: allowance.storageBytes,
+    tier: allowance.tier,
     paidFeaturesEnabled: STORAGE_POLICY.paidFeaturesEnabled,
     entitlementStatus: entitlement?.status || 'free',
   };
@@ -106,22 +110,25 @@ async function authenticatedUser(request, env) {
 
 function offers(env) {
   const products = productMap(env);
+  const open = checkoutPurchasable(env);
+  const listed = CHECKOUT_PLANS.map((plan) => {
+    const offer = offerFor(env, plan);
+    return { ...offer, purchasable: open && offer.productConfigured };
+  });
+  listed.push(
+    { ...listed.find((plan) => plan.code === 'pro_monthly'), code: 'monthly', hidden: true },
+    { ...listed.find((plan) => plan.code === 'pro_yearly'), code: 'yearly', hidden: true },
+  );
   return {
     provider: 'dodo',
     mode: envGet(env, 'DODO_ENV') === 'live' ? 'live' : 'test',
-    purchasable: checkoutPurchasable(env),
-    reason: checkoutPurchasable(env)
-      ? 'Dodo charges the price on its checkout page. Paid access starts after the server confirms the payment.'
-      : 'Checkout is closed. A confirmed payment allows 250 GB for 180 days.',
-    plans: ['monthly', 'yearly'].map((code) => ({
-      code,
-      priceLabel: code === 'monthly' ? '₹799' : '₹5,999',
-      interval: code === 'monthly' ? 'Billed every month' : 'Billed once a year',
-      transfer: '250 GB',
-      retention: '180 days',
-      productConfigured: Boolean(products[code]),
-      purchasable: checkoutPurchasable(env) && Boolean(products[code]),
-    })),
+    purchasable: open,
+    currencyNote: 'Prices are shown in INR and USD. Dodo charges the price on the product you select.',
+    reason: open
+      ? 'Dodo charges the price on its checkout page. The plan starts after the server confirms the payment.'
+      : 'Checkout is closed until each Dodo product id is configured.',
+    plans: listed.filter((plan) => plan && plan.code),
+    productsConfigured: Object.fromEntries(Object.entries(products).map(([code, id]) => [code, Boolean(id)])),
   };
 }
 
@@ -144,7 +151,8 @@ async function createCheckout({ request, env, plan }) {
     });
   }
   const products = productMap(env);
-  const productId = products[plan];
+  const checkoutCode = normalizeCheckoutCode(plan);
+  const productId = productIdFor(env, checkoutCode) || products[plan];
   if (!productId) {
     return json(503, { error: 'This plan has no Dodo product configured.', code: 'PRODUCT_UNCONFIGURED' });
   }
@@ -169,7 +177,7 @@ async function createCheckout({ request, env, plan }) {
         metadata: {
           ...minilyticsMetadata(request),
           user_id: user.id,
-          plan_code: plan,
+          plan_code: checkoutCode,
           email: user.email || '',
         },
       }),
@@ -225,6 +233,6 @@ export async function handlePaymentRequest({ request, env }) {
     return json(400, { error: 'Product and price are chosen on the server.', code: 'PRODUCT_NOT_ALLOWED' });
   }
   const plan = textValue(body.plan || body.billingCycle);
-  if (!PLANS.has(plan)) return json(400, { error: 'Unknown plan.', code: 'UNKNOWN_PLAN' });
+  if (!isCheckoutCode(plan) && !PLANS.has(plan)) return json(400, { error: 'Unknown plan.', code: 'UNKNOWN_PLAN' });
   return createCheckout({ request, env, plan });
 }

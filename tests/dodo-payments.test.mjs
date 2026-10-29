@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { handlePaymentRequest, transferAllowance } from '../functions/lib/dodo.js';
-import { processDodoEvent, signDodoWebhook } from '../functions/lib/dodoWebhook.js';
+import { decideBillingEvent, processDodoEvent, signDodoWebhook } from '../functions/lib/dodoWebhook.js';
 import { STORAGE_POLICY } from '../functions/lib/storagePolicy.js';
 import { checkoutReturnState } from '../src/lib/checkoutReturn.js';
 
@@ -137,7 +137,7 @@ test('authenticated checkout uses the server product and test mode', async () =>
     const payload = JSON.parse(dodoCall.options.body);
     assert.deepEqual(payload.product_cart, [{ product_id: 'pdt_month', quantity: 1 }]);
     assert.equal(payload.metadata.user_id, USER_A);
-    assert.equal(payload.metadata.plan_code, 'monthly');
+    assert.equal(payload.metadata.plan_code, 'pro_monthly');
     assert.equal(payload.metadata.ml_visitor_id, 'visitor-1');
     assert.equal(payload.metadata.ml_session_id, 'session-1');
     assert.equal(payload.metadata.email, 'payer@example.com');
@@ -202,7 +202,8 @@ test('checkout rejects missing auth, unknown plans, client product ids, and miss
     const offerBody = await offers.json();
     assert.equal(offerBody.purchasable, true);
     assert.equal(offerBody.plans.find((plan) => plan.code === 'monthly').purchasable, true);
-    assert.equal(offerBody.plans.find((plan) => plan.code === 'yearly').priceLabel, '₹5,999');
+    assert.equal(offerBody.plans.find((plan) => plan.code === 'yearly').priceLabel, '₹7,999');
+    assert.equal(offerBody.plans.find((plan) => plan.code === 'yearly').usdLabel, '$150');
     assert.equal(offerBody.mode, 'test');
     assert.equal(JSON.stringify(offerBody).includes('pdt_month'), false);
     assert.equal(offerBody.checkoutUrl, undefined);
@@ -330,6 +331,63 @@ test('invalid, duplicate, and lifecycle webhooks update only the matching user',
   assert.equal(freeAllowance.hours, 168);
   assert.equal(allowance.paidFeaturesEnabled, true);
   assert.equal(STORAGE_POLICY.paidFeaturesEnabled, true);
+});
+
+test('a payment with only the customer email links to that account', async () => {
+  const store = memoryStore();
+  store.userIdForEmail = async (email) => (email === 'payer@example.com' ? USER_A : '');
+  const event = {
+    type: 'payment.succeeded',
+    data: {
+      payload: {
+        payment_id: 'pay_email',
+        customer: { email: 'Payer@Example.com' },
+        product_cart: [{ product_id: 'pdt_month', quantity: 1 }],
+      },
+    },
+  };
+  const unmatched = decideBillingEvent(event, { monthly: 'pdt_month', yearly: 'pdt_year' });
+  assert.equal(unmatched.outcome, 'unmatched_user');
+  assert.equal(unmatched.customerEmail, 'payer@example.com');
+  assert.equal(unmatched.planCode, 'monthly');
+
+  const result = await processDodoEvent({
+    event,
+    webhookId: 'msg_email',
+    store,
+    products: { monthly: 'pdt_month', yearly: 'pdt_year' },
+  });
+  assert.equal(result.decision.apply, true);
+  assert.equal(result.decision.userId, USER_A);
+  assert.equal(store.entitlements.get(USER_A).status, 'active');
+  assert.equal(store.entitlements.get(USER_A).paymentId, 'pay_email');
+
+  const planOnly = decideBillingEvent({
+    type: 'payment.succeeded',
+    data: { metadata: { user_id: USER_A, plan_code: 'yearly' }, payment_id: 'pay_plan' },
+  }, { monthly: 'pdt_month', yearly: 'pdt_year' });
+  assert.equal(planOnly.apply, true);
+  assert.equal(planOnly.planCode, 'yearly');
+
+  const renewed = decideBillingEvent({
+    type: 'subscription.renewed',
+    data: { subscription_id: 'sub_9', metadata: { user_id: USER_A, plan_code: 'monthly' }, product_id: 'pdt_month' },
+  }, { monthly: 'pdt_month', yearly: 'pdt_year' });
+  assert.equal(renewed.status, 'active');
+  assert.equal(renewed.apply, true);
+
+  const failed = decideBillingEvent({
+    type: 'payment.failed',
+    data: { metadata: { user_id: USER_A, plan_code: 'monthly' }, product_id: 'pdt_month' },
+  }, { monthly: 'pdt_month', yearly: 'pdt_year' });
+  assert.equal(failed.status, 'failed');
+  assert.equal(failed.apply, true);
+
+  const sql = readFileSync(new URL('../supabase/migrations/20261029180000_billing_apply_and_reconcile.sql', import.meta.url), 'utf8');
+  assert.match(sql, /itransfer\.billing_write/);
+  assert.match(sql, /reconcile_billing_by_email/);
+  assert.match(sql, /revoke all on function public\.reconcile_billing_by_email/);
+  assert.doesNotMatch(sql, /reserve_transfer_file/);
 });
 
 test('a checkout return never confirms payment, and the migration is additive', () => {

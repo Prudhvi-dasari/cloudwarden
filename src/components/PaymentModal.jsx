@@ -6,7 +6,7 @@ import { checkoutAccessToken } from '../lib/checkoutSession';
 
 const PLANS = {
   monthly: { label: 'Monthly', price: '₹799', note: 'Billed every month' },
-  yearly: { label: 'Yearly', price: '₹5,999', note: 'Billed once a year' },
+  yearly: { label: 'Yearly', price: '₹7,999', note: 'Billed once a year' },
 };
 
 export default function PaymentModal({ isOpen, onClose }) {

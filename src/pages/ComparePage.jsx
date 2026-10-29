@@ -231,7 +231,7 @@ export default function ComparePage() {
               <p>A checksum tool at <In to="/checksum">/checksum</In> hashes a file in the browser. It does not run by itself on every transfer.</p>
             </Source>
             <Source name="Not available">
-              <p>There is no public API and no team plan. Pro is the only paid tier: 250 GB per transfer and links up to 180 days.</p>
+              <p>There is no public API and no shared team workspace. Creator, Pro, and Studio are on the pricing page. Studio is marked team-ready, and a shared workspace is not included yet.</p>
             </Source>
           </Topic>
         </div>

@@ -72,6 +72,16 @@ function installFetch(state) {
     const parsed = new URL(href);
     const table = parsed.pathname.split('/').pop();
     const body = options.body ? JSON.parse(options.body) : null;
+    if (table === 'sta_product_events') return new Response('[]', { status: 201 });
+    if (table === 'itransfer_accounts' || table === 'sta_transfer_passes' || table === 'billing_entitlements') {
+      return new Response('[]', { status: 200 });
+    }
+    if (table === 'set_platform_storage_cap' || table === 'release_daily_upload') {
+      return new Response('null', { status: 200 });
+    }
+    if (table === 'consume_daily_upload') {
+      return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    }
     if (table === 'transfer_claims' && method === 'POST') {
       state.claims.push(...body);
       return new Response(JSON.stringify(body), { status: 201 });

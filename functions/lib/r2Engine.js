@@ -3,8 +3,17 @@
  * Presigns browser uploads with Web Crypto SigV4 — no AWS SDK, no Node-only modules.
  */
 
-import { allowanceForStatus, STORAGE_POLICY } from './storagePolicy.js';
+import { STORAGE_POLICY, guestDailyBytes, storageCapBytes } from './storagePolicy.js';
+import { entitlementAllows, TIERS } from './plans.js';
+import { allowProductEvent, recordProductEvent, sanitizeProductEvent } from './productEvents.js';
 import { SINGLE_PUT_ABANDON_GRACE_SECONDS, UNOCCUPIED_STATUSES } from './transferReservation.js';
+import {
+  escapeXml,
+  mergeCompleteParts,
+  multipartIsAbandoned,
+  parseIncompleteUploads,
+  parseListedParts,
+} from './multipartUpload.js';
 import { checkSharedLimit, trustedClientIp } from './rateLimit.js';
 import { opsEvent } from './opsLog.js';
 import { isolatedRuntimeBlock } from './localIsolation.js';
@@ -15,6 +24,7 @@ import {
   hashPassword,
   normalizeShareId,
   passwordMatches,
+  passwordNeedsUpgrade,
   sha256Hex,
   sizeError,
   timingSafeEqual,
@@ -122,9 +132,16 @@ function currentPasswordFailures(shareId, now = Date.now()) {
   return record;
 }
 
-function rejectIfPasswordFailuresExceeded(shareId) {
+function rejectIfPasswordFailuresExceeded(shareId, ip = '') {
+  const shareBlock = passwordFailureResponse(shareId);
+  if (shareBlock) return shareBlock;
+  if (ip) return passwordFailureResponse(`${shareId}|${ip}`);
+  return null;
+}
+
+function passwordFailureResponse(key) {
   const now = Date.now();
-  const record = currentPasswordFailures(shareId, now);
+  const record = currentPasswordFailures(key, now);
   if (!record || record.count < PASSWORD_FAILURE_LIMIT) return null;
   const retryAfter = Math.max(1, Math.ceil((PASSWORD_FAILURE_WINDOW_MS - (now - record.windowStart)) / 1000));
   return json(429, {
@@ -139,7 +156,12 @@ async function passwordLimitKey(shareId, clientIp) {
   return sha256Hex(`itransfer-password\n${scope}\n${clientIp}`);
 }
 
-function recordPasswordFailure(shareId) {
+function recordPasswordFailure(shareId, ip = '') {
+  bumpPasswordFailure(shareId);
+  if (ip) bumpPasswordFailure(`${shareId}|${ip}`);
+}
+
+function bumpPasswordFailure(shareId) {
   const now = Date.now();
   let record = passwordFailureMap.get(shareId);
   if (!record || now - record.windowStart > PASSWORD_FAILURE_WINDOW_MS) {
@@ -595,42 +617,236 @@ function requestOpen(row) {
   return true;
 }
 
+function asAllowance(entitlement) {
+  const tier = entitlementAllows(entitlement || {});
+  return {
+    bytes: tier.transferBytes,
+    hours: tier.retentionHours,
+    storageBytes: tier.storageBytes,
+    tier: tier.tier,
+    paid: tier.paid,
+    brand: tier.brand,
+  };
+}
+
 async function transferCapFor(env, userId) {
-  const free = allowanceForStatus('');
+  const free = asAllowance({});
   if (!userId) return free;
   try {
     const rows = await sbFetch(
       env,
-      `billing_entitlements?user_id=eq.${encodeURIComponent(userId)}&select=status&limit=1`,
+      `billing_entitlements?user_id=eq.${encodeURIComponent(userId)}&select=status,plan_code&limit=1`,
     );
-    const status = Array.isArray(rows) ? rows[0]?.status : '';
-    return allowanceForStatus(status);
+    const row = Array.isArray(rows) ? rows[0] : null;
+    return asAllowance({ status: row?.status, planCode: row?.plan_code });
   } catch {
     return free;
   }
 }
 
-async function reserveTransferRow(env, row) {
-  const result = await sbFetch(env, 'rpc/reserve_transfer_file', {
-    method: 'POST',
-    body: row,
-  });
-  const payload = Array.isArray(result) ? result[0] : result;
+async function accountUsedBytes(env, userId) {
+  if (!userId) return 0;
+  try {
+    const rows = await sbFetch(
+      env,
+      `transfers?user_id=eq.${encodeURIComponent(userId)}&select=file_size,status&limit=1000`,
+    );
+    if (!Array.isArray(rows)) return 0;
+    return rows.reduce((sum, row) => {
+      const status = row.status || 'active';
+      if (status === 'rejected' || status === 'expired' || status === 'released') return sum;
+      return sum + (Number(row.file_size) || 0);
+    }, 0);
+  } catch {
+    return 0;
+  }
+}
+
+async function loadPass(env, userId, shareId = '') {
+  if (!userId) return null;
+  const shareFilter = shareId
+    ? `&status=eq.used&used_share_id=eq.${encodeURIComponent(shareId)}`
+    : '&status=eq.unused&order=created_at.asc';
+  try {
+    const rows = await sbFetch(
+      env,
+      `sta_transfer_passes?user_id=eq.${encodeURIComponent(userId)}${shareFilter}&select=bytes_limit,retention_hours&limit=1`,
+    );
+    const row = Array.isArray(rows) ? rows[0] : null;
+    if (!row) return null;
+    return {
+      bytes: Number(row.bytes_limit) || TIERS.pass.transferBytes,
+      hours: Number(row.retention_hours) || TIERS.pass.retentionHours,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function applyPass(base, pass) {
+  if (!pass) return { ...base, usingPass: false };
+  return {
+    ...base,
+    bytes: Math.max(base.bytes, pass.bytes),
+    hours: Math.max(base.hours, pass.hours),
+    usingPass: true,
+  };
+}
+
+/** Raises limits for an unused pass, or for a share that already consumed one. */
+async function allowanceForUpload(env, userId, fileSize = 0, shareId = '') {
+  const base = await transferCapFor(env, userId);
+  if (!userId) return { ...base, usingPass: false };
+  const linked = shareId ? await loadPass(env, userId, shareId) : null;
+  if (linked) return applyPass(base, linked);
+  const size = Number(fileSize) || 0;
+  let needsPass = size === 0 || size > base.bytes;
+  if (!needsPass && size > 0 && base.storageBytes) {
+    const used = await accountUsedBytes(env, userId);
+    needsPass = used + size > base.storageBytes;
+  }
+  if (!needsPass) return { ...base, usingPass: false };
+  const pass = await loadPass(env, userId);
+  if (!pass) return { ...base, usingPass: false };
+  if (size > pass.bytes) return { ...base, usingPass: false };
+  return applyPass(base, pass);
+}
+
+async function rehashPassword(env, shareId, stored, typed) {
+  if (!passwordNeedsUpgrade(stored)) return;
+  try {
+    const next = await hashPassword(typed);
+    if (!next) return;
+    await sbFetch(env, `transfers?share_id=eq.${encodeURIComponent(shareId)}`, {
+      method: 'PATCH',
+      body: { password_hash: next },
+    });
+  } catch {
+    // A legacy hash still verified. The next successful check can upgrade it.
+  }
+}
+
+function reservationPayload(result) {
+  return Array.isArray(result) ? result[0] : result;
+}
+
+async function syncStorageCap(env) {
+  try {
+    await sbFetch(env, 'rpc/set_platform_storage_cap', {
+      method: 'POST',
+      body: { p_cap: storageCapBytes(env) },
+    });
+  } catch {
+    // The settings function arrives with the 2 TB migration.
+  }
+}
+
+async function dailyUploadSubject(request) {
+  const ip = trustedClientIp(request) || 'unknown';
+  const digest = await sha256Hex(String(ip));
+  return `ip:${digest.slice(0, 32)}`;
+}
+
+async function consumeDailyUpload(env, request, paid, fileSize) {
+  if (paid) return null;
+  const subject = await dailyUploadSubject(request);
+  let payload;
+  try {
+    payload = reservationPayload(await sbFetch(env, 'rpc/consume_daily_upload', {
+      method: 'POST',
+      body: {
+        p_subject: subject,
+        p_bytes: Number(fileSize) || 0,
+        p_limit: guestDailyBytes(env),
+      },
+    }));
+  } catch {
+    return null;
+  }
+  if (payload?.ok === false) {
+    return {
+      blocked: json(403, {
+        error: 'This network has sent as much as it can on the free plan today. Try again tomorrow, or upgrade.',
+        code: 'DAILY_LIMIT',
+      }),
+    };
+  }
+  return { subject, bytes: Number(fileSize) || 0 };
+}
+
+async function releaseDailyUpload(env, hold) {
+  if (!hold?.subject || !hold.bytes) return;
+  try {
+    await sbFetch(env, 'rpc/release_daily_upload', {
+      method: 'POST',
+      body: { p_subject: hold.subject, p_bytes: hold.bytes },
+    });
+  } catch {
+    // Best effort. The 24 hour window still resets the counter.
+  }
+}
+
+async function reserveTransferRow(env, row, request) {
+  await syncStorageCap(env);
+  const allowance = await allowanceForUpload(env, row?.p_user_id || null, row?.p_file_size, row?.p_share_id || '');
+  if (row?.p_user_id && allowance.storageBytes && !allowance.usingPass) {
+    const used = await accountUsedBytes(env, row.p_user_id);
+    if (used + (Number(row.p_file_size) || 0) > allowance.storageBytes) {
+      recordProductEvent(env, { event: 'quota_hit', tier: allowance.tier, bytes: Number(row.p_file_size) || 0 });
+      return json(403, {
+        error: 'This account is using all of its storage. Delete an older transfer, or upgrade for more room.',
+        code: 'ACCOUNT_QUOTA',
+        usedBytes: used,
+        quotaBytes: allowance.storageBytes,
+      });
+    }
+  }
+  const daily = await consumeDailyUpload(env, request, allowance.paid || allowance.usingPass, row?.p_file_size);
+  if (daily?.blocked) return daily.blocked;
+  let result;
+  try {
+    result = await sbFetch(env, 'rpc/reserve_transfer_file', {
+      method: 'POST',
+      body: row,
+    });
+  } catch (error) {
+    await releaseDailyUpload(env, daily);
+    throw error;
+  }
+  const payload = reservationPayload(result);
   if (payload?.ok === true) return null;
+  await releaseDailyUpload(env, daily);
   opsEvent({
     event: 'reservation',
     result: 'rejected',
-    category: payload?.code === 'TRANSFER_TOO_LARGE' || payload?.code === 'STORAGE_CAP' ? payload.code : 'RECORD_FAILED',
+    category: payload?.code === 'TRANSFER_TOO_LARGE' || payload?.code === 'STORAGE_CAP' || payload?.code === 'STORAGE_BUSY'
+      ? payload.code
+      : 'RECORD_FAILED',
   });
   if (payload?.code === 'TRANSFER_TOO_LARGE') {
     return json(403, {
-      error: 'This transfer is larger than the 6 GB free limit.',
+      error: sizeError((Number(allowance.bytes) || 0) + 1, allowance.bytes)
+        || 'This transfer is larger than the limit for this account.',
       code: 'TRANSFER_TOO_LARGE',
     });
   }
-  if (payload?.code === 'STORAGE_CAP') {
+  if (payload?.code === 'STORAGE_BUSY') {
     return json(403, {
-      error: 'Stored files have reached the 1 TB platform limit.',
+      error: 'Free sends are paused because storage is almost full. Creator, Pro, and Studio can still send.',
+      code: 'STORAGE_BUSY',
+    });
+  }
+  if (payload?.code === 'ACCOUNT_QUOTA') {
+    recordProductEvent(env, { event: 'quota_hit', tier: allowance.tier, bytes: Number(row?.p_file_size) || 0 });
+    return json(403, {
+      error: 'This account is using all of its storage. Delete an older transfer, or upgrade for more room.',
+      code: 'ACCOUNT_QUOTA',
+    });
+  }
+  if (payload?.code === 'STORAGE_CAP') {
+    recordProductEvent(env, { event: 'cap_hit', tier: allowance.tier, bytes: Number(row?.p_file_size) || 0 });
+    return json(403, {
+      error: 'SendToAnyone is full right now. Files that expire free up space, so try again a little later.',
       code: 'STORAGE_CAP',
     });
   }
@@ -703,6 +919,7 @@ async function activateObject(env, cfg, { s3Key, claim }) {
       body: { status: 'rejected' },
     }).catch(() => {});
     opsEvent({ event: 'upload', result: 'rejected', category: 'SIZE_MISMATCH' });
+    recordProductEvent(env, { event: 'upload_failed', tier: cap.tier, bytes: declared });
     return json(403, { error: 'The uploaded file does not match the allowed size.', code: 'SIZE_MISMATCH' });
   }
   await sbFetch(env, `transfers?file_path=eq.${encodeURIComponent(s3Key)}`, {
@@ -710,6 +927,7 @@ async function activateObject(env, cfg, { s3Key, claim }) {
     body: { status: 'active' },
   });
   opsEvent({ event: 'upload', result: 'activated', category: 'OBJECT_READY' });
+  recordProductEvent(env, { event: 'upload_completed', bytes: Number(row.file_size) || 0 });
   return json(200, { s3Key, shareId: row.share_id, status: 'active' });
 }
 
@@ -720,10 +938,15 @@ async function requireDeleteClaim(env, token) {
   return { claim };
 }
 
-function safeEtag(value) {
-  const etag = String(value || '').trim();
-  if (!/^"?[A-Za-z0-9._:-]+"?$/.test(etag)) return null;
-  return etag.includes('"') ? etag : `"${etag}"`;
+async function listUploadedParts(cfg, key, uploadId) {
+  const res = await signedFetch({
+    ...cfg,
+    method: 'GET',
+    path: `/${cfg.bucket}/${key}`,
+    query: { uploadId, 'max-parts': '1000' },
+  });
+  if (!res.ok) return [];
+  return parseListedParts(await res.text());
 }
 
 async function optionalOwner(request, env) {
@@ -774,12 +997,14 @@ export async function handleR2Request({ request, env }) {
     if (action === 'tier-limits') {
       const owner = await optionalOwner(request, env);
       if (owner.error) return owner.error;
-      const allowance = await transferCapFor(env, owner.id);
+      const allowance = await allowanceForUpload(env, owner.id, 0);
       return json(200, {
         paidFeaturesEnabled: STORAGE_POLICY.paidFeaturesEnabled,
-        paid: allowance.paid,
+        paid: allowance.paid || allowance.usingPass,
+        tier: allowance.tier,
         maxFileSizeBytes: allowance.bytes,
         maxRetentionHours: allowance.hours,
+        storageBytes: allowance.storageBytes,
         tiers: {
           free: {
             name: 'Free',
@@ -804,7 +1029,7 @@ export async function handleR2Request({ request, env }) {
       const owner = await optionalOwner(request, env);
       if (owner.error) return owner.error;
       const body = await readBody(request);
-      const allowance = await transferCapFor(env, owner.id);
+      const allowance = await allowanceForUpload(env, owner.id, 0);
       const shareId = normalizeShareId(body.shareId) || randomId(10);
       const claimToken = generateSecretToken();
       const deleteToken = generateSecretToken();
@@ -836,13 +1061,13 @@ export async function handleR2Request({ request, env }) {
       const owner = await optionalOwner(request, env);
       if (owner.error) return owner.error;
       const body = await readBody(request);
-      const allowance = await transferCapFor(env, owner.id);
-      const tooBig = sizeError(body.fileSize, allowance.bytes);
-      if (tooBig) return json(403, { error: tooBig, code: 'TRANSFER_TOO_LARGE' });
       const malware = isMaliciousFile(body.fileName);
       if (malware.isDangerous) return json(400, { error: malware.reason, code: 'MALICIOUS_FILE_BLOCKED' });
       const gate = await requireDeleteClaim(env, body.deleteToken);
       if (gate.error) return gate.error;
+      const allowance = await allowanceForUpload(env, owner.id, body.fileSize, gate.claim.share_id);
+      const tooBig = sizeError(body.fileSize, allowance.bytes);
+      if (tooBig) return json(403, { error: tooBig, code: 'TRANSFER_TOO_LARGE' });
       const portal = await requireOpenRequest(env, body.requestId);
       if (portal.error) return portal.error;
       const safeName = sanitizeFileName(body.fileName);
@@ -856,7 +1081,7 @@ export async function handleR2Request({ request, env }) {
         safeName,
         passwordHash,
         requestId: portal.requestId,
-      }));
+      }), request);
       if (reserved) return reserved;
       const presignedUrl = await presign({
         ...cfg,
@@ -865,6 +1090,7 @@ export async function handleR2Request({ request, env }) {
         expires: STORAGE_POLICY.uploadUrlSeconds,
       });
       opsEvent({ event: 'upload', result: 'url_issued', category: 'SINGLE_PUT', durationMs: Date.now() - started });
+      recordProductEvent(env, { event: 'upload_started', tier: allowance.tier, bytes: Number(body.fileSize) || 0 });
       return json(200, {
         presignedUrl,
         s3Key: key,
@@ -873,6 +1099,29 @@ export async function handleR2Request({ request, env }) {
         bucket: cfg.bucket,
         expiresAt: gate.claim.expires_at,
       });
+    }
+
+    if (action === 'refresh-put-url' && request.method === 'POST') {
+      if (uploadsPaused(env)) return uploadPauseResponse();
+      const missing = requireConfig(cfg);
+      if (missing) return missing;
+      const body = await readBody(request);
+      if (!body.s3Key?.startsWith('transfers/') || body.s3Key.includes('..')) {
+        return json(400, { error: 'Invalid storage key.' });
+      }
+      const gate = await requireDeleteClaim(env, body.deleteToken);
+      if (gate.error) return gate.error;
+      const pending = await loadTransferByPath(env, body.s3Key);
+      if (!pending || pending.share_id !== gate.claim.share_id || pending.status !== 'pending' || pending.multipart_upload_id) {
+        return json(403, { error: 'That upload session is not valid.', code: 'UPLOAD_NOT_AUTHORIZED' });
+      }
+      const presignedUrl = await presign({
+        ...cfg,
+        method: 'PUT',
+        path: `/${cfg.bucket}/${body.s3Key}`,
+        expires: STORAGE_POLICY.uploadUrlSeconds,
+      });
+      return json(200, { presignedUrl, s3Key: body.s3Key, shareId: pending.share_id });
     }
 
     if (action === 'request-meta') {
@@ -1015,7 +1264,55 @@ export async function handleR2Request({ request, env }) {
       }
       const active = rows.filter((row) => transferState(row) === 'active');
       if (active.length === 0) return json(409, { error: 'This transfer is not ready.', code: 'NOT_READY' });
-      return json(200, publicShare(shareId, active));
+      const meta = publicShare(shareId, active);
+      const ownerId = active.find((row) => row.user_id)?.user_id;
+      if (ownerId) {
+        try {
+          const accounts = await sbFetch(
+            env,
+            `itransfer_accounts?user_id=eq.${encodeURIComponent(ownerId)}&select=plan,brand_logo_url&limit=1`,
+          );
+          const account = Array.isArray(accounts) ? accounts[0] : null;
+          const logo = typeof account?.brand_logo_url === 'string' ? account.brand_logo_url : '';
+          if ((account?.plan === 'pro' || account?.plan === 'studio') && /^https:\/\/[^\s]+$/i.test(logo)) {
+            meta.brandLogo = logo;
+          }
+        } catch {
+          // Branding is optional and stays hidden if the column is not there yet.
+        }
+      }
+      return json(200, meta);
+    }
+
+    if (action === 'account-usage') {
+      const owner = await optionalOwner(request, env);
+      if (owner.error) return owner.error;
+      const allowance = await transferCapFor(env, owner.id);
+      const usedBytes = owner.id ? await accountUsedBytes(env, owner.id) : 0;
+      const quotaBytes = allowance.storageBytes;
+      return json(200, {
+        tier: allowance.tier,
+        usedBytes,
+        quotaBytes,
+        transferBytes: allowance.bytes,
+        retentionHours: allowance.hours,
+        near: quotaBytes > 0 && usedBytes / quotaBytes >= 0.8,
+        brand: allowance.brand === true,
+      });
+    }
+
+    if (action === 'event' && request.method === 'POST') {
+      const denied = rateLimitDenied(await checkSharedLimit(env, 'claim', clientIp), 'Too many requests.');
+      if (denied) return denied;
+      if (!allowProductEvent(clientIp)) return json(429, { error: 'Too many events.', code: 'RATE_LIMITED' });
+      const body = await readBody(request);
+      const clean = sanitizeProductEvent(body);
+      const clientEvents = new Set(['upload_resumed', 'upload_failed', 'link_created', 'signup', 'checkout_started']);
+      if (!clean || !clientEvents.has(clean.event)) {
+        return json(400, { error: 'Unknown event.', code: 'EVENT_UNKNOWN' });
+      }
+      await recordProductEvent(env, clean);
+      return json(200, { ok: true });
     }
 
     if (action === 'my-transfers') {
@@ -1123,11 +1420,11 @@ export async function handleR2Request({ request, env }) {
           'Too many password attempts.',
         );
         if (passwordDenied) return passwordDenied;
-        const blocked = rejectIfPasswordFailuresExceeded(shareId);
+        const blocked = rejectIfPasswordFailuresExceeded(shareId, clientIp);
         if (blocked) return blocked;
         const pw = request.headers.get('x-transfer-password') || '';
         if (!pw || !(await passwordMatches(row.password_hash, pw))) {
-          recordPasswordFailure(shareId);
+          recordPasswordFailure(shareId, clientIp);
           if (!pw) {
             logDownload('denied', 'PASSWORD_REQUIRED', started);
             return json(401, { error: 'Password required.', code: 'PASSWORD_REQUIRED' });
@@ -1135,6 +1432,7 @@ export async function handleR2Request({ request, env }) {
           logDownload('denied', 'PASSWORD_INCORRECT', started);
           return json(401, { error: 'Incorrect password.', code: 'PASSWORD_INCORRECT' });
         }
+        await rehashPassword(env, shareId, row.password_hash, pw);
       }
       const customFileName = url.searchParams.get('customFileName');
       const query = {};
@@ -1174,6 +1472,7 @@ export async function handleR2Request({ request, env }) {
         return json(502, { error: 'Could not prepare this download.', code: 'SIGN_FAILED' });
       }
       logDownload('url_issued', 'SIGNED_URL', started);
+      recordProductEvent(env, { event: 'download', bytes: Number(row.file_size) || 0 });
       return json(200, { downloadUrl, downloadCount: slot.download_count });
     }
 
@@ -1187,13 +1486,13 @@ export async function handleR2Request({ request, env }) {
       const owner = await optionalOwner(request, env);
       if (owner.error) return owner.error;
       const body = await readBody(request);
-      const allowance = await transferCapFor(env, owner.id);
-      const tooBig = sizeError(body.fileSize, allowance.bytes);
-      if (tooBig) return json(403, { error: tooBig, code: 'TRANSFER_TOO_LARGE' });
       const malware = isMaliciousFile(body.fileName);
       if (malware.isDangerous) return json(400, { error: malware.reason, code: 'MALICIOUS_FILE_BLOCKED' });
       const gate = await requireDeleteClaim(env, body.deleteToken);
       if (gate.error) return gate.error;
+      const allowance = await allowanceForUpload(env, owner.id, body.fileSize, gate.claim.share_id);
+      const tooBig = sizeError(body.fileSize, allowance.bytes);
+      if (tooBig) return json(403, { error: tooBig, code: 'TRANSFER_TOO_LARGE' });
       const portal = await requireOpenRequest(env, body.requestId);
       if (portal.error) return portal.error;
       const safeName = sanitizeFileName(body.fileName);
@@ -1207,7 +1506,7 @@ export async function handleR2Request({ request, env }) {
         safeName,
         passwordHash,
         requestId: portal.requestId,
-      }));
+      }), request);
       if (reserved) return reserved;
       const res = await signedFetch({
         ...cfg,
@@ -1221,6 +1520,7 @@ export async function handleR2Request({ request, env }) {
       if (!res.ok || !uploadId || !/^[\w.-]+$/.test(uploadId)) {
         await releaseReservation(env, key);
         opsEvent({ event: 'upload', result: 'rejected', category: 'MULTIPART_FAILED', durationMs: Date.now() - started });
+        recordProductEvent(env, { event: 'upload_failed', tier: allowance.tier, bytes: Number(body.fileSize) || 0 });
         return json(502, { error: 'Could not start multipart upload.', code: 'MULTIPART_FAILED' });
       }
       try {
@@ -1239,10 +1539,11 @@ export async function handleR2Request({ request, env }) {
         throw err;
       }
       opsEvent({ event: 'upload', result: 'url_issued', category: 'MULTIPART', durationMs: Date.now() - started });
+      recordProductEvent(env, { event: 'upload_started', tier: allowance.tier, bytes: Number(body.fileSize) || 0 });
       return json(200, { uploadId, s3Key: key, shareId: gate.claim.share_id, safeFileName: safeName, bucket: cfg.bucket });
     }
 
-    if ((action === 'get-part-url' || action === 'get-part-urls') && request.method === 'POST') {
+    if ((action === 'get-part-url' || action === 'get-part-urls' || action === 'list-parts') && request.method === 'POST') {
       if (uploadsPaused(env)) return uploadPauseResponse();
       const missing = requireConfig(cfg);
       if (missing) return missing;
@@ -1255,6 +1556,10 @@ export async function handleR2Request({ request, env }) {
       const row = await loadTransferByPath(env, body.s3Key);
       if (!row || row.share_id !== gate.claim.share_id || row.multipart_upload_id !== body.uploadId || row.status !== 'pending') {
         return json(403, { error: 'That upload session is not valid.', code: 'UPLOAD_NOT_AUTHORIZED' });
+      }
+      if (action === 'list-parts') {
+        const listed = await listUploadedParts(cfg, body.s3Key, body.uploadId);
+        return json(200, { parts: listed });
       }
       if (action === 'get-part-urls' && !Array.isArray(body.partNumbers)) {
         return json(400, { error: 'partNumbers must be an array.', code: 'PART_NUMBERS_INVALID' });
@@ -1298,14 +1603,15 @@ export async function handleR2Request({ request, env }) {
       if (!pending || pending.share_id !== gate.claim.share_id || pending.multipart_upload_id !== body.uploadId || pending.status !== 'pending') {
         return json(403, { error: 'That upload session is not valid.', code: 'UPLOAD_NOT_AUTHORIZED' });
       }
-      const partsXml = [...body.parts]
-        .sort((a, b) => Number(a.PartNumber) - Number(b.PartNumber))
-        .map((part) => {
-          const etag = safeEtag(part.ETag);
-          const partNumber = Number(part.PartNumber);
-          if (!etag || !partNumber) return '';
-          return `<Part><PartNumber>${partNumber}</PartNumber><ETag>${etag}</ETag></Part>`;
-        })
+      let listed = [];
+      try {
+        listed = await listUploadedParts(cfg, body.s3Key, body.uploadId);
+      } catch {
+        listed = [];
+      }
+      const merged = mergeCompleteParts(listed, body.parts);
+      const partsXml = merged
+        .map((part) => `<Part><PartNumber>${part.partNumber}</PartNumber><ETag>${escapeXml(part.etag)}</ETag></Part>`)
         .join('');
       if (!partsXml) return json(400, { error: 'Upload parts were not valid.' });
       const res = await signedFetch({
@@ -1318,6 +1624,45 @@ export async function handleR2Request({ request, env }) {
       });
       if (!res.ok) return json(502, { error: 'Could not complete upload.', code: 'MULTIPART_FAILED' });
       return activateObject(env, cfg, { s3Key: body.s3Key, claim: gate.claim });
+    }
+
+    if (action === 'abort-upload' && request.method === 'POST') {
+      const missing = requireConfig(cfg);
+      if (missing) return missing;
+      const body = await readBody(request);
+      if (!body.s3Key?.startsWith('transfers/') || body.s3Key.includes('..') || !body.uploadId) {
+        return json(400, { error: 'Missing s3Key or uploadId.' });
+      }
+      const gate = await requireDeleteClaim(env, body.deleteToken);
+      if (gate.error) return gate.error;
+      const pending = await loadTransferByPath(env, body.s3Key);
+      if (!pending || pending.share_id !== gate.claim.share_id || pending.multipart_upload_id !== body.uploadId) {
+        return json(403, { error: 'That upload session is not valid.', code: 'UPLOAD_NOT_AUTHORIZED' });
+      }
+      if (pending.status !== 'pending') {
+        return json(409, { error: 'That upload is no longer in progress.', code: 'UPLOAD_NOT_PENDING' });
+      }
+      const abort = await signedFetch({
+        ...cfg,
+        method: 'DELETE',
+        path: `/${cfg.bucket}/${body.s3Key}`,
+        query: { uploadId: body.uploadId },
+      });
+      if (!abort.ok && abort.status !== 404) {
+        return json(502, { error: 'Could not abort the upload.', code: 'ABORT_FAILED' });
+      }
+      await sbFetch(env, `transfers?file_path=eq.${encodeURIComponent(body.s3Key)}&status=eq.pending`, {
+        method: 'PATCH',
+        body: { status: 'rejected' },
+      });
+      const allowance = await transferCapFor(env, pending.user_id);
+      if (!allowance.paid) {
+        await releaseDailyUpload(env, {
+          subject: await dailyUploadSubject(request),
+          bytes: Number(pending.file_size) || 0,
+        });
+      }
+      return json(200, { ok: true, status: 'rejected' });
     }
 
     if (action === 'finalize-upload' && request.method === 'POST') {
@@ -1344,7 +1689,7 @@ export async function handleR2Request({ request, env }) {
       if (!shareId) {
         return json(400, { error: 'shareId and inputPassword are required.' });
       }
-      const blocked = rejectIfPasswordFailuresExceeded(shareId);
+      const blocked = rejectIfPasswordFailuresExceeded(shareId, clientIp);
       if (blocked) return blocked;
       const rows = await sbFetch(env, `transfers?share_id=eq.${encodeURIComponent(shareId)}&select=password_hash&limit=1`);
       const stored = Array.isArray(rows) ? rows[0]?.password_hash : null;
@@ -1354,10 +1699,11 @@ export async function handleR2Request({ request, env }) {
         return json(401, { error: 'Incorrect password.', code: 'PASSWORD_INCORRECT' });
       }
       if (!typed || !(await passwordMatches(stored, typed))) {
-        recordPasswordFailure(shareId);
+        recordPasswordFailure(shareId, clientIp);
         if (!typed) return json(401, { error: 'Password required.', code: 'PASSWORD_REQUIRED' });
         return json(401, { error: 'Incorrect password.', code: 'PASSWORD_INCORRECT' });
       }
+      await rehashPassword(env, shareId, stored, typed);
       return json(200, { success: true });
     }
 
@@ -1563,6 +1909,53 @@ export async function handleR2Request({ request, env }) {
         else releasedCount += 1;
       }
 
+      const multipartAbandonBefore = new Date(now - 24 * 60 * 60 * 1000).toISOString();
+      const staleMultipart = await sbFetch(
+        env,
+        `transfers?select=id,share_id,file_path,expires_at,status,multipart_upload_id,created_at&status=eq.pending&multipart_upload_id=not.is.null&created_at=lt.${encodeURIComponent(multipartAbandonBefore)}&order=created_at.asc,id.asc&limit=${cleanupBatch}`,
+      );
+      if (!Array.isArray(staleMultipart)) {
+        opsEvent({ event: 'cleanup', result: 'failed', category: 'CLEANUP_RECORD_FAILED', durationMs: Date.now() - now });
+        return json(503, { error: 'Cleanup could not read abandoned multipart uploads.', code: 'CLEANUP_RECORD_FAILED' });
+      }
+      for (const row of staleMultipart) {
+        checked += 1;
+        if (!row.multipart_upload_id || !multipartIsAbandoned(row.created_at, now)) continue;
+        const expired = row.expires_at && new Date(row.expires_at).getTime() <= now;
+        const removed = await removeCleanupObject(row);
+        if (!removed) {
+          if (expired) await markCleanupStatus(env, row.id, 'pending_delete');
+          pendingCount += 1;
+          continue;
+        }
+        await markCleanupStatus(env, row.id, expired ? 'expired' : 'released');
+        if (expired) purgedCount += 1;
+        else releasedCount += 1;
+      }
+
+      const uploadsRes = await signedFetch({
+        ...cfg,
+        method: 'GET',
+        path: `/${cfg.bucket}`,
+        query: { uploads: '', prefix: 'transfers/', 'max-uploads': '50' },
+      });
+      if (uploadsRes.ok) {
+        const uploadsXml = await uploadsRes.text();
+        for (const upload of parseIncompleteUploads(uploadsXml)) {
+          const initiated = new Date(upload.initiated).getTime();
+          if (!Number.isFinite(initiated) || now - initiated < 24 * 60 * 60 * 1000) continue;
+          checked += 1;
+          const abort = await signedFetch({
+            ...cfg,
+            method: 'DELETE',
+            path: `/${cfg.bucket}/${upload.key}`,
+            query: { uploadId: upload.uploadId },
+          });
+          if (abort.ok || abort.status === 404) releasedCount += 1;
+          else pendingCount += 1;
+        }
+      }
+
       let token = '';
       const seenTokens = new Set();
       for (let page = 0; page < maxListPages; page += 1) {
@@ -1590,14 +1983,8 @@ export async function handleR2Request({ request, env }) {
             count: pendingCount,
             durationMs: Date.now() - now,
           });
-          return json(502, {
-            error: 'Cleanup could not list stored objects.',
-            code: 'LIST_FAILED',
-            purgedCount,
-            releasedCount,
-            pendingCount,
-            checked,
-          });
+          // Database expiry already ran. A flaky bucket list must not fail the hourly job.
+          break;
         }
         const keys = [...xml.matchAll(/<Key>([^<]+)<\/Key>/g)].map((match) => match[1]);
         for (const key of keys) {

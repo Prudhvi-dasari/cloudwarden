@@ -19,7 +19,7 @@ const PILLARS = [
   {
     icon: Key,
     title: 'Password gates the download',
-    desc: 'Optional. You set it on the send form. The server checks a SHA-256 hash. The explanation is below.',
+    desc: 'Optional. You set it on the send form. The server checks a salted hash. The explanation is below.',
   },
   {
     icon: EyeOff,
@@ -44,7 +44,7 @@ const PILLARS = [
 ];
 
 const DOES = [
-  'Stores a SHA-256 hash of the password, not the password',
+  'Stores a salted hash of the password, not the password',
   'Refuses the download until the password matches',
   'Pauses a link for the rest of the minute after 8 wrong tries',
   'Keeps the password out of every email',
@@ -82,7 +82,7 @@ function GateMock() {
           <span className="text-[#060a12] tracking-[0.3em] text-lg leading-none">••••••••</span>
         </div>
         <span className="mt-3 ds-btn ds-btn-dark ds-btn-sm">Unlock download</span>
-        <p className="mt-5 pa-spec justify-center w-full">Checked against a SHA-256 hash</p>
+        <p className="mt-5 pa-spec justify-center w-full">Checked against a salted hash</p>
       </div>
     </div>
   );
@@ -98,7 +98,7 @@ export default function SecurityPage() {
     <>
       <SeoHead
         customTitle="Security: the download password | SendToAnyone"
-        customDescription="An optional password gates the download. It is checked as a SHA-256 hash, it is not included in the email, and it does not encrypt the file."
+        customDescription="An optional password gates the download. It is checked as a salted hash, it is not included in the email, and it does not encrypt the file."
         customCanonical="https://sendtoanyone.com/security"
       />
       <PageFrame
@@ -216,7 +216,7 @@ export default function SecurityPage() {
                 After you add files on the send form, a Password checkbox is optional. The line next to it says the password gates the download. Turn it on and type the password before you create the link.
               </p>
               <p>
-                The server stores a SHA-256 hash of that password and compares it with what the recipient types. A match opens the download. A wrong password is refused. Eight wrong attempts in one minute pause further tries on that link for the rest of the minute.
+                The server stores a salted hash of that password and compares it with what the recipient types. Older links that used a plain hash still open, and a correct password upgrades that row. A wrong password is refused. Eight wrong attempts in one minute, for that transfer and for that network, pause further tries for the rest of the minute.
               </p>
               <p>
                 The notification email does not include the password. Give it to the recipient on another channel: a separate message, a call, or in person. Keep your own copy. The email cannot be used to look the password up later.
@@ -225,7 +225,7 @@ export default function SecurityPage() {
                 Anyone who has both the link and the password can download. The password does not encrypt the file. Losing it does not make the stored bytes unreadable to the service. This is not end-to-end encryption.
               </p>
               <p>
-                The link still expires on the timer you set: from 1 hour up to 7 days on Free, or up to 180 days on Pro. <Link to="/">Set the password on a send</Link>.
+                The link still expires on the timer you set: from 1 hour up to 7 days on Free, 30 days on Creator, 180 days on Pro, or 1 year on Studio. <Link to="/">Set the password on a send</Link>.
               </p>
             </div>
           </div>

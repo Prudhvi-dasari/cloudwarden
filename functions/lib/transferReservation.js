@@ -4,7 +4,7 @@
  */
 
 export const FREE_TRANSFER_BYTES = 6_000_000_000;
-export const PLATFORM_QUOTA_BYTES = 1_000_000_000_000;
+export const PLATFORM_QUOTA_BYTES = 2_000_000_000_000;
 
 /** These rows keep their storage reference and do not consume the 6 GB cap. */
 export const UNOCCUPIED_STATUSES = new Set(['rejected', 'expired', 'released']);

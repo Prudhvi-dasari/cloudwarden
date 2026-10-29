@@ -50,7 +50,7 @@ const PEOPLE = [
 ];
 
 const FAQS = [
-  { q: 'Can my team share one Pro plan?', a: 'Not yet. Pro is attached to one account. Each person who needs the larger limit buys their own.' },
+  { q: 'Can my team share one plan?', a: 'Not yet. Creator, Pro, and Studio each attach to one account. Studio is marked team-ready, and a shared workspace is not included yet.' },
   { q: 'Can teammates send without accounts?', a: 'Yes. On Free, anyone can send up to 6 GB without signing up. Recipients never need an account.' },
   { q: 'Is there an admin view of everyone’s transfers?', a: 'No. Each person sees only their own transfers. There is no shared workspace or member list.' },
   { q: 'Can clients upload to us?', a: 'Yes. A signed-in person can make a request link. Anyone with it can upload up to 6 GB for 7 days, without an account.' },

@@ -50,7 +50,7 @@ const complianceStandards = [
 const HANDLING = [
   ['Where files are kept', "Cloudflare R2, on Cloudflare's global network"],
   ['In transit', 'HTTPS (TLS) between your browser and the service'],
-  ['Download password', 'Stored as a SHA-256 hash. Gates the download. Does not encrypt the file.'],
+  ['Download password', 'Stored as a salted hash. Gates the download. Does not encrypt the file.'],
   ['After expiry', 'The download is refused. A scheduled cleanup deletes the files.'],
   ['Device transfer', 'WebRTC between two browsers. The file is not stored.'],
   ['Executable files', 'Blocked by file type on upload'],
@@ -68,7 +68,7 @@ const PROMISES = [
   },
   {
     q: 'Can we sign a data-processing agreement?',
-    a: 'No. A signed DPA is not offered. Teams and paid plans are not available either.',
+    a: 'No. A signed DPA is not offered. There is no shared team workspace.',
   },
 ];
 

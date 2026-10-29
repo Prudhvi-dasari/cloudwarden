@@ -6,9 +6,28 @@
  */
 
 import { sanitizeStoragePath } from './storageProvider';
+import {
+  PART_SIZE_BYTES,
+  PART_UPLOAD_ATTEMPTS,
+  bytesFromCompletedParts,
+  isResumeNetworkError,
+  normalizePartEtag,
+  partByteLength,
+  partUrlIsStale,
+  partsStillNeeded,
+} from './uploadPlan.js';
+import { deleteUploadSession, saveUploadSession, snapshotFromManager } from './uploadPersistence.js';
+
+function reportProductEvent(event) {
+  fetch('/api/r2?action=event', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ event }),
+  }).catch(() => {});
+}
 
 const SINGLE_PUT_MAX = 8 * 1024 * 1024; // 8 MB
-const PART_SIZE = 16 * 1024 * 1024; // 16 MB parts (S3/R2 minimum is 5 MB except last)
+const PART_SIZE = PART_SIZE_BYTES; // 16 MB parts (S3/R2 minimum is 5 MB except last)
 const PARALLEL_PARTS = 5;
 const UI_THROTTLE_MS = 80;
 
@@ -96,6 +115,12 @@ export class TransferManager {
     this.senderEmail = options.senderEmail || null;
     this.transferType = options.transferType || 'link';
     this.partConcurrency = options.partConcurrency || PARALLEL_PARTS;
+    this.accessToken = options.accessToken || '';
+    this.partSize = PART_SIZE;
+    this.onPersist = null;
+    if (options.deleteToken) this.deleteToken = options.deleteToken;
+    if (options.claimToken) this.claimToken = options.claimToken;
+    if (options.expiresAt) this.expiresAt = options.expiresAt;
 
     this.files = [];
     this.listeners = new Map();
@@ -104,12 +129,12 @@ export class TransferManager {
     this._uiDirty = false;
 
     this.handleOffline = () => {
-      this.pauseAll();
+      this.pauseAll({ network: true });
       this.emit('networkOffline', true);
     };
     this.handleOnline = () => {
       this.emit('networkOnline', true);
-      this.resumeAll();
+      this.resumeAll({ onlyNetwork: true });
     };
     if (typeof window !== 'undefined') {
       window.addEventListener('offline', this.handleOffline);
@@ -174,6 +199,7 @@ export class TransferManager {
       file,
       name: file.name,
       size: file.size,
+      lastModified: file.lastModified || 0,
       type: file.type || 'application/octet-stream',
       status: 'queued',
       progress: 0,
@@ -241,30 +267,31 @@ export class TransferManager {
     if (item && item.status === 'error') {
       item.status = 'queued';
       item.error = null;
-      item.progress = 0;
-      item.uploadedBytes = 0;
       item.speed = 0;
-      item.partBytes = null;
       this.flushProgress();
       this.processQueue();
     }
   }
 
-  pauseAll() {
+  pauseAll({ network = false } = {}) {
     this.isRunning = false;
     this.files.forEach((f) => {
       if (f.status === 'uploading' || f.status === 'queued') {
         f.status = 'paused';
+        f.pausedForNetwork = network;
         this._abortItem(f);
       }
     });
     this.flushProgress();
   }
 
-  resumeAll() {
+  resumeAll({ onlyNetwork = false } = {}) {
     this.isRunning = true;
     this.files.forEach((f) => {
-      if (f.status === 'paused') f.status = 'queued';
+      if (f.status === 'paused' && (!onlyNetwork || f.pausedForNetwork)) {
+        f.status = 'queued';
+        f.pausedForNetwork = false;
+      }
     });
     this.flushProgress();
     this.processQueue();
@@ -275,6 +302,7 @@ export class TransferManager {
     if (!item) return;
     item.status = 'cancelled';
     this._abortItem(item);
+    this._releaseRemote(item);
     this.flushProgress();
     this.processQueue();
   }
@@ -285,6 +313,7 @@ export class TransferManager {
       if (['uploading', 'queued', 'paused'].includes(f.status)) {
         f.status = 'cancelled';
         this._abortItem(f);
+        this._releaseRemote(f);
       }
     });
     this.flushProgress();
@@ -307,6 +336,7 @@ export class TransferManager {
           file.error = err?.message || 'Could not start this transfer.';
         }
       });
+      reportProductEvent('upload_failed');
       this.flushProgress();
     }
   }
@@ -379,10 +409,22 @@ export class TransferManager {
     this.emitProgress();
   }
 
+  async _authHeaders() {
+    const headers = { 'Content-Type': 'application/json' };
+    let token = '';
+    try {
+      token = typeof this.accessToken === 'function' ? await this.accessToken() : (this.accessToken || '');
+    } catch {
+      token = '';
+    }
+    if (token) headers.Authorization = `Bearer ${token}`;
+    return headers;
+  }
+
   async _api(action, body) {
     const res = await fetch(`${this.apiBase}?action=${action}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: await this._authHeaders(),
       body: JSON.stringify(body),
     });
     const data = await res.json().catch(() => ({}));
@@ -390,11 +432,32 @@ export class TransferManager {
     return data;
   }
 
+  _releaseRemote(item) {
+    if (!item?.uploadId || !item?.s3Key || !this.deleteToken || item.serverRecorded) return;
+    const uploadId = item.uploadId;
+    const s3Key = item.s3Key;
+    item.uploadId = null;
+    this._api('abort-upload', { s3Key, uploadId, deleteToken: this.deleteToken }).catch(() => {});
+  }
+
+  async remember() {
+    const session = snapshotFromManager(this);
+    if (!session) return;
+    try {
+      await saveUploadSession(session);
+    } catch {
+      // Resume memory is best-effort. The in-page retry still has the parts.
+    }
+    if (this.onPersist) this.onPersist();
+  }
+
   async uploadSingleFile(item) {
+    const resuming = Boolean(item.uploadId || item.s3Key || item.completedPartNumbers?.length);
     item.status = 'uploading';
-    item.startTime = Date.now();
+    item.pausedForNetwork = false;
+    item.startTime = item.startTime || Date.now();
     item.abortController = new AbortController();
-    item.partBytes = null;
+    if (!resuming) item.partBytes = null;
     item.error = null;
     this.flushProgress();
 
@@ -422,9 +485,23 @@ export class TransferManager {
       if (item.status === 'paused' || item.status === 'cancelled') return;
       if (err?.message === 'aborted') return;
 
+      if (isResumeNetworkError(err) || (typeof navigator !== 'undefined' && navigator.onLine === false)) {
+        item.status = 'paused';
+        item.pausedForNetwork = true;
+        item.error = null;
+        this.flushProgress();
+        if (typeof navigator !== 'undefined' && navigator.onLine) {
+          setTimeout(() => {
+            if (item.status === 'paused' && item.pausedForNetwork) this.resumeFile(item.id);
+          }, 1200);
+        }
+        return;
+      }
+
       console.error('Upload failed:', err);
       item.status = 'error';
-      item.error = err?.message || 'Upload failed. Tap Retry.';
+      item.error = err?.message || 'Upload stopped. Retry continues from the last finished part.';
+      reportProductEvent('upload_failed');
       this.emit('fileError', { item, error: err });
       this.flushProgress();
       this.processQueue();
@@ -432,17 +509,28 @@ export class TransferManager {
   }
 
   async _uploadSinglePut(item, signal) {
-    const data = await this._api('get-put-url', {
-      fileName: item.name,
-      fileSize: item.size,
-      contentType: item.type || 'application/octet-stream',
-      deleteToken: this.deleteToken,
-      shareId: this.shareId,
-      password: this.password || undefined,
-      subject: this.transferName,
-      senderEmail: this.senderEmail || null,
-      transferType: this.transferType || 'link',
-    });
+    let data;
+    if (item.s3Key && item.singlePut) {
+      data = await this._api('refresh-put-url', {
+        s3Key: item.s3Key,
+        deleteToken: this.deleteToken,
+      });
+    } else {
+      data = await this._api('get-put-url', {
+        fileName: item.name,
+        fileSize: item.size,
+        contentType: item.type || 'application/octet-stream',
+        deleteToken: this.deleteToken,
+        shareId: this.shareId,
+        password: this.password || undefined,
+        subject: this.transferName,
+        senderEmail: this.senderEmail || null,
+        transferType: this.transferType || 'link',
+      });
+      item.s3Key = data.s3Key;
+      item.singlePut = true;
+      await this.remember();
+    }
 
     if (!data.presignedUrl) throw new Error('No upload URL from Cloudflare R2');
 
@@ -453,58 +541,102 @@ export class TransferManager {
       },
     });
 
-    await this._api('finalize-upload', { s3Key: data.s3Key, deleteToken: this.deleteToken });
-    item.fileId = data.s3Key;
+    await this._api('finalize-upload', { s3Key: data.s3Key || item.s3Key, deleteToken: this.deleteToken });
+    item.fileId = data.s3Key || item.s3Key;
     item.serverRecorded = true;
+    await this.forgetIfIdle(item);
+  }
+
+  async forgetIfIdle(item) {
+    const stillOpen = this.files.some((file) => file !== item && !file.serverRecorded && file.status !== 'cancelled');
+    if (!stillOpen) await deleteUploadSession(this.shareId);
   }
 
   async _uploadMultipart(item, signal) {
-    const init = await this._api('initiate-upload', {
-      fileName: item.name,
-      fileSize: item.size,
-      contentType: item.type || 'application/octet-stream',
-      deleteToken: this.deleteToken,
-      shareId: this.shareId,
-      password: this.password || undefined,
-      transferType: this.transferType || 'link',
-    });
-
-    if (!init.uploadId || !init.s3Key) {
-      throw new Error('Could not start multipart upload');
+    if (!item.uploadId || !item.s3Key) {
+      const init = await this._api('initiate-upload', {
+        fileName: item.name,
+        fileSize: item.size,
+        contentType: item.type || 'application/octet-stream',
+        deleteToken: this.deleteToken,
+        shareId: this.shareId,
+        password: this.password || undefined,
+        transferType: this.transferType || 'link',
+      });
+      if (!init.uploadId || !init.s3Key) throw new Error('Could not start multipart upload');
+      item.uploadId = init.uploadId;
+      item.s3Key = init.s3Key;
+      item.completedParts = item.completedParts || [];
+      await this.remember();
     }
 
-    const { uploadId, s3Key } = init;
+    const { uploadId, s3Key } = item;
     const totalSize = item.size;
     const partCount = Math.ceil(totalSize / PART_SIZE) || 1;
-    item.partBytes = new Array(partCount).fill(0);
     const completedParts = new Array(partCount);
+    const savedParts = Array.isArray(item.completedParts) ? item.completedParts : [];
+    for (const part of savedParts) {
+      const index = Number(part.partNumber) - 1;
+      if (index >= 0 && index < partCount) completedParts[index] = { PartNumber: part.partNumber, ETag: part.etag || '' };
+    }
+    const done = new Set(completedParts.map((part, index) => (part ? index + 1 : 0)).filter(Boolean));
+    item.completedPartNumbers = [...done];
+    item.partBytes = Array.from({ length: partCount }, (_, index) => (
+      done.has(index + 1) ? partByteLength(index + 1, totalSize, PART_SIZE) : 0
+    ));
+    item.uploadedBytes = bytesFromCompletedParts(totalSize, item.completedPartNumbers, PART_SIZE);
+
+    try {
+      const listed = await this._api('list-parts', { s3Key, uploadId, deleteToken: this.deleteToken });
+      for (const part of listed.parts || []) {
+        const index = Number(part.partNumber) - 1;
+        if (index < 0 || index >= partCount) continue;
+        completedParts[index] = { PartNumber: part.partNumber, ETag: part.etag || '' };
+        done.add(part.partNumber);
+        item.partBytes[index] = partByteLength(part.partNumber, totalSize, PART_SIZE);
+      }
+      item.completedParts = [...done].map((partNumber) => completedParts[partNumber - 1]).filter(Boolean);
+      item.completedPartNumbers = [...done];
+      await this.remember();
+    } catch {
+      // A missing list still lets new parts upload. Complete asks R2 again.
+    }
+    item.completedPartNumbers = [...done];
 
     const refreshAggregate = () => {
       const loaded = item.partBytes.reduce((a, b) => a + b, 0);
       if (item.status === 'uploading') this._updateItemProgress(item, loaded);
     };
+    refreshAggregate();
 
     const urlCache = new Map();
+    let urlChain = Promise.resolve();
 
-    const ensureUrls = async (fromIndex, count) => {
-      const needed = [];
-      for (let i = fromIndex; i < Math.min(fromIndex + count, partCount); i += 1) {
-        const partNumber = i + 1;
-        if (!urlCache.has(partNumber)) needed.push(partNumber);
-      }
-      if (needed.length === 0) return;
-      const batch = await this._api('get-part-urls', {
-        s3Key,
-        uploadId,
-        partNumbers: needed,
-        deleteToken: this.deleteToken,
+    const ensureUrls = (fromIndex, count) => {
+      const job = urlChain.then(async () => {
+        const needed = [];
+        for (let i = fromIndex; i < Math.min(fromIndex + count, partCount); i += 1) {
+          const partNumber = i + 1;
+          if (done.has(partNumber)) continue;
+          const cached = urlCache.get(partNumber);
+          if (!cached || partUrlIsStale(cached.issuedAt)) needed.push(partNumber);
+        }
+        if (needed.length === 0) return;
+        const batch = await this._api('get-part-urls', {
+          s3Key,
+          uploadId,
+          partNumbers: needed.slice(0, this.partConcurrency),
+          deleteToken: this.deleteToken,
+        });
+        const issuedAt = Date.now();
+        for (const part of batch.parts || []) {
+          urlCache.set(part.partNumber, { url: part.presignedUrl, issuedAt });
+        }
       });
-      for (const part of batch.parts || []) {
-        urlCache.set(part.partNumber, part.presignedUrl);
-      }
+      urlChain = job.catch(() => {});
+      return job;
     };
 
-    // Prefetch first wave of part URLs in one API round-trip
     await ensureUrls(0, this.partConcurrency);
 
     let nextPart = 0;
@@ -515,27 +647,26 @@ export class TransferManager {
         const partIndex = nextPart;
         nextPart += 1;
         const partNumber = partIndex + 1;
+        if (!partsStillNeeded(partCount, [...done]).includes(partNumber)) continue;
+
         const start = partIndex * PART_SIZE;
         const end = Math.min(start + PART_SIZE, totalSize);
         const blob = item.file.slice(start, end);
 
-        // Keep the URL pipeline ahead of active uploads
-        ensureUrls(nextPart, this.partConcurrency).catch(() => {});
-
-        if (!urlCache.has(partNumber)) await ensureUrls(partIndex, 1);
-        let presignedUrl = urlCache.get(partNumber);
-        if (!presignedUrl) throw new Error(`Missing URL for part ${partNumber}`);
-
         let attempt = 0;
-        while (attempt < 3) {
+        while (attempt < PART_UPLOAD_ATTEMPTS) {
           try {
             if (signal.aborted || item.status !== 'uploading') throw new Error('aborted');
-            if (attempt > 0) {
+            if (attempt === 0) await ensureUrls(partIndex, this.partConcurrency);
+            let cached = urlCache.get(partNumber);
+            if (attempt > 0 || !cached?.url || partUrlIsStale(cached.issuedAt)) {
               const fresh = await this._api('get-part-url', { s3Key, uploadId, partNumber, deleteToken: this.deleteToken });
-              presignedUrl = fresh.presignedUrl;
+              cached = { url: fresh.presignedUrl, issuedAt: Date.now() };
+              urlCache.set(partNumber, cached);
             }
+            if (!cached?.url) throw new Error(`Missing URL for part ${partNumber}`);
 
-            const result = await xhrPut(presignedUrl, blob, {
+            const result = await xhrPut(cached.url, blob, {
               signal,
               onProgress: (loaded) => {
                 item.partBytes[partIndex] = loaded;
@@ -543,21 +674,19 @@ export class TransferManager {
               },
             });
 
-            let etag = result.etag;
-            if (!etag) {
-              throw new Error('Missing ETag — R2 CORS must expose ETag');
-            }
-            etag = etag.replaceAll('&quot;', '"');
-            if (!etag.startsWith('"')) etag = `"${etag.replaceAll('"', '')}"`;
-            completedParts[partIndex] = { PartNumber: partNumber, ETag: etag };
+            completedParts[partIndex] = { PartNumber: partNumber, ETag: normalizePartEtag(result.etag) };
+            done.add(partNumber);
+            item.completedPartNumbers = [...done];
+            item.completedParts = [...done].map((number) => completedParts[number - 1]).filter(Boolean);
             item.partBytes[partIndex] = end - start;
             refreshAggregate();
+            this.remember();
             break;
           } catch (err) {
             if (err?.message === 'aborted') throw err;
             attempt += 1;
-            if (attempt >= 3) throw err;
-            await new Promise((r) => setTimeout(r, 350 * attempt));
+            if (attempt >= PART_UPLOAD_ATTEMPTS) throw err;
+            await new Promise((r) => setTimeout(r, 400 * attempt));
           }
         }
       }
@@ -566,13 +695,13 @@ export class TransferManager {
     await Promise.all(workers);
 
     const parts = completedParts.filter(Boolean);
-    if (parts.length !== partCount) {
-      throw new Error('Multipart upload incomplete');
-    }
+    if (parts.length !== partCount) throw new Error('Multipart upload incomplete');
 
     await this._api('complete-upload', { s3Key, uploadId, parts, deleteToken: this.deleteToken });
     item.fileId = s3Key;
     item.serverRecorded = true;
+    item.uploadId = null;
+    await this.forgetIfIdle(item);
   }
 
   getSnapshot() {

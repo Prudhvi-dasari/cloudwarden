@@ -17,17 +17,17 @@ const FAQ_ITEMS = [
   },
   {
     q: 'What is the maximum file size I can transfer?',
-    a: 'A cloud transfer can be up to 6 GB with no account. Links last up to 7 days. Pro raises this to 250 GB and links up to 180 days. Device-to-device transfer goes between two browsers and is not stored by SendToAnyone.',
+    a: 'A cloud transfer can be up to 6 GB with no account. Links last up to 7 days. Creator is 50 GB and 30 days, Pro is 250 GB and 180 days, and Studio is 250 GB and 1 year. Device-to-device transfer goes between two browsers and is not stored by SendToAnyone.',
     category: 'limits',
   },
   {
     q: 'Are my transfers secure and encrypted?',
-    a: 'Files travel over HTTPS and are stored on Cloudflare R2. A password can gate the download. The server stores a SHA-256 hash of it, the email does not include it, and the password does not encrypt the file.',
+    a: 'Files travel over HTTPS and are stored on Cloudflare R2. A password can gate the download. The server stores a salted hash of it, the email does not include it, and the password does not encrypt the file.',
     category: 'security',
   },
   {
     q: 'How long are my files stored before they expire?',
-    a: 'On the free plan you choose 1 hour, 24 hours, 3 days, or 7 days. Pro links can stay open up to 180 days. When the time is reached, the link stops working and a scheduled cleanup deletes the files.',
+    a: 'On the free plan you choose 1 hour, 24 hours, 3 days, or 7 days. Creator can keep a link for 30 days, Pro for 180 days, and Studio for 1 year. When the time is reached, the link stops working and a scheduled cleanup deletes the files.',
     category: 'storage',
   },
   {
@@ -37,7 +37,7 @@ const FAQ_ITEMS = [
   },
   {
     q: 'How does Pro billing work?',
-    a: 'Pro costs ₹799 a month or ₹5,999 a year. Checkout runs through Dodo Payments. Pro switches on after Dodo confirms the payment to our server.',
+    a: 'Creator is ₹299 a month. Pro is ₹799 a month or ₹7,999 a year. Studio is ₹2,499 a month. A Pass is ₹149 for one transfer. Checkout runs through Dodo Payments, and the plan starts after Dodo confirms the payment to our server. An existing Pro subscription keeps its current price.',
     category: 'billing',
   },
   {

@@ -81,12 +81,12 @@ export const ROUTE_SEO_MAP = {
   },
   '/security': {
     title: 'Download password and storage — SendToAnyone',
-    description: 'An optional password gates the download. It is checked as a SHA-256 hash, it is not in the email, and it does not encrypt the file.',
+    description: 'An optional password gates the download. It is checked as a salted hash, it is not in the email, and it does not encrypt the file.',
     crumb: 'Security',
   },
   '/pricing': {
     title: 'Free 6 GB transfers — SendToAnyone',
-    description: 'Sending costs nothing. Each transfer can be up to 6 GB and the link can last up to 7 days. There is no upgrade that raises either limit.',
+    description: 'Free is 6 GB and 7 days. Creator, Pro, and Studio raise the transfer size, stored total, and how long the link stays open.',
     crumb: 'Pricing',
   },
   '/receive': {
@@ -166,7 +166,7 @@ export const ROUTE_SEO_MAP = {
   },
   '/send-large-files': {
     title: 'Send a large file, up to 6 GB — SendToAnyone',
-    description: 'One transfer holds up to 6 GB and needs no account. Choose a link or email, and an expiry from 1 hour to 7 days. A bigger file has to be split.',
+    description: 'One transfer holds up to 6 GB and needs no account. Choose a link or email, and an expiry from 1 hour to 7 days. Creator, Pro, and Studio raise the size and how long the link stays open.',
     crumb: 'Send a large file',
   },
   '/send-files-without-signup': {

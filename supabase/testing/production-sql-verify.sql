@@ -109,7 +109,12 @@ from (
     'platform_cap_source',
     case
       when not exists (select 1 from funcs where proname = 'reserve_transfer_file') then 'FAIL'
-      when strpos((select prosrc from funcs where proname = 'reserve_transfer_file'), '300000000000') > 0 then 'FAIL'
+      when strpos((select prosrc from funcs where proname = 'reserve_transfer_file'), 'platform_limit constant bigint := 300000000000;') > 0 then 'FAIL'
+      when strpos((select prosrc from funcs where proname = 'reserve_transfer_file'), '2000000000000') > 0
+        and strpos((select prosrc from funcs where proname = 'reserve_transfer_file'), 'ACCOUNT_QUOTA') > 0
+        and strpos((select prosrc from funcs where proname = 'reserve_transfer_file'), 'itransfer-platform-v1') > 0
+        and strpos((select prosrc from funcs where proname = 'reserve_transfer_file'), '6000000000') > 0
+        and strpos((select prosrc from funcs where proname = 'reserve_transfer_file'), 'STORAGE_CAP') > 0 then 'PASS'
       when strpos((select prosrc from funcs where proname = 'reserve_transfer_file'), 'platform_limit constant bigint := 1000000000000') > 0
         and strpos((select prosrc from funcs where proname = 'reserve_transfer_file'), 'itransfer-platform-v1') > 0
         and strpos((select prosrc from funcs where proname = 'reserve_transfer_file'), '6000000000') > 0
@@ -118,14 +123,17 @@ from (
     end,
     case
       when not exists (select 1 from funcs where proname = 'reserve_transfer_file') then 'reserve_transfer_file is absent. Until the 1 TB migration is applied, platform_cap_source is expected to FAIL and the serving cap is still the previous one.'
-      when strpos((select prosrc from funcs where proname = 'reserve_transfer_file'), '300000000000') > 0
-        then 'Source contains 300000000000. Until the 1 TB migration is applied, platform_cap_source is expected to FAIL and the serving cap is still the previous one.'
+      when strpos((select prosrc from funcs where proname = 'reserve_transfer_file'), 'platform_limit constant bigint := 300000000000;') > 0
+        then 'Source still assigns platform_limit constant bigint := 300000000000. That is the old 300 GB cap.'
+      when strpos((select prosrc from funcs where proname = 'reserve_transfer_file'), '2000000000000') > 0
+        and strpos((select prosrc from funcs where proname = 'reserve_transfer_file'), 'ACCOUNT_QUOTA') > 0
+        then 'Source contains the 2 TB default and ACCOUNT_QUOTA.'
       when strpos((select prosrc from funcs where proname = 'reserve_transfer_file'), 'platform_limit constant bigint := 1000000000000') > 0
         and strpos((select prosrc from funcs where proname = 'reserve_transfer_file'), 'itransfer-platform-v1') > 0
         and strpos((select prosrc from funcs where proname = 'reserve_transfer_file'), '6000000000') > 0
         and strpos((select prosrc from funcs where proname = 'reserve_transfer_file'), 'STORAGE_CAP') > 0
         then 'Source contains platform_limit constant bigint := 1000000000000, itransfer-platform-v1, 6000000000, and STORAGE_CAP.'
-      else 'Source is missing platform_limit constant bigint := 1000000000000, itransfer-platform-v1, 6000000000, or STORAGE_CAP. Until the 1 TB migration is applied, platform_cap_source is expected to FAIL and the serving cap is still the previous one.'
+      else 'Source is missing platform_limit constant bigint := 1000000000000, itransfer-platform-v1, 6000000000, or STORAGE_CAP. Until the 1 TB migration is applied, platform_cap_source is expected to FAIL and the serving cap is still the previous one. After the account-quota migration, expect 2000000000000 and ACCOUNT_QUOTA instead.'
     end
 
   union all
@@ -193,12 +201,18 @@ begin
 
   if (
     select
-      strpos(p.prosrc, 'platform_limit constant bigint := 1000000000000') = 0
-      or strpos(p.prosrc, '300000000000') > 0
+      strpos(p.prosrc, 'platform_limit constant bigint := 300000000000;') > 0
+      or (
+        strpos(p.prosrc, 'platform_limit constant bigint := 1000000000000') = 0
+        and (
+          strpos(p.prosrc, '2000000000000') = 0
+          or strpos(p.prosrc, 'ACCOUNT_QUOTA') = 0
+        )
+      )
     from pg_proc p
     where p.oid = to_regprocedure(reserve_sig)
   ) then
-    raise exception 'VERIFY_BEHAVIOR_NOT_RUN: reserve_transfer_file is not the 1000000000000-byte cap. Apply the 1 TB migration before this section. Refusing to write probe rows.';
+    raise exception 'VERIFY_BEHAVIOR_NOT_RUN: reserve_transfer_file is not the 1000000000000-byte cap or the later 2000000000000 account-quota function. Apply the storage migration before this section. Refusing to write probe rows.';
   end if;
 
   guest := public.reserve_transfer_file(

@@ -63,6 +63,7 @@ function matchRows(rows, url) {
       return list.includes(String(row[key]));
     }
     if (op === 'is') return expected === 'null' ? row[key] == null : false;
+    if (op === 'not' && expected === 'is.null') return row[key] != null && row[key] !== '';
     return false;
   }));
 }
@@ -157,6 +158,16 @@ function installFetch(state, { restStatus = 200 } = {}) {
       if (!auth.includes('service-test')) return new Response(JSON.stringify({ message: 'no' }), { status: 401 });
       const parsed = new URL(href);
       const tableName = parsed.pathname.split('/').pop();
+      if (tableName === 'sta_product_events') return new Response('[]', { status: 201 });
+      if (tableName === 'itransfer_accounts' || tableName === 'sta_transfer_passes' || tableName === 'billing_entitlements') {
+        return new Response('[]', { status: 200 });
+      }
+      if (tableName === 'set_platform_storage_cap' || tableName === 'release_daily_upload') {
+        return new Response('null', { status: 200 });
+      }
+      if (tableName === 'consume_daily_upload') {
+        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      }
       const table = tableName === 'transfer_claims'
         ? state.claims
         : tableName === 'file_requests'
@@ -1003,6 +1014,26 @@ test('abandoned single-PUT reservations release, and a live multipart session st
     assert.equal(live.multipart_upload_id, started.data.uploadId);
     assert.equal(live.file_path, livePath);
     assert.equal(state.r2Deletes.length, deletesBefore);
+
+    const abandonedMultipart = {
+      id: 'row-mp-old',
+      share_id: 'mpold1',
+      file_name: 'stale-clip.bin',
+      file_size: 30,
+      file_path: 'transfers/200-mpold/clip.bin',
+      expires_at: new Date(Date.now() + 5 * 24 * 60 * minute).toISOString(),
+      status: 'pending',
+      multipart_upload_id: 'upload-stale',
+      created_at: new Date(Date.now() - 2 * 24 * 60 * minute).toISOString(),
+    };
+    state.transfers.push(abandonedMultipart);
+    state.sizes.set(abandonedMultipart.file_path, 30);
+    const dropped = await call('cleanup', { method: 'GET', headers: CLEANUP_HEADERS });
+    assert.equal(dropped.status, 200);
+    assert.equal(abandonedMultipart.status, 'released');
+    assert.equal(state.sizes.has(abandonedMultipart.file_path), false);
+    assert.equal(live.status, 'pending');
+    assert.equal(live.multipart_upload_id, started.data.uploadId);
 
     const expiredMultipart = {
       id: 'row-mp-exp',

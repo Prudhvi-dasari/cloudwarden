@@ -23,6 +23,17 @@ import { detectClientGeo, guessVisitorPlace } from '../lib/geo';
 import { generateTransferSlug, formatLiveSlugPreview } from '../lib/slug';
 import { getOrCreateGuestId, saveTransferSecrets, trackGuestTransfer } from '../lib/guestSession';
 import { TransferManager } from '../lib/transferManager';
+import { clearActiveUpload, getActiveUpload, publishActiveUpload, subscribeActiveUpload, touchActiveUpload } from '../lib/activeUpload';
+import {
+  applyResumeToFile,
+  deleteUploadSession,
+  describeResume,
+  identitiesMatch,
+  loadUploadSessions,
+  matchResumeSession,
+  sessionIsResumable,
+} from '../lib/uploadPersistence';
+import { PART_SIZE_BYTES } from '../lib/uploadPlan';
 import PersistentTransferManager from '../components/PersistentTransferManager';
 import TransferSuccessModal from '../components/TransferSuccessModal';
 import Footer from '../components/Footer';
@@ -88,19 +99,19 @@ const FAQS = [
   },
   {
     q: 'Is SendToAnyone completely free to use?',
-    a: 'Yes. You can send up to 6 GB per transfer with no account. Links last up to 7 days. A paid plan on the pricing page is 250 GB and 180 days after the server confirms the payment.',
+    a: 'Yes. You can send up to 6 GB per transfer with no account. Links last up to 7 days. Creator, Pro, and Studio on the pricing page raise the size, the total you can store, and how long the link stays open after the server confirms payment.',
   },
   {
     q: 'How are my files protected from hackers and eavesdropping?',
-    a: 'An optional password gates the download. The server stores a SHA-256 hash of it, and the notification email does not include the password. The password does not encrypt the file. Executable names are blocked on upload. That is not a malware scan.',
+    a: 'An optional password gates the download. The server stores a salted hash of it, and the notification email does not include the password. The password does not encrypt the file. Executable names are blocked on upload. That is not a malware scan.',
   },
   {
     q: 'How long do transfer download links remain active?',
-    a: 'A free transfer stays available for the time you choose, up to 7 days. A confirmed paid plan can keep the link for 180 days.',
+    a: 'A free transfer stays available for the time you choose, up to 7 days. Creator can keep a link for 30 days, Pro for 180 days, and Studio for 1 year, after the server confirms the plan.',
   },
   {
     q: 'Can I upload entire folders with nested subdirectories?',
-    a: 'Select Folder adds the files in that folder. The transfer stores each file by its name. It does not promise that the nested folder layout is rebuilt for the recipient. A free transfer stays within 6 GB. A confirmed paid plan can reach 250 GB.',
+    a: 'Select Folder adds the files in that folder. The transfer stores each file by its name. It does not promise that the nested folder layout is rebuilt for the recipient. A free transfer stays within 6 GB. Creator can reach 50 GB, and Pro or Studio can reach 250 GB.',
   },
   {
     q: 'How does Direct Device P2P work?',
@@ -119,7 +130,9 @@ const EXPIRY_PRESETS = [
   { hours: 24, label: '24 Hours', subtitle: '1 Day access' },
   { hours: 72, label: '3 Days', subtitle: '72 Hours' },
   { hours: 168, label: '7 Days', subtitle: 'Free Max' },
+  { hours: 30 * 24, label: '30 Days', subtitle: 'Creator' },
   { hours: 180 * 24, label: '6 Months', subtitle: '180 days' },
+  { hours: 365 * 24, label: '1 Year', subtitle: 'Studio' },
 ];
 
 export default function HomePage() {
@@ -159,7 +172,7 @@ export default function HomePage() {
   const [showPassword, setShowPassword] = useState(false);
   const [enablePassword, setEnablePassword] = useState(false);
   const [expiryHours, setExpiryHours] = useState(168); // 7 days default
-  const [allowance, setAllowance] = useState({ bytes: 6_000_000_000, hours: 168, paid: false });
+  const [allowance, setAllowance] = useState({ bytes: 6_000_000_000, hours: 168, paid: false, tier: 'free' });
   const [maxDownloads, setMaxDownloads] = useState(0);
 
   // Transfer Manager Overlay State
@@ -182,7 +195,42 @@ export default function HomePage() {
   const { addToast } = useToast();
 
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
+  const [resumeOffer, setResumeOffer] = useState(null);
+  const uiToken = useRef({});
   const showOrbit = view === 'form' && files.length === 0 && mainMode !== 'device';
+
+  useEffect(() => {
+    const token = {};
+    uiToken.current = token;
+    const applyManager = (next) => {
+      if (!next || uiToken.current !== token) return;
+      setActiveTransferManager(next);
+      const snap = next.getSnapshot();
+      setTransferSnapshot(snap);
+      setProgress(snap.overallProgress || 0);
+      if (next.result) {
+        setShareData(next.result);
+        setView('complete');
+        setUploadStatus('complete');
+        return;
+      }
+      const busy = snap.overallStatus === 'uploading' || snap.overallStatus === 'paused' || snap.overallStatus === 'error'
+        || snap.uploadingFiles > 0 || snap.pausedFiles > 0 || snap.queuedFiles > 0;
+      if (busy) {
+        setView('progress');
+        setUploadStatus(snap.overallStatus === 'paused' ? 'paused' : snap.overallStatus === 'error' ? 'error' : 'uploading');
+      }
+    };
+    applyManager(getActiveUpload().manager);
+    const unsub = subscribeActiveUpload(({ manager: next }) => applyManager(next));
+    loadUploadSessions().then((sessions) => {
+      if (uiToken.current !== token || getActiveUpload().manager) return;
+      const saved = (sessions || []).filter((session) => sessionIsResumable(session))
+        .sort((a, b) => new Date(b.savedAt) - new Date(a.savedAt))[0];
+      if (saved) setResumeOffer(describeResume(saved));
+    }).catch(() => {});
+    return () => { unsub(); };
+  }, []);
 
   useEffect(() => {
     function handleOnline() { setIsOffline(false); }
@@ -231,14 +279,23 @@ export default function HomePage() {
 
   const isMasterAdmin = isAdmin(user);
   const maxSizeBytes = allowance.bytes;
-  const maxSizeLabel = allowance.paid ? '250 GB' : '6 GB';
+  const maxSizeGb = Math.max(1, Math.round(maxSizeBytes / 1_000_000_000));
+  const maxSizeLabel = maxSizeGb >= 1000 ? `${Math.round(maxSizeGb / 1000)} TB` : `${maxSizeGb} GB`;
+  const retentionDays = Math.max(1, Math.round((allowance.hours || 168) / 24));
+  const planLabel = allowance.tier === 'creator'
+    ? 'Creator'
+    : allowance.tier === 'studio'
+      ? 'Studio'
+      : allowance.paid
+        ? 'Pro'
+        : 'Free';
   const expiryChoices = EXPIRY_PRESETS.filter((preset) => preset.hours <= allowance.hours);
 
   useEffect(() => {
     let alive = true;
     async function loadAllowance() {
       if (!user) {
-        if (alive) setAllowance({ bytes: 6_000_000_000, hours: 168, paid: false });
+        if (alive) setAllowance({ bytes: 6_000_000_000, hours: 168, paid: false, tier: 'free' });
         return;
       }
       try {
@@ -253,9 +310,10 @@ export default function HomePage() {
           bytes: Number(body.maxFileSizeBytes),
           hours: Number(body.maxRetentionHours) || 168,
           paid: body.paid === true,
+          tier: body.tier || (body.paid ? 'pro' : 'free'),
         });
       } catch {
-        if (alive) setAllowance({ bytes: 6_000_000_000, hours: 168, paid: false });
+        if (alive) setAllowance({ bytes: 6_000_000_000, hours: 168, paid: false, tier: 'free' });
       }
     }
     loadAllowance();
@@ -342,6 +400,8 @@ export default function HomePage() {
 
     // 1. Generate Smart Slug from Title / Subject (or fallback random)
     const generatedSlug = generateTransferSlug(subject);
+    const savedSessions = await loadUploadSessions().catch(() => []);
+    const saved = matchResumeSession(savedSessions, files);
     const guestId = getOrCreateGuestId();
     const isGuest = !user;
     const userDisplayName = user ? (user.user_metadata?.fullName || user.user_metadata?.full_name || user.email?.split('@')[0]) : null;
@@ -350,7 +410,10 @@ export default function HomePage() {
     // 2. Instantiate Persistent TransferManager
     const safeExpiry = expiryHours > 0 && expiryHours <= allowance.hours ? expiryHours : allowance.hours;
     const manager = new TransferManager({
-      shareId: generatedSlug,
+      shareId: saved?.shareId || generatedSlug,
+      deleteToken: saved?.deleteToken,
+      claimToken: saved?.claimToken,
+      expiresAt: saved?.expiresAt,
       transferName: finalTransferName,
       expiryHours: safeExpiry,
       isGuest,
@@ -361,11 +424,24 @@ export default function HomePage() {
       password: enablePassword ? password.trim() : '',
       senderEmail: user?.email || `guest:${guestId}`,
       transferType: mainMode,
+      accessToken: async () => {
+        const { data } = await supabase.auth.getSession();
+        return data?.session?.access_token || '';
+      },
     });
 
     uploadLock.current = true;
+    manager.uiToken = uiToken.current;
     setActiveTransferManager(manager);
-    manager.addFiles(files);
+    publishActiveUpload(manager);
+    const added = manager.addFiles(files);
+    if (saved) {
+      for (const item of added) {
+        const match = saved.files.find((file) => identitiesMatch(file, item.file));
+        if (match) applyResumeToFile(item, match, PART_SIZE_BYTES);
+      }
+      setResumeOffer(null);
+    }
     setTransferSnapshot(manager.getSnapshot());
     setIsTransferManagerOpen(false);
     setShowSuccessModal(false);
@@ -374,6 +450,7 @@ export default function HomePage() {
 
     // Subscribe to state changes
     manager.on('stateChanged', (snap) => {
+      if (manager.uiToken !== uiToken.current) return;
       setTransferSnapshot(snap);
       setProgress(snap.overallProgress || 0);
       setUploadSpeed(snap.aggregateSpeed > 0 ? snap.speedStr : '');
@@ -389,7 +466,8 @@ export default function HomePage() {
     });
 
     manager.on('transferComplete', async (snap) => {
-      setTransferSnapshot(manager.getSnapshot());
+      const visible = manager.uiToken === uiToken.current;
+      if (visible) setTransferSnapshot(manager.getSnapshot());
       const completedFiles = snap.files.filter(f => f.status === 'completed');
       if (completedFiles.length === 0) return;
 
@@ -405,6 +483,11 @@ export default function HomePage() {
         addToast('The files uploaded, but the link could not be saved. Try again.', 'error');
         return;
       }
+      fetch('/api/r2?action=event', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ event: saved ? 'upload_resumed' : 'link_created' }),
+      }).catch(() => {});
       saveTransferSecrets(manager.shareId || generatedSlug, {
         claimToken: manager.claimToken,
         deleteToken: manager.deleteToken,
@@ -443,7 +526,7 @@ export default function HomePage() {
       try { playSuccessChime(); } catch (e) {}
 
       const formattedFiles = completedFiles.map(f => ({ name: f.name, size: f.size, type: f.type }));
-      setShareData({
+      const payload = {
         shareId: publishedShareId,
         fileCount: completedFiles.length,
         totalSize: snap.totalBytes,
@@ -458,7 +541,11 @@ export default function HomePage() {
         emailResult,
         files: formattedFiles,
         filesList: formattedFiles,
-      });
+      };
+      manager.result = payload;
+      touchActiveUpload();
+      if (!visible) return;
+      setShareData(payload);
       setUploadStatus('complete');
       setView('complete');
       setShowSuccessModal(false);
@@ -484,7 +571,10 @@ export default function HomePage() {
 
   const handleCancelUpload = () => {
     if (activeTransferManager) {
+      const shareId = activeTransferManager.shareId;
       activeTransferManager.cancelAll();
+      deleteUploadSession(shareId);
+      clearActiveUpload(shareId);
       setActiveTransferManager(null);
     }
     uploadLock.current = false;
@@ -585,8 +675,8 @@ export default function HomePage() {
                   return (
                     <>
                       <Link to="/pricing" className="ds-announce">
-                        <span className="ds-announce-tag">Pro</span>
-                        250 GB transfers, links open 180 days
+                        <span className="ds-announce-tag">Plans</span>
+                        Creator ₹299 · Pro ₹799 · Studio ₹2,499
                         <ArrowRight className="w-3.5 h-3.5" />
                       </Link>
                       <AnimatedHeadline text={title} accent={accent} />
@@ -612,7 +702,12 @@ export default function HomePage() {
                           key={m.id}
                           type="button"
                           onClick={() => {
+                            const busy = view === 'progress' || uploadStatus === 'uploading' || uploadStatus === 'paused' || uploadStatus === 'confirming';
                             setMainMode(m.id);
+                            if (busy && m.id !== 'device') {
+                              setView('progress');
+                              return;
+                            }
                             if (m.id !== 'device') setView('form');
                           }}
                           className="ds-tab"
@@ -645,7 +740,26 @@ export default function HomePage() {
                 ) : (
                   <>
                     {view === 'form' && files.length === 0 && (
-                      <DropZone onFilesSelected={handleFilesSelected} windowDrop />
+                      <>
+                        {resumeOffer && (
+                          <p className="snd-note" role="status">
+                            <span>
+                              {resumeOffer.name} stopped at {resumeOffer.percent}%. Drop that same file to continue where it left off.
+                            </span>
+                            <button
+                              type="button"
+                              className="ds-btn ds-btn-ghost ds-btn-sm"
+                              onClick={() => {
+                                deleteUploadSession(resumeOffer.shareId);
+                                setResumeOffer(null);
+                              }}
+                            >
+                              Dismiss
+                            </button>
+                          </p>
+                        )}
+                        <DropZone onFilesSelected={handleFilesSelected} windowDrop />
+                      </>
                     )}
 
                     {view === 'form' && files.length > 0 && (
@@ -697,7 +811,7 @@ export default function HomePage() {
                         <fieldset className="snd-expiry snd-sep">
                           <legend className="snd-label-row">
                             <span>Link stays open</span>
-                            <small>{allowance.paid ? 'Pro · up to 180 days' : 'Free · up to 7 days'}</small>
+                            <small>{planLabel} · up to {retentionDays >= 365 ? '1 year' : `${retentionDays} days`}</small>
                           </legend>
                           <div className="snd-choices">
                             {expiryChoices.map((preset) => {
@@ -892,8 +1006,8 @@ export default function HomePage() {
             <div className="ds-wrap">
               <div className="ds-section-head is-center" data-reveal>
                 <p className="ds-kicker"><b>●</b> Pricing</p>
-                <h2 id="plans-title" className="ds-h2">Free up to 6 GB. Pro when the file is bigger.</h2>
-                <p className="ds-lead">No trial clock, no card to send. Pro opens a Dodo checkout and applies once the payment is confirmed.</p>
+                <h2 id="plans-title" className="ds-h2">Free up to 6 GB. Paid plans when the file is bigger.</h2>
+                <p className="ds-lead">No card to send. Creator, Pro, and Studio open a Dodo checkout and apply once the payment is confirmed.</p>
               </div>
               <div className="mt-12 max-w-4xl mx-auto">
                 <PlanCards freeHref="#transfer" isPro={allowance.paid} />

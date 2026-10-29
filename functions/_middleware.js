@@ -15,6 +15,7 @@ export async function onRequest(context) {
   const rewritten = rewriteDocumentHtml(url.pathname, html);
   const headers = new Headers(response.headers);
   headers.delete('content-length');
+  headers.set('cache-control', 'public, max-age=300, stale-while-revalidate=86400');
   return new Response(rewritten, {
     status: response.status,
     statusText: response.statusText,

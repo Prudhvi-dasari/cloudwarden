@@ -5,13 +5,12 @@
  */
 
 import { supabase, publicSupabase, STORAGE_BUCKET, SUPABASE_STORAGE_URL, supabaseAnonKey } from './supabase';
-import { PART_SIZE_BYTES, uploadNeedsMultipart } from './uploadPlan';
+import { PART_SIZE_BYTES, PART_UPLOAD_ATTEMPTS, normalizePartEtag, uploadNeedsMultipart } from './uploadPlan';
 
-function putBlob(url, blob, contentType, onProgress) {
+function putBlob(url, blob, onProgress) {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open('PUT', url, true);
-    xhr.setRequestHeader('Content-Type', contentType || 'application/octet-stream');
     xhr.timeout = 45 * 60 * 1000;
     xhr.upload.onprogress = (event) => {
       if (event.lengthComputable && onProgress) onProgress(event.loaded);
@@ -21,13 +20,7 @@ function putBlob(url, blob, contentType, onProgress) {
         reject(new Error(`Cloudflare R2 returned HTTP ${xhr.status}`));
         return;
       }
-      let etag = xhr.getResponseHeader('ETag') || xhr.getResponseHeader('etag') || '';
-      etag = etag.replaceAll('&quot;', '"');
-      if (etag && !etag.startsWith('"')) etag = `"${etag.replaceAll('"', '')}"`;
-      if (!etag) {
-        reject(new Error('Missing ETag — R2 CORS must expose ETag'));
-        return;
-      }
+      const etag = normalizePartEtag(xhr.getResponseHeader('ETag') || xhr.getResponseHeader('etag') || '');
       resolve(etag);
     };
     xhr.onerror = () => reject(new Error('Network error uploading to Cloudflare R2'));
@@ -701,7 +694,7 @@ export class CloudflareR2StorageProvider extends BaseStorageProvider {
       let etag = '';
       let lastError = null;
 
-      for (let attempt = 0; attempt < 3; attempt += 1) {
+      for (let attempt = 0; attempt < PART_UPLOAD_ATTEMPTS; attempt += 1) {
         const partRes = await fetch(`${this.apiBase}?action=get-part-url`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -718,7 +711,7 @@ export class CloudflareR2StorageProvider extends BaseStorageProvider {
           continue;
         }
         try {
-          etag = await putBlob(part.presignedUrl, blob, file.type, (loaded) => {
+          etag = await putBlob(part.presignedUrl, blob, (loaded) => {
             if (onProgress) onProgress(uploaded + loaded, totalSize);
           });
           lastError = null;
@@ -728,7 +721,7 @@ export class CloudflareR2StorageProvider extends BaseStorageProvider {
         }
       }
 
-      if (!etag) throw lastError || new Error(`Part ${partNumber} did not upload.`);
+      if (lastError) throw lastError;
       completed.push({ PartNumber: partNumber, ETag: etag });
       uploaded = end;
       if (onProgress) onProgress(uploaded, totalSize);
