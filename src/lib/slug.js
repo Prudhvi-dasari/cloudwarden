@@ -1,5 +1,5 @@
 /**
- * Smart Title / Subject to URL Slug Generator for iTransfer
+ * Smart Title / Subject to URL Slug Generator for SendToAnyone
  * Generates clean, human-readable, collision-resistant transfer slugs.
  */
 
@@ -23,7 +23,7 @@ export function generateRandomCode(length = 8) {
 
 /**
  * Generate a smart transfer slug based on Title / Subject
- * Example: 'hi tech machine' -> 'hi-tech-machine-a82f'
+ * Example: 'hi tech machine' -> 'hi-tech-machine-a82fk3m9'
  * Example: '' -> '8xk92pq7'
  */
 export function generateTransferSlug(title) {
@@ -45,8 +45,8 @@ export function generateTransferSlug(title) {
     return generateRandomCode(8);
   }
 
-  // Append short 4-char suffix to guarantee global uniqueness
-  const suffix = generateRandomCode(4);
+  // 8 random chars (36^8) so a readable title does not make the link guessable
+  const suffix = generateRandomCode(8);
   return `${sanitized}-${suffix}`;
 }
 

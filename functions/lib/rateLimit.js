@@ -5,9 +5,8 @@
  * JSON whose `allowed` field is boolean true. Timeouts, missing bindings,
  * non-200 responses, and malformed JSON are unavailable, never allowed.
  *
- * Callers fail closed on that result, except get-part-urls: an explicit
- * block still returns 429, but an unavailable limiter may sign a batch that
- * already passed the delete-token and five-part checks.
+ * Callers fail closed on that result. An unavailable limiter does not sign
+ * part URLs. An explicit block is still HTTP 429.
  *
  * request-meta and share-meta use the same fail-closed policy: 429 when
  * the Worker blocks, 503 when the check is unavailable. They do not read

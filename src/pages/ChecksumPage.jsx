@@ -1,15 +1,42 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import Navbar from '../components/Navbar';
-import Footer from '../components/Footer';
+import PageFrame from '../components/PageFrame';
 import AuthModal from '../components/AuthModal';
 import ProfileModal from '../components/ProfileModal';
 import { getStoredUser, clearUserSession } from '../lib/authSession';
 import {
-  ShieldCheck, FileCode, CheckCircle2, Copy, Check,
-  Sparkles, RefreshCw, ArrowRight, Lock, Hash, UploadCloud
+  AlertTriangle, ArrowRight, Check, CheckCircle2, Copy, FileText, Fingerprint, Laptop, Repeat, UploadCloud,
 } from 'lucide-react';
 import { useToast } from '../components/Toast';
+
+function toHex(buffer) {
+  return Array.from(new Uint8Array(buffer)).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+function formatSize(bytes) {
+  if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(2)} GB`;
+  if (bytes >= 1e6) return `${(bytes / 1e6).toFixed(2)} MB`;
+  if (bytes >= 1e3) return `${(bytes / 1e3).toFixed(1)} KB`;
+  return `${bytes} bytes`;
+}
+
+const ABOUT = [
+  {
+    icon: Fingerprint,
+    title: 'What a hash proves',
+    text: 'A hash is a fingerprint of the bytes. Change one byte and the hash changes completely.',
+  },
+  {
+    icon: Laptop,
+    title: 'Nothing is uploaded',
+    text: 'Your browser computes the hash with the Web Crypto API. The file stays on this device.',
+  },
+  {
+    icon: Repeat,
+    title: 'Same bytes in, same bytes out',
+    text: 'The uploader sends the bytes you selected. It does not compress or transcode them.',
+  },
+];
 
 export default function ChecksumPage() {
   const { addToast } = useToast();
@@ -18,224 +45,220 @@ export default function ChecksumPage() {
   const [authMode, setAuthMode] = useState('login');
   const [isProfileOpen, setIsProfileOpen] = useState(false);
 
-  const [file, setFile] = useState(null);
   const [computing, setComputing] = useState(false);
   const [hashes, setHashes] = useState(null);
   const [compareHash, setCompareHash] = useState('');
   const [copiedKey, setCopiedKey] = useState(null);
+  const [failed, setFailed] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const inputRef = useRef(null);
 
-  const handleFileSelect = async (e) => {
-    const selected = e.target.files?.[0];
-    if (!selected) return;
-
-    setFile(selected);
+  const hashFile = async (selected) => {
+    if (!selected || computing) return;
     setComputing(true);
     setHashes(null);
+    setFailed(false);
 
     try {
       const buffer = await selected.arrayBuffer();
-      
-      // Calculate SHA-256 using subtle crypto
-      const hashBuffer256 = await crypto.subtle.digest('SHA-256', buffer);
-      const hashArray256 = Array.from(new Uint8Array(hashBuffer256));
-      const sha256 = hashArray256.map(b => b.toString(16).padStart(2, '0')).join('');
-
-      // Calculate SHA-1
-      const hashBuffer1 = await crypto.subtle.digest('SHA-1', buffer);
-      const hashArray1 = Array.from(new Uint8Array(hashBuffer1));
-      const sha1 = hashArray1.map(b => b.toString(16).padStart(2, '0')).join('');
-
+      const [hashBuffer256, hashBuffer1] = await Promise.all([
+        crypto.subtle.digest('SHA-256', buffer),
+        crypto.subtle.digest('SHA-1', buffer),
+      ]);
       setHashes({
-        sha256,
-        sha1,
+        sha256: toHex(hashBuffer256),
+        sha1: toHex(hashBuffer1),
         size: selected.size,
         name: selected.name,
       });
-      addToast('Checksums computed successfully! 🔒', 'success');
+      addToast('Hashes ready.', 'success');
     } catch (err) {
       console.error(err);
-      addToast('Failed to compute checksum', 'error');
+      setFailed(true);
+      addToast('Could not read this file.', 'error');
     } finally {
       setComputing(false);
     }
   };
 
-  const handleCopy = async (key, val) => {
-    await navigator.clipboard.writeText(val);
-    setCopiedKey(key);
-    addToast(`Copied ${key.toUpperCase()} hash! 📋`, 'info');
-    setTimeout(() => setCopiedKey(null), 2000);
+  const handleFileSelect = (e) => {
+    hashFile(e.target.files?.[0]);
+    e.target.value = '';
   };
 
-  const isMatched = compareHash.trim() && hashes && (
-    compareHash.trim().toLowerCase() === hashes.sha256.toLowerCase() ||
-    compareHash.trim().toLowerCase() === hashes.sha1.toLowerCase()
-  );
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setDragging(false);
+    hashFile(e.dataTransfer?.files?.[0]);
+  };
+
+  const handleCopy = async (key, val) => {
+    try {
+      await navigator.clipboard.writeText(val);
+      setCopiedKey(key);
+      addToast(`${key === 'sha256' ? 'SHA-256' : 'SHA-1'} copied.`, 'info');
+      setTimeout(() => setCopiedKey(null), 2000);
+    } catch {
+      addToast('Copy failed. Select the text instead.', 'error');
+    }
+  };
+
+  const expected = compareHash.trim().toLowerCase();
+  const isMatched = Boolean(expected && hashes && (expected === hashes.sha256 || expected === hashes.sha1));
 
   return (
-    <div className="min-h-screen flex flex-col text-white relative overflow-hidden bg-[#07080d]">
-      <div className="page-sky" aria-hidden="true" />
-<Navbar
+    <>
+      <PageFrame
         user={user}
         onOpenAuth={(mode) => { setAuthMode(mode); setIsAuthOpen(true); }}
         onOpenProfile={() => setIsProfileOpen(true)}
-      />
+        eyebrow="Checksum · Runs in your browser"
+        title="Check a file against its hash."
+        accent={2}
+        subtitle="Pick a file. Your browser computes its SHA-256 and SHA-1. Paste the hash you were given and see if they match. Nothing is uploaded."
+      >
+        <section className="max-w-3xl mx-auto w-full" aria-label="Checksum tool">
+          <div className="ds-frame" data-reveal>
+            <div className="ds-frame-chrome">
+              <span className="ds-frame-dots" aria-hidden="true"><i /><i /><i /></span>
+              <span className="ds-mono text-[0.72rem] text-[#6b7486] truncate min-w-0">checksum · on this device</span>
+              <span className="ds-badge ds-badge-green">Local</span>
+            </div>
+            <div className="ds-frame-screen space-y-5">
+              <label
+                className={`pgb-drop ${dragging ? 'is-drag' : ''}`}
+                onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+                onDragLeave={() => setDragging(false)}
+                onDrop={handleDrop}
+              >
+                <input ref={inputRef} type="file" onChange={handleFileSelect} className="sr-only" />
+                <span className="ds-icon is-dark" aria-hidden="true">
+                  {computing ? <span className="ds-spinner" /> : <UploadCloud />}
+                </span>
+                <span className="pgb-drop-title">
+                  {computing ? 'Reading the file…' : 'Drop a file, or click to choose one'}
+                </span>
+                <span className="ds-hint max-w-sm">
+                  The whole file is read into memory. Very large files can fail in some browsers.
+                </span>
+              </label>
 
-      <main className="flex-1 max-w-4xl w-full mx-auto px-4 sm:px-6 py-12 sm:py-16 z-10 relative">
-        
-        {/* Header */}
-        <div className="text-center max-w-2xl mx-auto mb-12 animate-fadeIn">
-          <div className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold theme-bg-light theme-text mb-4 border border-[#c4a574]/25/80 shadow-2xs">
-            <Hash className="w-3.5 h-3.5" /> 100% Client-Side In-Browser Verification
-          </div>
-          <h1 className="text-4xl sm:text-5xl font-semibold text-white tracking-tight mb-4 leading-tight">
-            File Hash & Integrity Verifier
-          </h1>
-          <p className="text-base sm:text-lg text-white/55 font-medium leading-relaxed">
-            Verify bit-for-bit file integrity before or after transfer. Calculate SHA-256 and SHA-1 checksums instantly without uploading files to any server.
-          </p>
-        </div>
+              {failed && (
+                <div className="ds-alert is-danger" role="alert">
+                  <AlertTriangle className="w-4 h-4 shrink-0" aria-hidden="true" />
+                  <span>The browser could not read this file. It may be too large for memory. Try a desktop browser, or the command line.</span>
+                </div>
+              )}
 
-        {/* Upload Drop Zone for Hash */}
-        <div className="custom-card p-8 sm:p-10 bg-[#17192e] shadow-md mb-8">
-          <label className="flex flex-col items-center justify-center border-2 border-dashed border-slate-300 hover:border-indigo-500 rounded-2xl p-8 sm:p-12 cursor-pointer transition-colors bg-white/5/60 hover:bg-[#c4a574]/12/20">
-            <input type="file" onChange={handleFileSelect} className="hidden" />
-            <div className="w-14 h-14 rounded-2xl bg-[#c4a574]/12 text-[#c4a574] flex items-center justify-center mb-4">
-              {computing ? (
-                <RefreshCw className="w-7 h-7 animate-spin" />
-              ) : (
-                <UploadCloud className="w-7 h-7" />
+              {hashes && (
+                <div className="space-y-3" aria-live="polite">
+                  <div className="flex items-center justify-between gap-3 pb-3 border-b border-[#e6e8ee]">
+                    <div className="pgb-file">
+                      <span className="ds-file-icon"><FileText className="w-4 h-4" aria-hidden="true" /></span>
+                      <div className="min-w-0">
+                        <p className="ds-row-title truncate">{hashes.name}</p>
+                        <p className="ds-row-sub">{formatSize(hashes.size)}</p>
+                      </div>
+                    </div>
+                    <span className="ds-badge ds-badge-blue shrink-0">Hashed</span>
+                  </div>
+
+                  {[['sha256', 'SHA-256'], ['sha1', 'SHA-1']].map(([key, label]) => (
+                    <div key={key} className="pgb-hash">
+                      <div className="pgb-hash-top">
+                        <span className="pgb-hash-label">{label}</span>
+                        <button type="button" onClick={() => handleCopy(key, hashes[key])} className="ds-btn ds-btn-ghost ds-btn-sm">
+                          {copiedKey === key ? <Check className="w-3.5 h-3.5" aria-hidden="true" /> : <Copy className="w-3.5 h-3.5" aria-hidden="true" />}
+                          {copiedKey === key ? 'Copied' : 'Copy'}
+                        </button>
+                      </div>
+                      <p className="pgb-hash-value">{hashes[key]}</p>
+                    </div>
+                  ))}
+
+                  <div className="ds-field pt-3">
+                    <label className="ds-label" htmlFor="compare-hash">Compare with the hash you were given</label>
+                    <input
+                      id="compare-hash"
+                      type="text"
+                      value={compareHash}
+                      onChange={(e) => setCompareHash(e.target.value)}
+                      placeholder="Paste a SHA-256 or SHA-1 hash"
+                      className="ds-input ds-mono text-[0.8rem]"
+                      spellCheck={false}
+                      autoComplete="off"
+                    />
+                  </div>
+
+                  {expected && (
+                    <div className={`ds-alert ${isMatched ? 'is-success' : 'is-danger'}`} role="status">
+                      {isMatched ? (
+                        <>
+                          <CheckCircle2 className="w-4 h-4 shrink-0" aria-hidden="true" />
+                          <span>Match. This file has the same bytes as the file that produced that hash.</span>
+                        </>
+                      ) : (
+                        <>
+                          <AlertTriangle className="w-4 h-4 shrink-0" aria-hidden="true" />
+                          <span>No match. The file differs from the one that produced that hash, or the hash was copied wrong.</span>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {!hashes && !computing && (
+                <div className="text-center">
+                  <button type="button" className="ds-btn ds-btn-dark" onClick={() => inputRef.current?.click()}>
+                    Choose a file
+                  </button>
+                </div>
               )}
             </div>
-            <h3 className="text-lg font-bold text-white mb-1">
-              {computing ? 'Calculating cryptographic hashes...' : 'Select or drop a file to compute checksum'}
-            </h3>
-            <p className="text-xs sm:text-sm text-white/45 font-medium">
-              Files are processed locally in your browser memory via Web Crypto API.
-            </p>
-          </label>
-
-          {/* Results Card */}
-          {hashes && (
-            <div className="mt-8 space-y-4 animate-scale-in">
-              <div className="flex items-center justify-between pb-3 border-b border-white/10">
-                <div>
-                  <h4 className="text-sm font-bold text-white">{hashes.name}</h4>
-                  <p className="text-xs text-white/45 font-medium">{(hashes.size / (1024 * 1024)).toFixed(2)} MB</p>
-                </div>
-                <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200">
-                  <CheckCircle2 className="w-3.5 h-3.5" /> Verified
-                </span>
-              </div>
-
-              {/* SHA-256 */}
-              <div className="p-4 bg-white/5 rounded-xl border border-white/10/80 space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-white/55 uppercase tracking-wider">SHA-256 Checksum</span>
-                  <button
-                    onClick={() => handleCopy('sha256', hashes.sha256)}
-                    className="text-xs font-bold theme-text hover:underline flex items-center gap-1"
-                  >
-                    {copiedKey === 'sha256' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                    <span>{copiedKey === 'sha256' ? 'Copied' : 'Copy'}</span>
-                  </button>
-                </div>
-                <p className="text-xs font-mono font-bold text-white break-all bg-[#17192e] p-2.5 rounded-lg border border-white/10">
-                  {hashes.sha256}
-                </p>
-              </div>
-
-              {/* SHA-1 */}
-              <div className="p-4 bg-white/5 rounded-xl border border-white/10/80 space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-white/55 uppercase tracking-wider">SHA-1 Checksum</span>
-                  <button
-                    onClick={() => handleCopy('sha1', hashes.sha1)}
-                    className="text-xs font-bold theme-text hover:underline flex items-center gap-1"
-                  >
-                    {copiedKey === 'sha1' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                    <span>{copiedKey === 'sha1' ? 'Copied' : 'Copy'}</span>
-                  </button>
-                </div>
-                <p className="text-xs font-mono font-bold text-white break-all bg-[#17192e] p-2.5 rounded-lg border border-white/10">
-                  {hashes.sha1}
-                </p>
-              </div>
-
-              {/* Checksum Matcher */}
-              <div className="pt-4 border-t border-white/10">
-                <label className="block text-xs font-bold text-white/55 uppercase tracking-wider mb-2">
-                  Compare with Expected Hash
-                </label>
-                <input
-                  type="text"
-                  value={compareHash}
-                  onChange={(e) => setCompareHash(e.target.value)}
-                  placeholder="Paste expected SHA-256 or SHA-1 hash to verify match..."
-                  className="w-full px-4 py-3 bg-[#17192e] border border-slate-300 rounded-xl text-xs font-mono font-bold focus:outline-none focus:border-indigo-500"
-                />
-
-                {compareHash.trim() && (
-                  <div className={`mt-3 p-3.5 rounded-xl border flex items-center gap-2.5 text-sm font-bold animate-fadeIn ${
-                    isMatched
-                      ? 'bg-emerald-50 text-emerald-900 border-emerald-200'
-                      : 'bg-rose-50 text-rose-900 border-rose-200'
-                  }`}>
-                    {isMatched ? (
-                      <>
-                        <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
-                        <span>Exact Hash Match! File integrity is 100% authentic and uncorrupted.</span>
-                      </>
-                    ) : (
-                      <>
-                        <ShieldCheck className="w-5 h-5 text-rose-600 shrink-0" />
-                        <span>Hash Mismatch. The file contents differ from the expected hash.</span>
-                      </>
-                    )}
-                  </div>
-                )}
-              </div>
-
-            </div>
-          )}
-        </div>
-
-        {/* Educational Info */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-16">
-          <div className="custom-card p-5 bg-[#17192e] space-y-2">
-            <h4 className="text-sm font-bold text-white">Why Use Checksums?</h4>
-            <p className="text-xs text-white/45 leading-relaxed font-medium">
-              A checksum acts as a cryptographic fingerprint. If even a single byte is altered in transit, the resulting hash completely changes.
-            </p>
           </div>
+        </section>
 
-          <div className="custom-card p-5 bg-[#17192e] space-y-2">
-            <h4 className="text-sm font-bold text-white">Zero Server Upload</h4>
-            <p className="text-xs text-white/45 leading-relaxed font-medium">
-              Computations execute entirely inside your local browser via native WebAssembly and Web Crypto API for maximum privacy.
-            </p>
+        <section className="pt-6" aria-label="About checksums">
+          <div className="ds-grid cols-3">
+            {ABOUT.map(({ icon: Icon, title, text }, i) => (
+              <div key={title} className="ds-feature is-soft" data-reveal style={{ '--d': `${i * 60}ms` }}>
+                <span className="ds-icon"><Icon aria-hidden="true" /></span>
+                <h3>{title}</h3>
+                <p>{text}</p>
+              </div>
+            ))}
           </div>
+        </section>
 
-          <div className="custom-card p-5 bg-[#17192e] space-y-2">
-            <h4 className="text-sm font-bold text-white">Bit-for-Bit Delivery</h4>
-            <p className="text-xs text-white/45 leading-relaxed font-medium">
-              iTransfer guarantees 100% bit-for-bit file delivery with zero compression, transcoding, or downsampling.
+        <section className="ds-split items-start pt-6" aria-labelledby="after-title">
+          <div data-reveal>
+            <p className="ds-kicker"><b>●</b> After a transfer</p>
+            <h2 id="after-title" className="ds-h2 mt-3">Compare on both ends.</h2>
+            <p className="ds-lead mt-4">
+              The transfer does not attach a hash for you. Share it yourself, on a different channel from the link.
             </p>
+            <Link to="/" className="ds-btn ds-btn-dark mt-6">
+              Send a file
+              <ArrowRight className="ds-btn-arrow w-4 h-4" aria-hidden="true" />
+            </Link>
           </div>
-        </div>
-
-      </main>
-
-      
-      <div className="relative z-10 max-w-6xl mx-auto px-4 sm:px-6 pb-12">
-        <div className="pt-8 border-t border-white/10">
-          <Link to="/" className="inline-flex items-center gap-2 rounded-full bg-white text-black text-sm font-semibold px-5 py-3 hover:bg-white/90">
-            Send a file
-          </Link>
-        </div>
-      </div>
-
-      <Footer />
+          <ol className="ds-steps" data-reveal style={{ '--d': '100ms' }}>
+            <li className="ds-step">
+              <h3>The sender hashes the file</h3>
+              <p>Run it here before upload and copy the SHA-256.</p>
+            </li>
+            <li className="ds-step">
+              <h3>The hash travels separately</h3>
+              <p>Send it in a chat or message, apart from the download link.</p>
+            </li>
+            <li className="ds-step">
+              <h3>The recipient checks</h3>
+              <p>They hash the download here and paste the sender’s value.</p>
+            </li>
+          </ol>
+        </section>
+      </PageFrame>
 
       <AuthModal
         isOpen={isAuthOpen}
@@ -253,6 +276,6 @@ export default function ChecksumPage() {
           setUser(null);
         }}
       />
-    </div>
+    </>
   );
 }

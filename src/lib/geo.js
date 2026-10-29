@@ -208,6 +208,21 @@ export async function detectClientGeo() {
     // Neutral fallback below.
   }
 
+  // Local Vite has no Cloudflare country header. Use the device zone only
+  // while developing, so the flag can be seen. Production stays on the IP.
+  if (import.meta.env?.DEV) {
+    const zone = getDeviceTimeZone();
+    const fromZone = countryFromTimeZone(zone);
+    if (fromZone) {
+      return {
+        ...resolveVisitorPlace({ countryCode: fromZone, timezone: zone }),
+        detected: false,
+        edgeRegion: '',
+        latencyMs: null,
+      };
+    }
+  }
+
   const place = guessVisitorPlace();
   return {
     ...place,

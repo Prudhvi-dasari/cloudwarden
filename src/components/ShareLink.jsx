@@ -1,13 +1,12 @@
 import { useState, useEffect } from 'react';
 import {
   CheckCircle2, Copy, Check, Download, Clock, RotateCcw,
-  QrCode, Lock, Share2, Sparkles, ShieldCheck, Mail, MessageSquare,
+  QrCode, Lock, Share2, Mail, MessageSquare,
   ExternalLink, ChevronDown, ChevronUp, File, Image, Film, Music,
   FileText, Send, HardDrive
 } from 'lucide-react';
 import { describeEmailResult, describeExcludedRecipients } from '../lib/emailStatus';
 import { playSuccessChime } from '../lib/sound';
-import Confetti from './Confetti';
 import { useToast } from './Toast';
 
 function formatBytes(bytes) {
@@ -26,6 +25,19 @@ function getFileIcon(type, name) {
   if (['pdf', 'doc', 'docx', 'txt'].includes(ext)) return FileText;
   return File;
 }
+
+const KIND_BY_ICON = new Map([
+  [Image, 'image'],
+  [Film, 'video'],
+  [Music, 'audio'],
+  [FileText, 'doc'],
+]);
+
+const EMAIL_BADGE = {
+  delivered: 'ds-badge ds-badge-green',
+  accepted: 'ds-badge ds-badge-blue',
+  partial: 'ds-badge ds-badge-blue',
+};
 
 export default function ShareLink({
   shareId,
@@ -55,31 +67,45 @@ export default function ShareLink({
     playSuccessChime();
   }, []);
 
-  const handleCopy = async () => {
+  const copyText = async (value) => {
     try {
-      await navigator.clipboard.writeText(downloadUrl);
-      setCopied(true);
-      addToast('Download link copied to clipboard! 📋', 'success');
-      setTimeout(() => setCopied(false), 2000);
-    } catch (err) {
-      const textarea = document.createElement('textarea');
-      textarea.value = downloadUrl;
-      document.body.appendChild(textarea);
-      textarea.select();
-      document.execCommand('copy');
-      document.body.removeChild(textarea);
-      setCopied(true);
-      addToast('Download link copied! 📋', 'success');
-      setTimeout(() => setCopied(false), 2000);
+      await navigator.clipboard.writeText(value);
+      return true;
+    } catch {
+      try {
+        const textarea = document.createElement('textarea');
+        textarea.value = value;
+        textarea.setAttribute('readonly', '');
+        textarea.style.position = 'fixed';
+        textarea.style.left = '-9999px';
+        document.body.appendChild(textarea);
+        textarea.select();
+        const ok = document.execCommand('copy');
+        document.body.removeChild(textarea);
+        return ok;
+      } catch {
+        return false;
+      }
     }
+  };
+
+  const handleCopy = async () => {
+    const ok = await copyText(downloadUrl);
+    if (!ok) {
+      addToast('Could not copy the link. Select it and copy it yourself.', 'error');
+      return;
+    }
+    setCopied(true);
+    addToast('Link copied.', 'success');
+    setTimeout(() => setCopied(false), 2000);
   };
 
   const handleNativeShare = async () => {
     if (navigator.share) {
       try {
         await navigator.share({
-          title: subject || 'iTransfer Files',
-          text: `Download ${fileCount} file${fileCount !== 1 ? 's' : ''} (${formatBytes(totalSize)}) via iTransfer`,
+          title: subject || 'SendToAnyone Files',
+          text: `Download ${fileCount} file${fileCount !== 1 ? 's' : ''} (${formatBytes(totalSize)}) via SendToAnyone`,
           url: downloadUrl,
         });
       } catch (e) {}
@@ -88,21 +114,20 @@ export default function ShareLink({
     }
   };
 
-  const emailInvitationText = `Hi,\n\nI have sent you ${fileCount} file${fileCount !== 1 ? 's' : ''} (${formatBytes(totalSize)}) via iTransfer.\n\nClick the link below to download your files:\n${downloadUrl}\n\n${isPasswordProtected ? 'Note: These files are password-protected.\n\n' : ''}Best regards!`;
+  const emailInvitationText = `Hi,\n\nI have sent you ${fileCount} file${fileCount !== 1 ? 's' : ''} (${formatBytes(totalSize)}) via SendToAnyone.\n\nClick the link below to download your files:\n${downloadUrl}\n\n${isPasswordProtected ? 'Note: These files are password-protected.\n\n' : ''}Best regards!`;
 
   const handleCopyInvitation = async () => {
-    try {
-      await navigator.clipboard.writeText(emailInvitationText);
-      setCopiedInvitation(true);
-      addToast('Email message copied to clipboard! ✉️', 'success');
-      setTimeout(() => setCopiedInvitation(false), 2000);
-    } catch (err) {
-      setCopiedInvitation(true);
-      setTimeout(() => setCopiedInvitation(false), 2000);
+    const ok = await copyText(emailInvitationText);
+    if (!ok) {
+      addToast('Could not copy that note.', 'error');
+      return;
     }
+    setCopiedInvitation(true);
+    addToast('Note copied.', 'success');
+    setTimeout(() => setCopiedInvitation(false), 2000);
   };
 
-  const mailtoUrl = `mailto:${recipientEmails || ''}?subject=${encodeURIComponent(subject || `Files shared with you via iTransfer`)}&body=${encodeURIComponent(emailInvitationText)}`;
+  const mailtoUrl = `mailto:${recipientEmails || ''}?subject=${encodeURIComponent(subject || `Files shared with you via SendToAnyone`)}&body=${encodeURIComponent(emailInvitationText)}`;
   const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(`Here are the files I shared with you (${fileCount} files, ${formatBytes(totalSize)}): ${downloadUrl}`)}`;
   const qrApiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(downloadUrl)}`;
 
@@ -113,84 +138,66 @@ export default function ShareLink({
   const exclusionNote = describeExcludedRecipients(emailResult?.excludedCount);
 
   return (
-    <div className="custom-card p-5 sm:p-8 text-center animate-scale-in max-w-xl mx-auto relative overflow-hidden ">
-      
-      {/* Full-page slow-motion particle celebration */}
-      <Confetti duration={6500} />
-
-      {/* Success Ripple & Animated Checkmark */}
-      <div className="relative flex items-center justify-center mb-4 pt-1">
-        <div className="absolute w-16 h-16 rounded-full bg-[#c4a574]/20 animate-success-ripple pointer-events-none" />
-        <div className="w-14 h-14 rounded-2xl theme-btn-primary flex items-center justify-center shadow-lg shadow-[#c4a574]/25 z-10 animate-scale-in">
-          <CheckCircle2 className="w-8 h-8 stroke-[2.5] text-[#0c0b0a]" />
-        </div>
+    <div className="snd-share">
+      <div className="snd-head">
+        <span className="snd-done" aria-hidden="true">
+          <Check />
+        </span>
+        <h2 className="snd-title">
+          {transferType === 'email' ? 'Transfer ready to share' : 'Your transfer is ready'}
+        </h2>
+        <p className="snd-sub">
+          {transferType === 'email'
+            ? emailState.summary
+            : 'Your files are uploaded. Share the download link below.'}
+        </p>
       </div>
 
-      <h2 className="text-2xl sm:text-3xl font-display font-semibold text-[#f5f0e8] mb-1.5 tracking-tight">
-        {transferType === 'email' ? 'Transfer ready to share' : 'Transfer complete'}
-      </h2>
-      
-      <p className="text-sm sm:text-base text-[#a39e94] mb-6 max-w-md mx-auto leading-relaxed font-medium">
-        {transferType === 'email'
-          ? emailState.summary
-          : 'Your files are ready. Share the download link below.'}
-      </p>
-
-      {/* Instant Email Delivery Confirmation Card */}
+      {/* Email delivery status */}
       {transferType === 'email' && recipientList.length > 0 && (
-        <div className="mb-6 p-4.5 bg-[#141311] border border-[#c4a574]/25 rounded-2xl text-left space-y-3.5 animate-fadeIn">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-[#f5f0e8] font-black text-sm">
-              <Mail className="w-4.5 h-4.5 theme-text" />
-              <span>Email Delivery & Notification</span>
-            </div>
-            <span className={`text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full ${
-              emailState.state === 'accepted' || emailState.state === 'delivered'
-                ? 'bg-[#8fbc8f]/15 text-[#8fbc8f] border border-[#8fbc8f]/30'
-                : 'theme-bg-light theme-text border border-[#c4a574]/25'
-            }`}>
+        <div className="snd-panel">
+          <div className="snd-email-head">
+            <span>
+              <Mail aria-hidden="true" />
+              Email
+            </span>
+            <span className={EMAIL_BADGE[emailState.state] || 'ds-badge'}>
               {emailState.badge}
             </span>
           </div>
 
-          <div className="space-y-1.5">
-            {recipientList.map((rec, idx) => (
-              <div key={idx} className="flex items-center justify-between text-xs sm:text-sm bg-[#1a1916] py-2 px-3 rounded-xl border border-white/10 shadow-2xs">
-                <span className="font-bold text-[#f5f0e8] truncate max-w-[200px] sm:max-w-[280px]">{rec}</span>
-                <span className="inline-flex items-center text-[11px] font-bold theme-text theme-bg-light px-2 py-0.5 rounded-full border border-[#c4a574]/25">
-                  Download link ready
-                </span>
-              </div>
+          <ul className="snd-recipients">
+            {recipientList.map((rec) => (
+              <li key={rec}>{rec}</li>
             ))}
-          </div>
+          </ul>
 
-          {/* Quick Direct 1-Click Send Actions */}
-          <div className="pt-2 border-t border-white/10 space-y-2">
-            <p className="text-[11.5px] text-[#a39e94] font-medium">
+          <div className="snd-email-detail">
+            <p>
               {emailState.showFallback
-                ? <>Open your mail app to send this link to <strong className="text-[#f5f0e8]">{recipientEmails}</strong>. {emailState.detail}</>
+                ? <>Open your mail app to send this link to <strong>{recipientEmails}</strong>. {emailState.detail}</>
                 : emailState.detail}
             </p>
             {exclusionNote ? (
-              <p className="text-[11.5px] text-[#a39e94] font-medium">{exclusionNote}</p>
+              <p className="text-[var(--ds-muted)]">{exclusionNote}</p>
             ) : null}
             {emailState.showFallback ? (
-              <div className="grid grid-cols-2 gap-2">
+              <div className="snd-pair-btns">
                 <a
-                  href={emailResult?.gmailWebUrl || `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(recipientEmails)}&su=${encodeURIComponent(subject || 'iTransfer Download Link')}&body=${encodeURIComponent(emailInvitationText)}`}
+                  href={emailResult?.gmailWebUrl || `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(recipientEmails)}&su=${encodeURIComponent(subject || 'SendToAnyone Download Link')}&body=${encodeURIComponent(emailInvitationText)}`}
                   target="_blank"
                   rel="noreferrer"
-                  className="py-2.5 px-3 rounded-xl bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white text-xs font-black transition-all flex items-center justify-center gap-1.5 shadow-sm hover:scale-[1.02] active:scale-98"
+                  className="ds-btn ds-btn-ghost"
                 >
-                  <span>Send with Gmail Web</span>
-                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span>Gmail</span>
+                  <ExternalLink className="w-3.5 h-3.5" aria-hidden="true" />
                 </a>
                 <a
                   href={emailResult?.mailtoUrl || mailtoUrl}
-                  className="py-2.5 px-3 rounded-xl theme-btn-primary text-white text-xs font-black transition-all flex items-center justify-center gap-1.5 shadow-sm hover:scale-[1.02] active:scale-98"
+                  className="ds-btn ds-btn-dark"
                 >
-                  <span>Send with Mail App</span>
-                  <Send className="w-3.5 h-3.5" />
+                  <span>Mail app</span>
+                  <Send className="w-3.5 h-3.5" aria-hidden="true" />
                 </a>
               </div>
             ) : null}
@@ -199,155 +206,142 @@ export default function ShareLink({
       )}
 
       {/* Download Link Field */}
-      <div className="flex flex-col sm:flex-row items-stretch gap-2 mb-4">
-        <div className="relative flex-1">
-          <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
-            <Download className="h-4.5 w-4.5 text-[#6b665c]" />
-          </div>
+      <div className="snd-link">
+        <div className="snd-link-field">
+          <Download aria-hidden="true" />
           <input
             type="text"
             readOnly
             value={downloadUrl}
             onClick={(e) => e.target.select()}
-            className="noir-input block w-full pl-10 pr-10 py-3 text-xs sm:text-sm font-semibold focus:outline-none"
+            className="ds-input has-action"
           />
           <button
+            type="button"
             onClick={() => setShowQr(!showQr)}
-            className="absolute right-2 top-2.5 p-1 text-[#6b665c] hover:text-[#a39e94] hover:bg-white/5 rounded-lg transition-colors"
-            title="Scan QR Code"
+            aria-label={showQr ? 'Hide QR code' : 'Show QR code'}
+            aria-expanded={showQr}
+            className="snd-icon-btn"
           >
             <QrCode className="w-4 h-4" />
           </button>
         </div>
 
         <button
+          type="button"
           onClick={handleCopy}
-          className={`px-4 py-3 sm:py-2.5 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 transition-all shadow-xs shrink-0 ${
-            copied ? 'bg-emerald-500 text-white' : 'theme-btn-primary'
-          }`}
-          title="Copy Link"
+          aria-live="polite"
+          aria-label={copied ? 'Download link copied' : 'Copy download link'}
+          className={`ds-btn ds-btn-dark snd-copy${copied ? ' is-copied' : ''}`}
         >
           {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-          <span>{copied ? 'Copied Link' : 'Copy Link'}</span>
+          <span>{copied ? 'Copied' : 'Copy link'}</span>
         </button>
       </div>
 
-      {/* Quick Action Share Buttons */}
-      <div className="grid grid-cols-3 gap-2 mb-5">
-        <button
-          onClick={handleNativeShare}
-          className="py-2.5 px-2 rounded-xl border border-white/10 bg-[#1a1916] hover:bg-[#22211d] text-[#a39e94] text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 transition-colors shadow-2xs"
-        >
-          <Share2 className="w-3.5 h-3.5 theme-text" />
-          <span>Share</span>
-        </button>
-
-        <a
-          href={whatsappUrl}
-          target="_blank"
-          rel="noreferrer"
-          className="py-2.5 px-2 rounded-xl border border-[#8fbc8f]/25 bg-[#8fbc8f]/8 hover:bg-[#8fbc8f]/12 text-[#8fbc8f] text-xs sm:text-sm font-semibold flex items-center justify-center gap-1.5 transition-colors"
-        >
-          <MessageSquare className="w-3.5 h-3.5 text-emerald-600" />
-          <span>WhatsApp</span>
-        </a>
-
-        <button
-          onClick={handleCopyInvitation}
-          className="py-2.5 px-2 rounded-xl border border-white/10 bg-[#1a1916] hover:bg-[#22211d] text-[#a39e94] text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 transition-colors shadow-2xs truncate"
-        >
-          {copiedInvitation ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5 text-[#a39e94]" />}
-          <span className="truncate">{copiedInvitation ? 'Copied!' : 'Copy Note'}</span>
-        </button>
-      </div>
-
-      {/* QR Code Popup */}
+      {/* QR Code */}
       {showQr && (
-        <div className="mb-5 p-3.5 bg-[#141311] border border-white/10 rounded-xl animate-scale-in text-center">
-          <p className="text-xs font-bold text-[#a39e94] mb-2">Scan QR Code on Mobile:</p>
-          <img src={qrApiUrl} alt="QR Code" className="w-32 h-32 mx-auto rounded-lg shadow-sm border border-white/10 bg-[#1a1916] p-2" />
+        <div className="snd-panel snd-qr">
+          <p>Scan to open the link on a phone</p>
+          <img src={qrApiUrl} alt="QR code for the download link" />
         </div>
       )}
 
-      {/* Transfer Receipt Card */}
-      <div className="bg-[#141311] rounded-xl p-3.5 border border-white/10 mb-5 text-left space-y-2 text-xs font-medium text-[#a39e94]">
-        <div className="flex items-center justify-between">
-          <span className="font-semibold text-[#f5f0e8] flex items-center gap-1.5">
-            <HardDrive className="w-3.5 h-3.5 text-[#6b665c]" /> Files:
+      {/* Quick Action Share Buttons */}
+      <div className="snd-quick">
+        <button type="button" onClick={handleNativeShare} className="ds-btn ds-btn-ghost">
+          <Share2 className="w-4 h-4 shrink-0" aria-hidden="true" />
+          <span>Share</span>
+        </button>
+
+        <a href={whatsappUrl} target="_blank" rel="noreferrer" className="ds-btn ds-btn-ghost is-wa">
+          <MessageSquare className="w-4 h-4 shrink-0" aria-hidden="true" />
+          <span>WhatsApp</span>
+        </a>
+
+        <button type="button" onClick={handleCopyInvitation} aria-live="polite" className="ds-btn ds-btn-ghost">
+          {copiedInvitation
+            ? <Check className="w-4 h-4 shrink-0 text-[var(--ds-green)]" aria-hidden="true" />
+            : <Copy className="w-4 h-4 shrink-0" aria-hidden="true" />}
+          <span>{copiedInvitation ? 'Copied' : 'Copy note'}</span>
+        </button>
+      </div>
+
+      {/* Transfer details */}
+      <div className="snd-facts">
+        <div className="snd-fact">
+          <span>
+            <HardDrive aria-hidden="true" /> Files
           </span>
-          <div className="flex items-center gap-2">
-            <span className="font-bold text-[#f5f0e8]">{fileCount} file{fileCount !== 1 ? 's' : ''} ({formatBytes(totalSize)})</span>
+          <span className="snd-fact-value">
+            <span className="snd-mono">{fileCount} file{fileCount !== 1 ? 's' : ''} · {formatBytes(totalSize)}</span>
             {filesList.length > 0 && (
               <button
+                type="button"
                 onClick={() => setShowFilesList(!showFilesList)}
-                className="p-0.5 text-[#6b665c] hover:text-[#a39e94] rounded transition-colors"
+                className="snd-icon-btn"
                 title="Toggle file list"
+                aria-label={showFilesList ? 'Hide file list' : 'Show file list'}
+                aria-expanded={showFilesList}
               >
-                {showFilesList ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                {showFilesList ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
               </button>
             )}
-          </div>
+          </span>
         </div>
 
-        {/* Expandable File List */}
         {showFilesList && filesList.length > 0 && (
-          <ul className="space-y-1 pt-1.5 pb-1 border-t border-white/10 max-h-36 overflow-y-auto pr-1 animate-fadeIn">
+          <ul className="snd-mini">
             {filesList.map((f, idx) => {
               const IconComp = getFileIcon(f.type, f.name);
               return (
-                <li key={idx} className="flex items-center justify-between text-[11px] bg-[#1a1916] p-1.5 rounded-lg border border-white/10">
-                  <div className="flex items-center gap-1.5 min-w-0 pr-2">
-                    <IconComp className="w-3 h-3 text-[#a39e94] shrink-0" />
-                    <span className="truncate text-[#f5f0e8] font-medium">{f.name}</span>
-                  </div>
-                  <span className="text-[#a39e94] font-mono shrink-0">{formatBytes(f.size)}</span>
+                <li key={idx}>
+                  <span className="snd-ftile is-sm" data-kind={KIND_BY_ICON.get(IconComp) || 'other'}>
+                    <IconComp aria-hidden="true" />
+                  </span>
+                  <span title={f.name}>{f.name}</span>
+                  <span className="snd-size shrink-0">{formatBytes(f.size)}</span>
                 </li>
               );
             })}
           </ul>
         )}
 
-        <div className="flex items-center justify-between pt-1 border-t border-white/10">
-          <span className="font-semibold text-[#f5f0e8]">Expiration:</span>
-          <span className="flex items-center gap-1 text-[#a39e94] font-semibold">
-            <Clock className="w-3.5 h-3.5 text-[#6b665c]" />
+        <div className="snd-fact">
+          <span>
+            <Clock aria-hidden="true" /> Link closes
+          </span>
+          <span className="snd-fact-value">
             {!expiresAt || new Date(expiresAt).getFullYear() > new Date().getFullYear() + 20
-              ? '♾️ Never Expires (Permanent)'
-              : new Date(expiresAt).toLocaleDateString()}
+              ? 'No end date set'
+              : new Date(expiresAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
           </span>
         </div>
 
         {isPasswordProtected && (
-          <div className="flex items-center justify-between text-[#c4a574] font-semibold pt-1 border-t border-white/10">
-            <span>Security:</span>
-            <span className="flex items-center gap-1">
-              <Lock className="w-3.5 h-3.5" /> Password Protected
+          <div className="snd-fact">
+            <span>
+              <Lock aria-hidden="true" /> Password
+            </span>
+            <span className="snd-fact-value">
+              <span className="ds-badge ds-badge-blue">Required to download</span>
             </span>
           </div>
         )}
       </div>
 
       {/* Bottom Actions */}
-      <div className="flex flex-col sm:flex-row items-center gap-2">
-        <a
-          href={downloadUrl}
-          target="_blank"
-          rel="noreferrer"
-          className="w-full sm:flex-1 py-2.5 px-3 rounded-xl border border-white/12 font-bold text-xs text-[#f5f0e8] hover:bg-[#141311] transition-all flex items-center justify-center gap-1.5"
-        >
-          <ExternalLink className="w-3.5 h-3.5" />
-          <span>Preview Download</span>
+      <div className="snd-pair-btns">
+        <a href={downloadUrl} target="_blank" rel="noreferrer" className="ds-btn ds-btn-ghost">
+          <ExternalLink className="w-4 h-4" aria-hidden="true" />
+          <span>Open download page</span>
         </a>
 
-        <button
-          onClick={onReset}
-          className="w-full sm:flex-1 py-2.5 px-3 rounded-xl theme-btn-primary font-bold text-xs shadow-md transition-all flex items-center justify-center gap-1.5"
-        >
-          <RotateCcw className="w-3.5 h-3.5" />
-          <span>Send Another</span>
+        <button type="button" onClick={onReset} className="ds-btn ds-btn-dark">
+          <RotateCcw className="w-4 h-4" aria-hidden="true" />
+          <span>Send another</span>
         </button>
       </div>
-
     </div>
   );
 }

@@ -1,16 +1,34 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import Navbar from '../components/Navbar';
-import Footer from '../components/Footer';
+import PageFrame from '../components/PageFrame';
 import AuthModal from '../components/AuthModal';
 import ProfileModal from '../components/ProfileModal';
 import { getStoredUser, clearUserSession } from '../lib/authSession';
-import {
-  Code, Copy, Check, Sparkles, Inbox, Sliders, Palette,
-  Eye, CheckCircle2, ShieldCheck, ArrowRight, ExternalLink,
-  Layers, UploadCloud, Plus, Globe, Lock
-} from 'lucide-react';
+import { ArrowRight, Check, Copy, Sliders, X } from 'lucide-react';
 import { useToast } from '../components/Toast';
+
+const SWATCHES = ['#1769f5', '#060a12', '#12a150', '#7c3aed', '#e11d48', '#0891b2'];
+const DEFAULT_LINK = 'https://sendtoanyone.com/receive';
+
+const NOT_AVAILABLE = [
+  'A hosted widget script',
+  'An iframe of our pages on your site (browsers block it)',
+  'Uploads that happen inside your own page',
+  'Custom form fields or your own storage',
+];
+
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function safeHref(value) {
+  const trimmed = value.trim();
+  return /^https:\/\//i.test(trimmed) ? trimmed : DEFAULT_LINK;
+}
 
 export default function WidgetPage() {
   const { addToast } = useToast();
@@ -19,296 +37,213 @@ export default function WidgetPage() {
   const [authMode, setAuthMode] = useState('signup');
   const [isProfileOpen, setIsProfileOpen] = useState(false);
 
-  // Widget Customization State
-  const [widgetTitle, setWidgetTitle] = useState('Upload Your Project Files');
-  const [widgetSubtitle, setWidgetSubtitle] = useState('Send high-resolution files directly to our team.');
-  const [themeColor, setThemeColor] = useState('#4f46e5');
-  const [showSenderName, setShowSenderName] = useState(true);
-  const [showSenderEmail, setShowSenderEmail] = useState(true);
-  const [showMessageField, setShowMessageField] = useState(true);
-  const [maxSizeGB, setMaxSizeGB] = useState(6);
+  const [widgetTitle, setWidgetTitle] = useState('Send us your project files');
+  const [widgetSubtitle, setWidgetSubtitle] = useState('Upload from your browser. No account needed.');
+  const [buttonLabel, setButtonLabel] = useState('Upload files');
+  const [requestLink, setRequestLink] = useState(DEFAULT_LINK);
+  const [themeColor, setThemeColor] = useState('#1769f5');
   const [copiedCode, setCopiedCode] = useState(false);
-  const [embedType, setEmbedType] = useState('iframe'); // 'iframe' | 'script'
+  const [embedType, setEmbedType] = useState('button');
 
-  const embedCodeIframe = `<iframe
-  src="https://itransfer.iprudhvi.in/receive?embed=true&color=${encodeURIComponent(themeColor)}&title=${encodeURIComponent(widgetTitle)}"
-  width="100%"
-  height="480"
-  frameborder="0"
-  style="border-radius: 16px; border: 1px solid #e2e8f0; box-shadow: 0 4px 20px rgba(0,0,0,0.05);"
-  allow="clipboard-write"
-></iframe>`;
+  const href = safeHref(requestLink);
+  const linkLooksWrong = requestLink.trim() !== '' && href !== requestLink.trim();
 
-  const embedCodeScript = `<div id="itransfer-drop-widget" data-title="${widgetTitle}" data-color="${themeColor}"></div>
-<script src="https://itransfer.iprudhvi.in/widget.js" async></script>`;
+  const embedCodeButton = `<div style="max-width:420px;padding:20px;border:1px solid #e6e8ee;border-radius:16px;text-align:center;font-family:system-ui,sans-serif">
+  <h3 style="margin:0;font-size:18px">${escapeHtml(widgetTitle)}</h3>
+  <p style="margin:6px 0 16px;color:#6b7486;font-size:14px">${escapeHtml(widgetSubtitle)}</p>
+  <a href="${escapeHtml(href)}" target="_blank" rel="noopener"
+     style="display:inline-block;padding:12px 20px;border-radius:10px;background:${escapeHtml(themeColor)};color:#fff;font-weight:600;text-decoration:none">
+    ${escapeHtml(buttonLabel)}
+  </a>
+</div>`;
 
-  const activeCode = embedType === 'iframe' ? embedCodeIframe : embedCodeScript;
+  const embedCodeLink = `<a href="${escapeHtml(href)}" target="_blank" rel="noopener">${escapeHtml(buttonLabel)}</a>`;
+
+  const activeCode = embedType === 'button' ? embedCodeButton : embedCodeLink;
 
   const handleCopyCode = async () => {
     try {
       await navigator.clipboard.writeText(activeCode);
       setCopiedCode(true);
-      addToast('Embed snippet copied to clipboard! 📋', 'success');
+      addToast('Snippet copied.', 'success');
       setTimeout(() => setCopiedCode(false), 2000);
-    } catch (e) {
-      addToast('Code copied! 📋', 'success');
+    } catch {
+      addToast('Copy failed. Select the text instead.', 'error');
     }
   };
 
   return (
-    <div className="min-h-screen flex flex-col text-white relative overflow-hidden bg-[#07080d]">
-      <div className="page-sky" aria-hidden="true" />
-<Navbar
+    <>
+      <PageFrame
         user={user}
         onOpenAuth={(mode) => { setAuthMode(mode); setIsAuthOpen(true); }}
         onOpenProfile={() => setIsProfileOpen(true)}
-      />
+        eyebrow="Widget · No hosted script"
+        title="Put a request link on your site."
+        accent={2}
+        subtitle="There is no hosted widget. Make a request link, then paste a button on your site that opens it. Visitors upload on SendToAnyone."
+        actions={(
+          <>
+            <Link to="/receive" className="ds-btn ds-btn-dark">
+              Make a request link
+              <ArrowRight className="ds-btn-arrow w-4 h-4" aria-hidden="true" />
+            </Link>
+            <a href="#builder" className="ds-btn ds-btn-ghost">Build the button</a>
+          </>
+        )}
+      >
+        <section aria-labelledby="steps-title">
+          <h2 id="steps-title" className="sr-only">Three steps</h2>
+          <ol className="ds-steps is-row" style={{ '--n': 3 }}>
+            <li className="ds-step" data-reveal>
+              <h3>Make a request</h3>
+              <p>Open the <Link to="/receive" className="ds-link">request page</Link> and copy the link it gives you.</p>
+            </li>
+            <li className="ds-step" data-reveal style={{ '--d': '80ms' }}>
+              <h3>Style the button</h3>
+              <p>Paste the link below. Set the title, text, and color.</p>
+            </li>
+            <li className="ds-step" data-reveal style={{ '--d': '160ms' }}>
+              <h3>Paste the HTML</h3>
+              <p>Drop the snippet into any site builder that accepts HTML.</p>
+            </li>
+          </ol>
+        </section>
 
-      <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-10 sm:py-14 z-10 relative">
-        
-        {/* Header */}
-        <div className="text-center max-w-2xl mx-auto mb-10 animate-fadeIn">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold theme-bg-light theme-text mb-3 border border-[#c4a574]/25/80 shadow-2xs">
-            <Code className="w-3.5 h-3.5" /> Embeddable File Reception Widget
-          </div>
-          <h1 className="text-3xl sm:text-5xl font-semibold text-white tracking-tight mb-2.5">
-            Receive files directly on your website.
-          </h1>
-          <p className="text-sm sm:text-base text-white/55 font-medium leading-relaxed">
-            Customize an embeddable file drop widget and integrate it into your site with a single line of HTML.
-          </p>
-        </div>
-
-        {/* 2-Column Builder & Live Preview */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-          
-          {/* LEFT: Customizer Controls (5 cols) */}
-          <div className="lg:col-span-5 custom-card p-6 bg-[#17192e] space-y-5 shadow-sm">
-            <div className="flex items-center gap-2 pb-3 border-b border-white/10">
-              <Sliders className="w-4 h-4 theme-text" />
-              <h3 className="text-sm font-bold text-white">Widget Configuration</h3>
+        <section id="builder" className="pgb-builder scroll-mt-24" aria-labelledby="builder-title">
+          <div className="ds-panel ds-panel-pad space-y-5" data-reveal>
+            <div className="flex items-center gap-2">
+              <span className="ds-icon is-sm"><Sliders aria-hidden="true" /></span>
+              <h2 id="builder-title" className="ds-h3">Button settings</h2>
             </div>
 
-            <div className="space-y-4 text-xs">
-              <div>
-                <label className="block font-bold text-white/55 mb-1">Widget Title</label>
-                <input
-                  type="text"
-                  value={widgetTitle}
-                  onChange={(e) => setWidgetTitle(e.target.value)}
-                  className="w-full px-3 py-2 bg-white/5 border border-slate-300 rounded-xl font-medium focus:outline-none focus:border-indigo-500 shadow-2xs"
-                />
-              </div>
-
-              <div>
-                <label className="block font-bold text-white/55 mb-1">Subtitle / Instructions</label>
-                <input
-                  type="text"
-                  value={widgetSubtitle}
-                  onChange={(e) => setWidgetSubtitle(e.target.value)}
-                  className="w-full px-3 py-2 bg-white/5 border border-slate-300 rounded-xl font-medium focus:outline-none focus:border-indigo-500 shadow-2xs"
-                />
-              </div>
-
-              <div>
-                <label className="block font-bold text-white/55 mb-1.5">Brand Accent Color</label>
-                <div className="flex items-center gap-2">
-                  {['#4f46e5', '#059669', '#7c3aed', '#e11d48', '#0891b2', '#0f172a'].map((c) => (
-                    <button
-                      key={c}
-                      onClick={() => setThemeColor(c)}
-                      className={`w-7 h-7 rounded-full border-2 transition-transform ${
-                        themeColor === c ? 'scale-115 border-slate-900' : 'border-transparent hover:scale-105'
-                      }`}
-                      style={{ backgroundColor: c }}
-                    />
-                  ))}
-                  <input
-                    type="color"
-                    value={themeColor}
-                    onChange={(e) => setThemeColor(e.target.value)}
-                    className="w-8 h-8 rounded-lg cursor-pointer border border-slate-300 ml-1 p-0.5 bg-white"
-                    title="Custom hex color"
-                  />
-                </div>
-              </div>
-
-              <div className="pt-2 border-t border-white/10 space-y-2">
-                <span className="block font-bold text-white/55">Form Fields</span>
-                <label className="flex items-center gap-2 cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    checked={showSenderName}
-                    onChange={(e) => setShowSenderName(e.target.checked)}
-                    className="rounded border-slate-300 text-[#c4a574]"
-                  />
-                  <span className="text-white/55 font-medium">Require Sender Name</span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    checked={showSenderEmail}
-                    onChange={(e) => setShowSenderEmail(e.target.checked)}
-                    className="rounded border-slate-300 text-[#c4a574]"
-                  />
-                  <span className="text-white/55 font-medium">Require Sender Email</span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    checked={showMessageField}
-                    onChange={(e) => setShowMessageField(e.target.checked)}
-                    className="rounded border-slate-300 text-[#c4a574]"
-                  />
-                  <span className="text-white/55 font-medium">Include Note / Instructions box</span>
-                </label>
-              </div>
-
-              <div>
-                <label className="block font-bold text-white/55 mb-1">Max Upload Limit</label>
-                <select
-                  value={maxSizeGB}
-                  onChange={(e) => setMaxSizeGB(Number(e.target.value))}
-                  className="w-full px-3 py-2 bg-white/5 border border-slate-300 rounded-xl font-semibold text-white/55"
-                >
-                  <option value={6}>6 GB per drop</option>
-                </select>
-              </div>
-            </div>
-          </div>
-
-          {/* RIGHT: Live Preview & Embed Code (7 cols) */}
-          <div className="lg:col-span-7 space-y-6">
-            
-            {/* Live Interactive Preview Box */}
-            <div className="custom-card p-6 bg-[#17192e] shadow-md border border-white/10">
-              <div className="flex items-center justify-between pb-4 mb-4 border-b border-white/10">
-                <div className="flex items-center gap-2">
-                  <Eye className="w-4 h-4 theme-text" />
-                  <span className="text-xs font-bold text-white uppercase tracking-wider">Live Preview</span>
-                </div>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/5 text-white/55">
-                  Interactive Simulator
-                </span>
-              </div>
-
-              {/* Simulated Embedded Widget Container */}
-              <div className="border border-white/10 rounded-2xl p-5 bg-white/5/60 shadow-2xs space-y-4">
-                <div className="text-center space-y-1">
-                  <h4 className="text-base font-semibold text-white">{widgetTitle}</h4>
-                  <p className="text-xs text-white/45 font-medium">{widgetSubtitle}</p>
-                </div>
-
-                <div
-                  className="border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all bg-[#17192e] hover:bg-white/5/80"
-                  style={{ borderColor: themeColor }}
-                >
-                  <div
-                    className="w-10 h-10 rounded-xl mx-auto flex items-center justify-center mb-2 text-white shadow-xs"
-                    style={{ backgroundColor: themeColor }}
-                  >
-                    <UploadCloud className="w-5 h-5" />
-                  </div>
-                  <p className="text-xs font-bold text-white">Drag files here, or click to browse</p>
-                  <p className="text-[11px] text-white/45 mt-0.5">Supports any format up to {maxSizeGB} GB</p>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                  {showSenderName && (
-                    <input
-                      type="text"
-                      placeholder="Your Full Name"
-                      className="px-3 py-1.5 bg-[#17192e] border border-slate-300 rounded-lg"
-                    />
-                  )}
-                  {showSenderEmail && (
-                    <input
-                      type="email"
-                      placeholder="Your Email"
-                      className="px-3 py-1.5 bg-[#17192e] border border-slate-300 rounded-lg"
-                    />
-                  )}
-                </div>
-
-                {showMessageField && (
-                  <textarea
-                    rows={2}
-                    placeholder="Add a message for the recipient..."
-                    className="w-full px-3 py-1.5 bg-[#17192e] border border-slate-300 rounded-lg text-xs resize-none"
-                  />
-                )}
-
-                <button
-                  className="w-full py-2.5 text-white font-bold text-xs rounded-xl shadow-xs transition-opacity hover:opacity-90 flex items-center justify-center gap-1.5"
-                  style={{ backgroundColor: themeColor }}
-                >
-                  <span>Upload Files to Recipient</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Generated Embed Code Card */}
-            <div className="custom-card p-5 bg-[#17192e] space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Code className="w-4 h-4 theme-text" />
-                  <h4 className="text-xs font-bold text-white uppercase tracking-wider">Embed Code Snippet</h4>
-                </div>
-
-                <div className="flex gap-1 bg-white/5 p-0.5 rounded-lg text-[11px] font-semibold">
-                  <button
-                    onClick={() => setEmbedType('iframe')}
-                    className={`px-2.5 py-1 rounded-md transition-all ${
-                      embedType === 'iframe' ? 'bg-[#17192e] text-white shadow-2xs font-bold' : 'text-white/55'
-                    }`}
-                  >
-                    HTML iFrame
-                  </button>
-                  <button
-                    onClick={() => setEmbedType('script')}
-                    className={`px-2.5 py-1 rounded-md transition-all ${
-                      embedType === 'script' ? 'bg-[#17192e] text-white shadow-2xs font-bold' : 'text-white/55'
-                    }`}
-                  >
-                    JS Widget
-                  </button>
-                </div>
-              </div>
-
-              <div className="relative">
-                <pre className="p-3 bg-slate-900 text-slate-100 rounded-xl text-[11px] font-mono overflow-x-auto max-h-36">
-                  <code>{activeCode}</code>
-                </pre>
-                <button
-                  onClick={handleCopyCode}
-                  className="absolute top-2 right-2 px-3 py-1.5 rounded-lg bg-[#c4a574] hover:bg-[#d4b88a] text-white text-xs font-bold flex items-center gap-1 shadow-sm transition-all"
-                >
-                  {copiedCode ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                  <span>{copiedCode ? 'Copied!' : 'Copy Code'}</span>
-                </button>
-              </div>
-
-              <p className="text-[11px] text-white/45">
-                Paste this code into WordPress, Webflow, React, HTML, or any CMS to embed the widget immediately.
+            <div className="ds-field">
+              <label className="ds-label" htmlFor="widget-link">Your request link</label>
+              <input
+                id="widget-link"
+                type="url"
+                inputMode="url"
+                value={requestLink}
+                onChange={(e) => setRequestLink(e.target.value)}
+                className="ds-input ds-mono text-[0.85rem]"
+                aria-invalid={linkLooksWrong}
+                aria-describedby="widget-link-hint"
+              />
+              <p id="widget-link-hint" className="ds-hint">
+                {linkLooksWrong ? 'Use a full https:// link. The snippet falls back to the request page.' : 'Paste the /request/ link you created.'}
               </p>
             </div>
 
+            <div className="ds-field">
+              <label className="ds-label" htmlFor="widget-title">Title</label>
+              <input id="widget-title" type="text" value={widgetTitle} onChange={(e) => setWidgetTitle(e.target.value)} className="ds-input" />
+            </div>
+
+            <div className="ds-field">
+              <label className="ds-label" htmlFor="widget-subtitle">Text under the title</label>
+              <input id="widget-subtitle" type="text" value={widgetSubtitle} onChange={(e) => setWidgetSubtitle(e.target.value)} className="ds-input" />
+            </div>
+
+            <div className="ds-field">
+              <label className="ds-label" htmlFor="widget-button">Button label</label>
+              <input id="widget-button" type="text" value={buttonLabel} onChange={(e) => setButtonLabel(e.target.value)} className="ds-input" />
+            </div>
+
+            <div className="ds-field">
+              <span className="ds-label" id="widget-color-label">Button color</span>
+              <div className="pgb-swatches" role="group" aria-labelledby="widget-color-label">
+                {SWATCHES.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => setThemeColor(c)}
+                    className="pgb-swatch"
+                    aria-pressed={themeColor === c}
+                    aria-label={`Color ${c}`}
+                    style={{ backgroundColor: c }}
+                  />
+                ))}
+                <input
+                  type="color"
+                  value={themeColor}
+                  onChange={(e) => setThemeColor(e.target.value)}
+                  className="pgb-color-input"
+                  aria-label="Custom color"
+                />
+              </div>
+            </div>
           </div>
 
+          <div className="space-y-5 min-w-0">
+            <div className="ds-frame" data-reveal style={{ '--d': '80ms' }}>
+              <div className="ds-frame-chrome">
+                <span className="ds-frame-dots" aria-hidden="true"><i /><i /><i /></span>
+                <span className="ds-url max-w-[18rem]"><span className="truncate">yourwebsite.com/<b>contact</b></span></span>
+                <span className="ds-badge">Preview</span>
+              </div>
+              <div className="ds-frame-screen">
+                <div className="pgb-site">
+                  <div className="pgb-site-lines" aria-hidden="true">
+                    <i style={{ width: '42%' }} />
+                    <i style={{ width: '78%' }} />
+                    <i style={{ width: '64%' }} />
+                  </div>
+                  <div className="pgb-embed">
+                    <h4>{widgetTitle}</h4>
+                    <p>{widgetSubtitle}</p>
+                    <a
+                      href={href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="pgb-embed-btn"
+                      style={{ backgroundColor: themeColor }}
+                    >
+                      {buttonLabel}
+                    </a>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="ds-panel ds-panel-pad space-y-3" data-reveal style={{ '--d': '140ms' }}>
+              <div className="pgb-toolbar">
+                <h2 className="ds-h3">Snippet</h2>
+                <div className="ds-tabs" role="group" aria-label="Snippet type">
+                  <button type="button" className="ds-tab" aria-pressed={embedType === 'button'} onClick={() => setEmbedType('button')}>
+                    Button card
+                  </button>
+                  <button type="button" className="ds-tab" aria-pressed={embedType === 'link'} onClick={() => setEmbedType('link')}>
+                    Plain link
+                  </button>
+                </div>
+              </div>
+              <div className="pgb-code-wrap">
+                <pre className="ds-code max-h-64"><code>{activeCode}</code></pre>
+                <button type="button" onClick={handleCopyCode} className="ds-btn ds-btn-light ds-btn-sm pgb-code-copy">
+                  {copiedCode ? <Check className="w-3.5 h-3.5" aria-hidden="true" /> : <Copy className="w-3.5 h-3.5" aria-hidden="true" />}
+                  {copiedCode ? 'Copied' : 'Copy'}
+                </button>
+              </div>
+              <p className="ds-hint">The button opens the request page in a new tab. Uploads are capped at 6 GB on the free plan.</p>
+            </div>
+          </div>
+        </section>
+
+        <div className="ds-band" data-reveal>
+          <div className="ds-split items-start">
+            <div>
+              <p className="ds-kicker text-white/60"><b>●</b> Not available</p>
+              <h2 className="ds-h2 mt-3">What this page does not give you.</h2>
+              <p className="ds-lead mt-3">The button is a link. Everything else happens on SendToAnyone.</p>
+            </div>
+            <ul className="pgb-nots">
+              {NOT_AVAILABLE.map((item) => (
+                <li key={item}><X strokeWidth={3} aria-hidden="true" />{item}</li>
+              ))}
+            </ul>
+          </div>
         </div>
-
-      </main>
-
-      
-      <div className="relative z-10 max-w-6xl mx-auto px-4 sm:px-6 pb-12">
-        <div className="pt-8 border-t border-white/10">
-          <Link to="/" className="inline-flex items-center gap-2 rounded-full bg-white text-black text-sm font-semibold px-5 py-3 hover:bg-white/90">
-            Send a file
-          </Link>
-        </div>
-      </div>
-
-      <Footer />
+      </PageFrame>
 
       <AuthModal
         isOpen={isAuthOpen}
@@ -326,6 +261,6 @@ export default function WidgetPage() {
           setUser(null);
         }}
       />
-    </div>
+    </>
   );
 }

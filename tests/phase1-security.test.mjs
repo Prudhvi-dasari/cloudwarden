@@ -2,6 +2,9 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { onRequest as sendEmail } from '../functions/api/send-email.js';
 import { handleR2Request } from '../functions/lib/r2Engine.js';
+import { claimDownloadSlot, releaseDownloadSlot, reserveInto, withShareLock } from '../functions/lib/transferReservation.js';
+import { everyFileExhausted, fileDownloadSummary, transferFilesExhausted } from '../src/lib/downloadLimit.js';
+import { createLocalRateLimiter } from '../functions/lib/localIsolation.js';
 import { sha256Hex } from '../functions/lib/transferSecurity.js';
 
 const ENV = {
@@ -121,6 +124,7 @@ function installFetch(state, { restStatus = 200 } = {}) {
       }
       if (method === 'POST' && parsed.searchParams.has('uploads')) {
         state.r2Writes.push({ op: 'initiate', key });
+        if (state.failInitiate) return new Response('no', { status: 500 });
         return new Response('<UploadId>upload-1</UploadId>', { status: 200 });
       }
       if (method === 'POST') {
@@ -159,6 +163,26 @@ function installFetch(state, { restStatus = 200 } = {}) {
           ? state.requests
           : state.transfers;
       const body = options.body ? JSON.parse(options.body) : null;
+      if (tableName === 'reserve_transfer_file' && method === 'POST') {
+        const payload = await withShareLock(state, 'platform', async () => (
+          withShareLock(state, body?.p_share_id, async () => (
+            reserveInto(state.transfers, body, `id-${state.nextId++}`)
+          ))
+        ));
+        return new Response(JSON.stringify(payload), { status: 200 });
+      }
+      if (tableName === 'claim_download_slot' && method === 'POST') {
+        const payload = await withShareLock(state, body?.p_file_id, async () => (
+          claimDownloadSlot(state.transfers, body)
+        ));
+        return new Response(JSON.stringify(payload), { status: 200 });
+      }
+      if (tableName === 'release_download_slot' && method === 'POST') {
+        const payload = await withShareLock(state, body?.p_file_id, async () => (
+          releaseDownloadSlot(state.transfers, body)
+        ));
+        return new Response(JSON.stringify(payload), { status: 200 });
+      }
       if (method === 'GET') {
         return new Response(JSON.stringify(applyRestQuery(table, parsed)), { status: 200 });
       }
@@ -478,6 +502,202 @@ test('public share metadata hides secrets and a share id cannot rename or claim 
   }
 });
 
+test('download limits apply to each file, and zero stays unlimited', async () => {
+  const state = createState();
+  const expiresAt = new Date(Date.now() + 86400000).toISOString();
+  state.transfers.push(
+    {
+      id: 'file-used',
+      share_id: 'limit-link',
+      file_name: 'used.txt',
+      file_size: 4,
+      file_path: 'transfers/100-limit/used.txt',
+      content_type: 'text/plain',
+      expires_at: expiresAt,
+      status: 'active',
+      download_count: 1,
+      max_downloads: 1,
+    },
+    {
+      id: 'file-open',
+      share_id: 'limit-link',
+      file_name: 'open.txt',
+      file_size: 4,
+      file_path: 'transfers/100-limit/open.txt',
+      content_type: 'text/plain',
+      expires_at: expiresAt,
+      status: 'active',
+      download_count: 0,
+      max_downloads: 1,
+    },
+    {
+      id: 'file-free',
+      share_id: 'free-link1',
+      file_name: 'free.txt',
+      file_size: 4,
+      file_path: 'transfers/100-free/free.txt',
+      content_type: 'text/plain',
+      expires_at: expiresAt,
+      status: 'active',
+      download_count: 5,
+      max_downloads: 0,
+    },
+  );
+  const restore = installFetch(state);
+  try {
+    const meta = await call('share-meta', { method: 'GET', search: '&shareId=limit-link' });
+    assert.equal(meta.status, 200);
+    const used = meta.data.files.find((file) => file.fileName === 'used.txt');
+    const open = meta.data.files.find((file) => file.fileName === 'open.txt');
+    assert.equal(used.downloadCount, 1);
+    assert.equal(used.maxDownloads, 1);
+    assert.equal(open.downloadCount, 0);
+    assert.equal(open.maxDownloads, 1);
+    assert.equal(everyFileExhausted(meta.data.files), false);
+
+    const blocked = await call('download-url', { method: 'GET', search: '&shareId=limit-link&fileId=file-used' });
+    assert.equal(blocked.status, 410);
+    assert.equal(blocked.data.code, 'DOWNLOAD_LIMIT');
+    assert.equal(blocked.data.downloadUrl, undefined);
+    assert.equal(state.transfers.find((row) => row.id === 'file-used').download_count, 1);
+
+    const allowed = await call('download-url', { method: 'GET', search: '&shareId=limit-link&fileId=file-open' });
+    assert.equal(allowed.status, 200);
+    assert.match(allowed.data.downloadUrl, /^https:\/\//);
+    assert.equal(allowed.data.downloadCount, 1);
+    assert.equal(state.transfers.find((row) => row.id === 'file-open').download_count, 1);
+    assert.equal(state.transfers.find((row) => row.id === 'file-used').download_count, 1);
+
+    const unlimited = await call('download-url', { method: 'GET', search: '&shareId=free-link1&fileId=file-free' });
+    assert.equal(unlimited.status, 200);
+    assert.match(unlimited.data.downloadUrl, /^https:\/\//);
+    assert.equal(unlimited.data.downloadCount, 6);
+    assert.equal(state.transfers.find((row) => row.id === 'file-free').max_downloads, 0);
+    assert.equal(state.transfers.find((row) => row.id === 'file-free').download_count, 6);
+  } finally {
+    restore();
+  }
+});
+
+test('overlapping download requests cannot pass one file limit', async () => {
+  const state = createState();
+  state.transfers.push({
+    id: 'file-race',
+    share_id: 'race-link1',
+    file_name: 'once.txt',
+    file_size: 4,
+    file_path: 'transfers/100-race/once.txt',
+    content_type: 'text/plain',
+    expires_at: new Date(Date.now() + 86400000).toISOString(),
+    status: 'active',
+    download_count: 0,
+    max_downloads: 1,
+  });
+  const restore = installFetch(state);
+  try {
+    const [first, second] = await Promise.all([
+      call('download-url', { method: 'GET', search: '&shareId=race-link1&fileId=file-race' }),
+      call('download-url', { method: 'GET', search: '&shareId=race-link1&fileId=file-race' }),
+    ]);
+    const statuses = [first.status, second.status].sort();
+    assert.deepEqual(statuses, [200, 410]);
+    assert.equal(state.transfers[0].download_count, 1);
+  } finally {
+    restore();
+  }
+});
+
+test('owner transfers report each file download count and limit', async () => {
+  const state = createState();
+  const expiresAt = new Date(Date.now() + 86400000).toISOString();
+  state.transfers.push(
+    {
+      id: 'own-used',
+      share_id: 'ownerlink',
+      user_id: USER_ID,
+      file_name: 'used.txt',
+      file_size: 4,
+      content_type: 'text/plain',
+      expires_at: expiresAt,
+      status: 'active',
+      download_count: 2,
+      max_downloads: 2,
+      created_at: expiresAt,
+    },
+    {
+      id: 'own-open',
+      share_id: 'ownerlink',
+      user_id: USER_ID,
+      file_name: 'open.txt',
+      file_size: 8,
+      content_type: 'text/plain',
+      expires_at: expiresAt,
+      status: 'active',
+      download_count: 1,
+      max_downloads: 5,
+      created_at: expiresAt,
+    },
+    {
+      id: 'own-free',
+      share_id: 'ownerlink',
+      user_id: USER_ID,
+      file_name: 'free.txt',
+      file_size: 3,
+      content_type: 'text/plain',
+      expires_at: expiresAt,
+      status: 'active',
+      download_count: 4,
+      max_downloads: 0,
+      created_at: expiresAt,
+    },
+  );
+  const restore = installFetch(state);
+  try {
+    const listed = await call('my-transfers', {
+      method: 'GET',
+      headers: { authorization: 'Bearer user-jwt' },
+    });
+    assert.equal(listed.status, 200);
+    const transfer = listed.data.transfers.find((item) => item.shareId === 'ownerlink');
+    const used = transfer.files.find((file) => file.name === 'used.txt');
+    const open = transfer.files.find((file) => file.name === 'open.txt');
+    const free = transfer.files.find((file) => file.name === 'free.txt');
+    assert.equal(used.downloadCount, 2);
+    assert.equal(used.maxDownloads, 2);
+    assert.equal(open.downloadCount, 1);
+    assert.equal(open.maxDownloads, 5);
+    assert.equal(free.downloadCount, 4);
+    assert.equal(free.maxDownloads, 0);
+    assert.equal(fileDownloadSummary(used), '2 of 2 links · limit reached');
+    assert.equal(fileDownloadSummary(open), '1 of 5 links');
+    assert.equal(fileDownloadSummary(free), '4 links issued');
+    assert.equal(transferFilesExhausted(transfer), false);
+    assert.equal(transfer.status, 'active');
+    state.transfers.push({
+      id: 'own-deleted',
+      share_id: 'deletedlink',
+      user_id: USER_ID,
+      file_name: 'gone.txt',
+      file_size: 2,
+      content_type: 'text/plain',
+      expires_at: expiresAt,
+      status: 'expired',
+      download_count: 0,
+      max_downloads: 0,
+      created_at: expiresAt,
+    });
+    const again = await call('my-transfers', {
+      method: 'GET',
+      headers: { authorization: 'Bearer user-jwt' },
+    });
+    const deleted = again.data.transfers.find((item) => item.shareId === 'deletedlink');
+    assert.equal(deleted.status, 'expired');
+    assert.ok(new Date(deleted.expiresAt).getTime() > Date.now());
+  } finally {
+    restore();
+  }
+});
+
 test('file requests cannot be read or written around the API', async () => {
   const state = createState();
   const restore = installFetch(state);
@@ -552,6 +772,269 @@ test('file requests cannot be read or written around the API', async () => {
     assert.equal(mine.status, 200);
     assert.equal(mine.data.requests.some((row) => row.requestId === 'other-request'), false);
     assert.equal(mine.data.requests.some((row) => row.requestId === created.data.requestId), true);
+  } finally {
+    restore();
+  }
+});
+
+test('transfers stay within 6 GB across files, and a closed request cannot start multipart', async () => {
+  const state = createState();
+  const restore = installFetch(state);
+  try {
+    const opened = await call('open-transfer', { body: { shareId: 'sizecap01' } });
+    assert.equal(opened.status, 200);
+    const first = await call('get-put-url', {
+      body: { fileName: 'a.bin', fileSize: 4_000_000_000, deleteToken: opened.data.deleteToken },
+    });
+    assert.equal(first.status, 200);
+    assert.match(first.data.presignedUrl, /^https:\/\//);
+
+    const second = await call('get-put-url', {
+      body: { fileName: 'b.bin', fileSize: 3_000_000_000, deleteToken: opened.data.deleteToken },
+    });
+    assert.equal(second.status, 403);
+    assert.equal(second.data.code, 'TRANSFER_TOO_LARGE');
+    assert.equal(second.data.presignedUrl, undefined);
+    assert.equal(state.transfers.find((row) => row.file_name === 'b.bin'), undefined);
+    assert.equal(state.r2Writes.filter((item) => item.op === 'initiate').length, 0);
+
+    const third = await call('get-put-url', {
+      body: { fileName: 'c.bin', fileSize: 2_000_000_000, deleteToken: opened.data.deleteToken },
+    });
+    assert.equal(third.status, 200);
+    const extra = await call('get-put-url', {
+      body: { fileName: 'd.bin', fileSize: 1, deleteToken: opened.data.deleteToken },
+    });
+    assert.equal(extra.status, 403);
+    assert.equal(extra.data.code, 'TRANSFER_TOO_LARGE');
+    assert.equal(extra.data.presignedUrl, undefined);
+    assert.equal(state.transfers.find((row) => row.file_name === 'd.bin'), undefined);
+
+    const exact = await call('open-transfer', { body: { shareId: 'exact6gb1' } });
+    const full = await call('get-put-url', {
+      body: { fileName: 'full.bin', fileSize: 6_000_000_000, deleteToken: exact.data.deleteToken },
+    });
+    assert.equal(full.status, 200);
+
+    const created = await call('create-request', {
+      body: { title: 'Rushes' },
+      headers: { authorization: 'Bearer user-jwt' },
+    });
+    const closed = await call('close-request', {
+      body: { requestId: created.data.requestId },
+      headers: { authorization: 'Bearer user-jwt' },
+    });
+    assert.equal(closed.status, 200);
+    const before = state.transfers.length;
+    const blocked = await call('initiate-upload', {
+      body: {
+        fileName: 'clip.bin',
+        fileSize: 20_000_000,
+        deleteToken: opened.data.deleteToken,
+        requestId: created.data.requestId,
+      },
+    });
+    assert.equal(blocked.status, 410);
+    assert.equal(blocked.data.code, 'REQUEST_CLOSED');
+    assert.equal(blocked.data.uploadId, undefined);
+    assert.equal(state.transfers.length, before);
+
+    const portal = await call('create-request', {
+      body: { title: 'Open rushes', instructions: 'ProRes' },
+      headers: { authorization: 'Bearer user-jwt' },
+    });
+    const fresh = await call('open-transfer', { body: { shareId: 'reqmulti1' } });
+    const started = await call('initiate-upload', {
+      body: {
+        fileName: 'clip.bin',
+        fileSize: 20_000_000,
+        deleteToken: fresh.data.deleteToken,
+        requestId: portal.data.requestId,
+        subject: 'Open rushes',
+        message: 'ProRes',
+        transferType: 'request',
+      },
+    });
+    assert.equal(started.status, 200);
+    const row = state.transfers.find((item) => item.file_path === started.data.s3Key);
+    assert.equal(row.request_id, portal.data.requestId);
+    assert.equal(row.subject, 'Open rushes');
+    assert.equal(row.message, 'ProRes');
+    assert.equal(row.transfer_type, 'request');
+    assert.equal(row.status, 'pending');
+    assert.notEqual(portal.data.requestId, fresh.data.shareId);
+  } finally {
+    restore();
+  }
+});
+
+test('concurrent reservations serialize at 6 GB and a rejected one has no upload', async () => {
+  const state = createState();
+  const restore = installFetch(state);
+  try {
+    const opened = await call('open-transfer', { body: { shareId: 'atomic01' } });
+    const [left, right] = await Promise.all([
+      call('get-put-url', {
+        body: { fileName: 'left.bin', fileSize: 4_000_000_000, deleteToken: opened.data.deleteToken },
+      }),
+      call('get-put-url', {
+        body: { fileName: 'right.bin', fileSize: 4_000_000_000, deleteToken: opened.data.deleteToken },
+      }),
+    ]);
+    const wins = [left, right].filter((item) => item.status === 200);
+    const losses = [left, right].filter((item) => item.status === 403);
+    assert.equal(wins.length, 1);
+    assert.match(wins[0].data.presignedUrl, /^https:\/\//);
+    assert.equal(losses.length, 1);
+    assert.equal(losses[0].data.code, 'TRANSFER_TOO_LARGE');
+    assert.equal(losses[0].data.presignedUrl, undefined);
+    assert.equal(state.transfers.length, 1);
+    assert.equal(state.r2Writes.filter((item) => item.op === 'initiate').length, 0);
+
+    const exact = await call('open-transfer', { body: { shareId: 'atomic6gb' } });
+    const [first, second] = await Promise.all([
+      call('get-put-url', {
+        body: { fileName: 'one.bin', fileSize: 3_000_000_000, deleteToken: exact.data.deleteToken },
+      }),
+      call('get-put-url', {
+        body: { fileName: 'two.bin', fileSize: 3_000_000_000, deleteToken: exact.data.deleteToken },
+      }),
+    ]);
+    assert.equal(first.status, 200);
+    assert.equal(second.status, 200);
+    assert.match(first.data.presignedUrl, /^https:\/\//);
+    assert.match(second.data.presignedUrl, /^https:\/\//);
+    const reserved = state.transfers.filter((row) => row.share_id === 'atomic6gb');
+    assert.equal(reserved.length, 2);
+    assert.equal(reserved.reduce((sum, row) => sum + row.file_size, 0), 6_000_000_000);
+
+    state.failInitiate = true;
+    const retryShare = await call('open-transfer', { body: { shareId: 'failpart1' } });
+    const broken = await call('initiate-upload', {
+      body: { fileName: 'again.bin', fileSize: 4_000_000_000, deleteToken: retryShare.data.deleteToken },
+    });
+    assert.equal(broken.status, 502);
+    assert.equal(broken.data.uploadId, undefined);
+    const rejected = state.transfers.find((row) => row.file_name === 'again.bin');
+    assert.equal(rejected.status, 'rejected');
+    assert.match(rejected.file_path, /^transfers\//);
+    state.failInitiate = false;
+    const replaced = await call('get-put-url', {
+      body: { fileName: 'fit.bin', fileSize: 4_000_000_000, deleteToken: retryShare.data.deleteToken },
+    });
+    assert.equal(replaced.status, 200);
+    assert.match(replaced.data.presignedUrl, /^https:\/\//);
+  } finally {
+    restore();
+  }
+});
+
+test('abandoned single-PUT reservations release, and a live multipart session stays reserved', async () => {
+  const state = createState();
+  const restore = installFetch(state);
+  const minute = 60 * 1000;
+  try {
+    const opened = await call('open-transfer', { body: { shareId: 'abandon1' } });
+    const stale = await call('get-put-url', {
+      body: { fileName: 'stale.bin', fileSize: 4_000_000_000, deleteToken: opened.data.deleteToken },
+    });
+    assert.equal(stale.status, 200);
+    const staleRow = state.transfers.find((row) => row.file_path === stale.data.s3Key);
+    const stalePath = staleRow.file_path;
+    staleRow.created_at = new Date(Date.now() - 20 * minute).toISOString();
+    state.sizes.set(stalePath, 4_000_000_000);
+
+    const recent = await call('get-put-url', {
+      body: { fileName: 'recent.bin', fileSize: 1_000_000, deleteToken: opened.data.deleteToken },
+    });
+    assert.equal(recent.status, 200);
+    const recentRow = state.transfers.find((row) => row.file_path === recent.data.s3Key);
+    recentRow.created_at = new Date(Date.now() - 10 * minute).toISOString();
+
+    const blocked = await call('get-put-url', {
+      body: { fileName: 'more.bin', fileSize: 3_000_000_000, deleteToken: opened.data.deleteToken },
+    });
+    assert.equal(blocked.status, 403);
+    assert.equal(blocked.data.presignedUrl, undefined);
+
+    state.failDeleteKeys = new Set([stalePath]);
+    const failed = await call('cleanup', { method: 'GET', headers: CLEANUP_HEADERS });
+    assert.equal(failed.status, 200);
+    assert.equal(failed.data.releasedCount, 0);
+    assert.equal(staleRow.status, 'pending');
+    assert.equal(staleRow.file_path, stalePath);
+    assert.equal(state.sizes.has(stalePath), true);
+
+    state.failDeleteKeys = new Set();
+    const released = await call('cleanup', { method: 'GET', headers: CLEANUP_HEADERS });
+    assert.equal(released.status, 200);
+    assert.equal(released.data.releasedCount, 1);
+    assert.equal(staleRow.status, 'released');
+    assert.equal(staleRow.file_path, stalePath);
+    assert.equal(state.sizes.has(stalePath), false);
+    assert.equal(recentRow.status, 'pending');
+    assert.equal(recentRow.file_path, recent.data.s3Key);
+
+    const again = await call('cleanup', { method: 'GET', headers: CLEANUP_HEADERS });
+    assert.equal(again.status, 200);
+    assert.equal(again.data.releasedCount, 0);
+    assert.equal(staleRow.status, 'released');
+    assert.equal(staleRow.file_path, stalePath);
+    assert.equal(state.r2Deletes.filter((key) => key === stalePath).length, 2);
+
+    const room = await call('get-put-url', {
+      body: { fileName: 'room.bin', fileSize: 3_000_000_000, deleteToken: opened.data.deleteToken },
+    });
+    assert.equal(room.status, 200);
+    assert.match(room.data.presignedUrl, /^https:\/\//);
+
+    const fresh = await call('open-transfer', { body: { shareId: 'multipart1' } });
+    const started = await call('initiate-upload', {
+      body: { fileName: 'clip.bin', fileSize: 5_000_000_000, deleteToken: fresh.data.deleteToken },
+    });
+    assert.equal(started.status, 200);
+    const live = state.transfers.find((row) => row.file_path === started.data.s3Key);
+    const livePath = live.file_path;
+    live.created_at = new Date(Date.now() - 5 * 60 * minute).toISOString();
+    const deletesBefore = state.r2Deletes.length;
+    const kept = await call('cleanup', { method: 'GET', headers: CLEANUP_HEADERS });
+    assert.equal(kept.status, 200);
+    assert.equal(live.status, 'pending');
+    assert.equal(live.multipart_upload_id, started.data.uploadId);
+    assert.equal(live.file_path, livePath);
+    assert.equal(state.r2Deletes.length, deletesBefore);
+
+    const expiredMultipart = {
+      id: 'row-mp-exp',
+      share_id: 'mpexpire1',
+      file_name: 'old-clip.bin',
+      file_size: 20,
+      file_path: 'transfers/100-mpexp/clip.bin',
+      expires_at: new Date(Date.now() - minute).toISOString(),
+      status: 'pending',
+      multipart_upload_id: 'upload-old',
+      created_at: new Date(Date.now() - 2 * 24 * 60 * minute).toISOString(),
+    };
+    state.transfers.push(expiredMultipart);
+    state.sizes.set(expiredMultipart.file_path, 20);
+    state.failDeleteKeys = new Set([expiredMultipart.file_path]);
+    const abortFailed = await call('cleanup', { method: 'GET', headers: CLEANUP_HEADERS });
+    assert.equal(abortFailed.status, 200);
+    assert.equal(expiredMultipart.status, 'pending_delete');
+    assert.equal(expiredMultipart.file_path, 'transfers/100-mpexp/clip.bin');
+    assert.equal(expiredMultipart.multipart_upload_id, 'upload-old');
+    assert.equal(state.sizes.has(expiredMultipart.file_path), true);
+
+    state.failDeleteKeys = new Set();
+    const abortRetried = await call('cleanup', { method: 'GET', headers: CLEANUP_HEADERS });
+    assert.equal(abortRetried.status, 200);
+    assert.equal(expiredMultipart.status, 'expired');
+    assert.equal(expiredMultipart.file_path, 'transfers/100-mpexp/clip.bin');
+    assert.equal(state.sizes.has(expiredMultipart.file_path), false);
+    const retriedAgain = await call('cleanup', { method: 'GET', headers: CLEANUP_HEADERS });
+    assert.equal(retriedAgain.data.purgedCount, 0);
+    assert.equal(expiredMultipart.status, 'expired');
+    assert.equal(expiredMultipart.file_path, 'transfers/100-mpexp/clip.bin');
   } finally {
     restore();
   }
@@ -927,7 +1410,7 @@ test('shared limiter keys use the Cloudflare client IP and block protected write
   }
 });
 
-test('part batches stay capped at five and finish when the limiter is down', async () => {
+test('part batches stay capped at five and do not sign when the limiter is down', async () => {
   const state = createState();
   const restore = installFetch(state);
   const headers = { 'cf-connecting-ip': '198.51.100.40' };
@@ -967,8 +1450,9 @@ test('part batches stay capped at five and finish when the limiter is down', asy
       body: { ...body, partNumbers: [1, 2, 3, 4, 5] },
       env: limitedEnv('throw'),
     });
-    assert.equal(down.status, 200);
-    assert.equal(down.data.parts.length, 5);
+    assert.equal(down.status, 503);
+    assert.equal(down.data.code, 'RATE_LIMIT_UNAVAILABLE');
+    assert.equal(JSON.stringify(down.data).includes('X-Amz-Signature'), false);
 
     const blocked = await call('get-part-urls', {
       headers,
@@ -1028,7 +1512,12 @@ test('download signing and password checks stay closed when the shared limiter f
       env: { ...ENV, RATE_LIMITER: limiter },
     });
     assert.equal(wrong.status, 401);
-    assert.equal(limiter.calls.length, 0);
+    assert.equal(wrong.data.code, 'PASSWORD_INCORRECT');
+    assert.deepEqual(limiter.calls, [{
+      bucket: 'password',
+      key: await sha256Hex('itransfer-password\npw-bind-1\n198.51.100.41'),
+    }]);
+    assert.equal(JSON.stringify(limiter.calls).includes('wrong'), false);
 
     const signed = await call('download-url', {
       method: 'GET',
@@ -1038,8 +1527,171 @@ test('download signing and password checks stay closed when the shared limiter f
     });
     assert.equal(signed.status, 200);
     assert.match(signed.data.downloadUrl, /transfers\/100-limit\/secret\.txt/);
-    assert.deepEqual(limiter.calls, [{ bucket: 'download', key: '198.51.100.41' }]);
-    assert.equal(limiter.calls.some((call) => call.bucket === 'password'), false);
+    assert.deepEqual(limiter.calls[1], { bucket: 'download', key: '198.51.100.41' });
+    assert.deepEqual(limiter.calls[2], {
+      bucket: 'password',
+      key: await sha256Hex('itransfer-password\npw-bind-1\n198.51.100.41'),
+    });
+
+    const passwordBlocked = scriptedLimiter((body) => (body.bucket === 'password' ? 'block' : 'allow'));
+    const held = await call('download-url', {
+      method: 'GET',
+      search: '&shareId=pw-bind-1&fileId=row-limit',
+      headers: { ...headers, 'x-transfer-password': 'correct-limit' },
+      env: { ...ENV, RATE_LIMITER: passwordBlocked },
+    });
+    assert.equal(held.status, 429);
+    assert.equal(held.data.code, 'RATE_LIMITED');
+    assert.equal(held.data.downloadUrl, undefined);
+    assert.equal(state.transfers[0].download_count, 1);
+    assert.deepEqual(passwordBlocked.calls.map((item) => item.bucket), ['download', 'password']);
+
+    const passwordDown = scriptedLimiter((body) => (body.bucket === 'password' ? 'malformed' : 'allow'));
+    const unsigned = await call('download-url', {
+      method: 'GET',
+      search: '&shareId=pw-bind-1&fileId=row-limit',
+      headers: { ...headers, 'x-transfer-password': 'correct-limit' },
+      env: { ...ENV, RATE_LIMITER: passwordDown },
+    });
+    assert.equal(unsigned.status, 503);
+    assert.equal(unsigned.data.code, 'RATE_LIMIT_UNAVAILABLE');
+    assert.equal(unsigned.data.downloadUrl, undefined);
+    assert.equal(state.transfers[0].download_count, 1);
+  } finally {
+    restore();
+  }
+});
+
+test('verify-password uses the shared password bucket and stays closed when it cannot allow', async () => {
+  const state = createState();
+  const passwordHash = await sha256Hex('correct-shared');
+  state.transfers.push({
+    id: 'row-shared',
+    share_id: 'pw-shared1',
+    file_name: 'secret.txt',
+    file_path: 'transfers/100-shared/secret.txt',
+    file_size: 4,
+    expires_at: new Date(Date.now() + 86400000).toISOString(),
+    status: 'active',
+    password_hash: passwordHash,
+    max_downloads: 0,
+    download_count: 0,
+  });
+  const restore = installFetch(state);
+  const headers = { 'cf-connecting-ip': '198.51.100.41', 'x-forwarded-for': '203.0.113.9' };
+  const keyFor = (shareId, ip) => sha256Hex(`itransfer-password\n${shareId}\n${ip}`);
+  try {
+    const allowed = scriptedLimiter('allow');
+    const wrong = await call('verify-password', {
+      headers,
+      body: { shareId: 'pw-shared1', inputPassword: 'wrong' },
+      env: { ...ENV, RATE_LIMITER: allowed },
+    });
+    assert.equal(wrong.status, 401);
+    assert.equal(wrong.data.code, 'PASSWORD_INCORRECT');
+    assert.equal(JSON.stringify(allowed.calls).includes('wrong'), false);
+    assert.equal(JSON.stringify(allowed.calls).includes('198.51.100.41'), false);
+    assert.deepEqual(allowed.calls, [{ bucket: 'password', key: await keyFor('pw-shared1', '198.51.100.41') }]);
+
+    const success = await call('verify-password', {
+      headers,
+      body: { shareId: 'pw-shared1', inputPassword: 'correct-shared' },
+      env: { ...ENV, RATE_LIMITER: allowed },
+    });
+    assert.equal(success.status, 200);
+    assert.equal(success.data.success, true);
+    assert.equal(allowed.calls[1].key, allowed.calls[0].key);
+
+    const otherIp = scriptedLimiter('allow');
+    const otherClient = await call('verify-password', {
+      headers: { 'cf-connecting-ip': '198.51.100.42' },
+      body: { shareId: 'pw-shared1', inputPassword: 'wrong' },
+      env: { ...ENV, RATE_LIMITER: otherIp },
+    });
+    assert.equal(otherClient.status, 401);
+    assert.equal(otherIp.calls[0].key, await keyFor('pw-shared1', '198.51.100.42'));
+    assert.notEqual(otherIp.calls[0].key, allowed.calls[0].key);
+
+    const spoofed = scriptedLimiter('allow');
+    const forwarded = await call('verify-password', {
+      headers: { 'x-forwarded-for': '203.0.113.9' },
+      body: { shareId: 'pw-shared1', inputPassword: 'wrong' },
+      env: { ...ENV, RATE_LIMITER: spoofed },
+    });
+    assert.equal(forwarded.status, 401);
+    assert.equal(spoofed.calls[0].key, await keyFor('pw-shared1', '0.0.0.0'));
+    assert.equal(JSON.stringify(spoofed.calls).includes('203.0.113.9'), false);
+
+    const otherShare = scriptedLimiter('allow');
+    const differentShare = await call('verify-password', {
+      headers,
+      body: { shareId: 'pw-shared2', inputPassword: 'correct-shared' },
+      env: { ...ENV, RATE_LIMITER: otherShare },
+    });
+    assert.equal(differentShare.status, 401);
+    assert.equal(otherShare.calls[0].key, await keyFor('pw-shared2', '198.51.100.41'));
+    assert.notEqual(otherShare.calls[0].key, allowed.calls[0].key);
+
+    for (const decision of ['block', 'throw', 'malformed', 'bad-shape', 'status']) {
+      const limiter = scriptedLimiter(decision);
+      const closed = await call('verify-password', {
+        headers,
+        body: { shareId: 'pw-shared1', inputPassword: 'correct-shared' },
+        env: { ...ENV, RATE_LIMITER: limiter },
+      });
+      assert.equal(closed.status, decision === 'block' ? 429 : 503);
+      assert.equal(closed.data.code, decision === 'block' ? 'RATE_LIMITED' : 'RATE_LIMIT_UNAVAILABLE');
+      assert.equal(closed.data.success, undefined);
+      assert.equal(limiter.calls[0].bucket, 'password');
+      assert.equal(JSON.stringify(limiter.calls).includes('correct-shared'), false);
+    }
+
+    const unbound = { ...ENV };
+    delete unbound.RATE_LIMITER;
+    const missingBinding = await call('verify-password', {
+      headers,
+      body: { shareId: 'pw-shared1', inputPassword: 'correct-shared' },
+      env: unbound,
+    });
+    assert.equal(missingBinding.status, 503);
+    assert.equal(missingBinding.data.code, 'RATE_LIMIT_UNAVAILABLE');
+    assert.equal(missingBinding.data.success, undefined);
+
+    const invalid = scriptedLimiter('allow');
+    const badShare = await call('verify-password', {
+      headers,
+      body: { shareId: 'no', inputPassword: 'correct-shared' },
+      env: { ...ENV, RATE_LIMITER: invalid },
+    });
+    assert.equal(badShare.status, 400);
+    assert.equal(invalid.calls[0].key, await keyFor('invalid-share', '198.51.100.41'));
+
+    const local = createLocalRateLimiter();
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const accepted = await call('verify-password', {
+        headers: { 'cf-connecting-ip': '198.51.100.77' },
+        body: { shareId: 'pw-shared1', inputPassword: 'correct-shared' },
+        env: { ...ENV, RATE_LIMITER: local },
+      });
+      assert.equal(accepted.status, 200);
+      assert.equal(accepted.data.success, true);
+    }
+    const throttled = await call('verify-password', {
+      headers: { 'cf-connecting-ip': '198.51.100.77' },
+      body: { shareId: 'pw-shared1', inputPassword: 'correct-shared' },
+      env: { ...ENV, RATE_LIMITER: local },
+    });
+    assert.equal(throttled.status, 429);
+    assert.equal(throttled.data.code, 'RATE_LIMITED');
+    assert.equal(throttled.data.success, undefined);
+
+    const stillOpen = await call('verify-password', {
+      headers: { 'cf-connecting-ip': '198.51.100.78' },
+      body: { shareId: 'pw-shared1', inputPassword: 'correct-shared' },
+      env: { ...ENV, RATE_LIMITER: local },
+    });
+    assert.equal(stillOpen.status, 200);
+    assert.equal(stillOpen.data.success, true);
   } finally {
     restore();
   }
@@ -1165,6 +1817,147 @@ test('send-email does not call Resend when the limiter blocks or is unavailable'
     assert.match(resendCalls[0], /api\.resend\.com/);
   } finally {
     globalThis.fetch = original;
+  }
+});
+
+test('a missing binding stops every protected action before its side effect', async () => {
+  const state = createState();
+  const restore = installFetch(state);
+  const headers = { 'cf-connecting-ip': '198.51.100.77' };
+  const unbound = { ...ENV };
+  delete unbound.RATE_LIMITER;
+  try {
+    const opened = await call('open-transfer', { headers, body: { shareId: 'unbound-setup' } });
+    assert.equal(opened.status, 200);
+    const started = await call('initiate-upload', {
+      headers,
+      body: { fileName: 'clip.bin', fileSize: 80, deleteToken: opened.data.deleteToken },
+    });
+    assert.equal(started.status, 200);
+    const partBody = {
+      s3Key: started.data.s3Key,
+      uploadId: started.data.uploadId,
+      deleteToken: opened.data.deleteToken,
+      partNumber: 1,
+      partNumbers: [1],
+    };
+    state.transfers.push({
+      id: 'unbound-file',
+      share_id: 'unbound-setup',
+      file_name: 'keep.txt',
+      file_path: 'transfers/100-unbound/keep.txt',
+      file_size: 4,
+      expires_at: new Date(Date.now() + 86400000).toISOString(),
+      status: 'active',
+      password_hash: null,
+      max_downloads: 1,
+      download_count: 0,
+    });
+    const before = {
+      claims: state.claims.length,
+      transfers: state.transfers.length,
+      requests: state.requests.length,
+      deletes: state.r2Deletes.length,
+      writes: state.r2Writes.length,
+    };
+
+    const stopped = async (action, options) => {
+      const result = await call(action, { headers, env: unbound, ...options });
+      assert.equal(result.status, 503, action);
+      assert.equal(result.data.code, 'RATE_LIMIT_UNAVAILABLE', action);
+      assert.equal(JSON.stringify(result.data).includes('X-Amz-Signature'), false, action);
+      return result;
+    };
+
+    await stopped('open-transfer', { body: { shareId: 'unbound-new' } });
+    await stopped('get-put-url', { body: { fileName: 'note.txt', fileSize: 8, deleteToken: opened.data.deleteToken } });
+    await stopped('initiate-upload', { body: { fileName: 'clip.bin', fileSize: 80, deleteToken: opened.data.deleteToken } });
+    await stopped('get-part-url', { body: partBody });
+    await stopped('get-part-urls', { body: partBody });
+    await stopped('request-meta', { method: 'GET', search: '&requestId=req-missing1' });
+    await stopped('share-meta', { method: 'GET', search: '&shareId=unbound-setup' });
+    await stopped('download-url', { method: 'GET', search: '&shareId=unbound-setup&fileId=unbound-file' });
+    await stopped('create-request', { headers: { ...headers, authorization: 'Bearer user-jwt' }, body: { title: 'More' } });
+    await stopped('claim', { headers: { ...headers, authorization: 'Bearer user-jwt' }, body: { token: opened.data.claimToken } });
+    await stopped('delete-own', { body: { token: opened.data.deleteToken, shareId: 'unbound-setup' } });
+
+    assert.equal(state.claims.length, before.claims);
+    assert.equal(state.transfers.length, before.transfers);
+    assert.equal(state.requests.length, before.requests);
+    assert.equal(state.r2Deletes.length, before.deletes);
+    assert.equal(state.r2Writes.length, before.writes);
+    assert.equal(state.transfers.find((row) => row.id === 'unbound-file').download_count, 0);
+    assert.equal(state.claims.find((row) => row.purpose === 'claim').used_at || null, null);
+    assert.equal(state.transfers.find((row) => row.file_path === started.data.s3Key).status, 'pending');
+
+    const health = await call('health', { method: 'GET', env: unbound });
+    assert.equal(health.status, 200);
+    assert.equal(health.data.status, 'active');
+  } finally {
+    restore();
+  }
+});
+
+test('download filenames cannot break the signed response header, and a query password is ignored', async () => {
+  const state = createState();
+  const passwordHash = await sha256Hex('correct');
+  state.transfers.push({
+    id: 'row-name',
+    share_id: 'name-link1',
+    file_path: 'transfers/100-name/file.txt',
+    file_name: 'file.txt',
+    file_size: 4,
+    expires_at: new Date(Date.now() + 86400000).toISOString(),
+    status: 'active',
+    password_hash: null,
+    user_id: null,
+    max_downloads: 0,
+    download_count: 0,
+  });
+  state.transfers.push({
+    id: 'row-locked',
+    share_id: 'name-lock1',
+    file_path: 'transfers/100-lock/file.txt',
+    file_name: 'file.txt',
+    file_size: 4,
+    expires_at: new Date(Date.now() + 86400000).toISOString(),
+    status: 'active',
+    password_hash: passwordHash,
+    user_id: null,
+    max_downloads: 0,
+    download_count: 0,
+  });
+  const restore = installFetch(state);
+  try {
+    const hostile = encodeURIComponent('report.pdf\r\nX-Injected: 1\u2028next');
+    const named = await call('download-url', {
+      method: 'GET',
+      search: `&shareId=name-link1&fileId=row-name&customFileName=${hostile}`,
+    });
+    assert.equal(named.status, 200);
+    const disposition = new URL(named.data.downloadUrl).searchParams.get('response-content-disposition');
+    assert.equal(disposition.includes('\r'), false);
+    assert.equal(disposition.includes('\n'), false);
+    assert.equal(disposition.includes('\u2028'), false);
+    assert.match(disposition, /^attachment; filename="[A-Za-z0-9_. -]+"$/);
+
+    const fromQuery = await call('download-url', {
+      method: 'GET',
+      search: '&shareId=name-lock1&fileId=row-locked&password=correct&inputPassword=correct',
+    });
+    assert.equal(fromQuery.status, 401);
+    assert.equal(fromQuery.data.code, 'PASSWORD_REQUIRED');
+    assert.equal(fromQuery.data.downloadUrl, undefined);
+
+    const fromHeader = await call('download-url', {
+      method: 'GET',
+      search: '&shareId=name-lock1&fileId=row-locked',
+      headers: { 'x-transfer-password': 'correct' },
+    });
+    assert.equal(fromHeader.status, 200);
+    assert.match(fromHeader.data.downloadUrl, /^https:\/\//);
+  } finally {
+    restore();
   }
 });
 

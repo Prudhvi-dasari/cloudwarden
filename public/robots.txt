@@ -1,6 +1,6 @@
 # ==============================================================================
-# iTransfer Robots.txt — Optimized for Google Search Indexing & Crawl Efficiency
-# Official Domain: https://itransfer.iprudhvi.in
+# SendToAnyone robots.txt — crawl rules for the public site
+# Official Domain: https://sendtoanyone.com
 # ==============================================================================
 
 User-agent: *
@@ -44,6 +44,16 @@ Allow: /p2p-file-transfer
 Allow: /send-large-video
 Allow: /send-files-without-signup
 Allow: /send-files-without-compression
+Allow: /how-to-send-large-files
+Allow: /file-transfer-free
+Allow: /send-files-whatsapp
+Allow: /send-folder-online
+Allow: /expire-file-link
+Allow: /best-wetransfer-alternative-india
+Allow: /terms-and-conditions
+Allow: /tos
+
+# Alias URLs stay crawlable so the noindex tag can be read. robots.txt is not a lock.
 
 # Static Assets
 Allow: /images/
@@ -70,6 +80,10 @@ Allow: /
 Disallow: /api/
 Disallow: /download/
 Disallow: /d/
+Disallow: /request/
+Disallow: /admin
+Disallow: /*?*token=*
+Disallow: /*?*key=*
 
 User-agent: Googlebot-Image
 Allow: /images/
@@ -82,7 +96,11 @@ Allow: /
 Disallow: /api/
 Disallow: /download/
 Disallow: /d/
+Disallow: /request/
+Disallow: /admin
+Disallow: /*?*token=*
+Disallow: /*?*key=*
 
 # Primary XML Sitemap & Host
-Sitemap: https://itransfer.iprudhvi.in/sitemap.xml
-Host: https://itransfer.iprudhvi.in
+Sitemap: https://sendtoanyone.com/sitemap.xml
+Host: https://sendtoanyone.com

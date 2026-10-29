@@ -5,6 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:isolated": "ITRANSFER_ISOLATED=1 vite",
+    "supabase:isolated:start": "sh supabase/testing/local-stack/start-isolated.sh",
+    "supabase:isolated:status": "supabase --workdir supabase/testing/local-stack status",
+    "supabase:isolated:stop": "sh supabase/testing/local-stack/start-isolated.sh stop",
+    "supabase:restore-lab:start": "sh supabase/testing/restore-lab/start-restore-lab.sh",
+    "supabase:restore-lab:status": "sh supabase/testing/restore-lab/start-restore-lab.sh status",
+    "supabase:restore-lab:stop": "sh supabase/testing/restore-lab/start-restore-lab.sh stop",
+    "supabase:restore-lab:restore": "sh supabase/testing/restore-lab/restore-backup.sh",
     "build": "vite build",
     "lint": "oxlint",
     "preview": "vite preview"
@@ -27,6 +35,7 @@
     "react-dom": "^19.2.8",
     "react-dropzone": "^20.1.1",
     "react-router-dom": "^7.18.2",
+    "suncalc": "^2.1.1",
     "tailwindcss": "^4.3.3",
     "tus-js-client": "^4.3.1"
   },
@@ -35,7 +44,12 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.4",
     "oxlint": "^1.75.0",
-    "vite": "^8.2.0",
+    "vite": "8.2.4",
     "wrangler": "^4.151.1"
+  },
+  "overrides": {
+    "fast-uri": "3.1.9",
+    "source-map-js": "1.2.2",
+    "vite": "8.2.4"
   }
 }

@@ -5,6 +5,36 @@
  */
 
 import { supabase, publicSupabase, STORAGE_BUCKET, SUPABASE_STORAGE_URL, supabaseAnonKey } from './supabase';
+import { PART_SIZE_BYTES, uploadNeedsMultipart } from './uploadPlan';
+
+function putBlob(url, blob, contentType, onProgress) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('PUT', url, true);
+    xhr.setRequestHeader('Content-Type', contentType || 'application/octet-stream');
+    xhr.timeout = 45 * 60 * 1000;
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable && onProgress) onProgress(event.loaded);
+    };
+    xhr.onload = () => {
+      if (xhr.status < 200 || xhr.status >= 300) {
+        reject(new Error(`Cloudflare R2 returned HTTP ${xhr.status}`));
+        return;
+      }
+      let etag = xhr.getResponseHeader('ETag') || xhr.getResponseHeader('etag') || '';
+      etag = etag.replaceAll('&quot;', '"');
+      if (etag && !etag.startsWith('"')) etag = `"${etag.replaceAll('"', '')}"`;
+      if (!etag) {
+        reject(new Error('Missing ETag — R2 CORS must expose ETag'));
+        return;
+      }
+      resolve(etag);
+    };
+    xhr.onerror = () => reject(new Error('Network error uploading to Cloudflare R2'));
+    xhr.ontimeout = () => reject(new Error('Cloudflare R2 upload timed out'));
+    xhr.send(blob);
+  });
+}
 
 export function sanitizeStoragePath(filePath) {
   if (!filePath) return 'file';
@@ -41,7 +71,7 @@ export class BaseStorageProvider {
       usedBytes: 0,
       totalBytes: 6_000_000_000,
       availableBytes: 6_000_000_000,
-      providerName: 'iTransfer',
+      providerName: 'SendToAnyone',
     };
   }
 }
@@ -290,8 +320,8 @@ export class GoogleOneStorageProvider extends BaseStorageProvider {
       usedBytes: 26 * 1024 * 1024,
       totalBytes: 6_000_000_000,
       availableBytes: 6_000_000_000,
-      user: 'iTransfer Vault',
-      providerName: 'iTransfer',
+      user: 'SendToAnyone Vault',
+      providerName: 'SendToAnyone',
     };
   }
 }
@@ -489,7 +519,7 @@ export class SupabaseStorageProvider extends BaseStorageProvider {
       usedBytes: 120 * 1024 * 1024,
       totalBytes: 6_000_000_000,
       availableBytes: 6_000_000_000,
-      providerName: 'iTransfer Cloud Storage',
+      providerName: 'SendToAnyone Cloud Storage',
     };
   }
 }
@@ -522,6 +552,25 @@ export class CloudflareR2StorageProvider extends BaseStorageProvider {
       claimToken = opened.claimToken;
       activeDeleteToken = opened.deleteToken;
       activeShareId = opened.shareId || shareId;
+    }
+
+    if (uploadNeedsMultipart(totalSize)) {
+      return this.uploadMultipartFile({
+        file,
+        fileName,
+        totalSize,
+        claimToken,
+        activeDeleteToken,
+        activeShareId,
+        password,
+        senderEmail,
+        subject,
+        message,
+        recipientEmails,
+        requestId,
+        transferType,
+        onProgress,
+      });
     }
 
     const initRes = await fetch(`${this.apiBase}?action=get-put-url`, {
@@ -592,6 +641,115 @@ export class CloudflareR2StorageProvider extends BaseStorageProvider {
     return {
       fileId: s3Key,
       filePath: s3Key,
+      shareId: activeShareId,
+      fileName,
+      fileSize: totalSize,
+      claimToken,
+      deleteToken: activeDeleteToken,
+      serverRecorded: true,
+    };
+  }
+
+  async uploadMultipartFile({
+    file,
+    fileName,
+    totalSize,
+    claimToken,
+    activeDeleteToken,
+    activeShareId,
+    password,
+    senderEmail,
+    subject,
+    message,
+    recipientEmails,
+    requestId,
+    transferType,
+    onProgress,
+  }) {
+    const initRes = await fetch(`${this.apiBase}?action=initiate-upload`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fileName,
+        fileSize: totalSize,
+        contentType: file.type || 'application/octet-stream',
+        deleteToken: activeDeleteToken,
+        shareId: activeShareId,
+        password: password || undefined,
+        senderEmail,
+        subject,
+        message,
+        recipientEmails,
+        requestId,
+        transferType,
+      }),
+    });
+    const init = await initRes.json().catch(() => ({}));
+    if (!initRes.ok || !init.uploadId || !init.s3Key) {
+      throw new Error(init.error || 'Could not start multipart upload');
+    }
+
+    const partCount = Math.ceil(totalSize / PART_SIZE_BYTES) || 1;
+    const completed = [];
+    let uploaded = 0;
+
+    for (let index = 0; index < partCount; index += 1) {
+      const partNumber = index + 1;
+      const start = index * PART_SIZE_BYTES;
+      const end = Math.min(start + PART_SIZE_BYTES, totalSize);
+      const blob = file.slice(start, end);
+      let etag = '';
+      let lastError = null;
+
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        const partRes = await fetch(`${this.apiBase}?action=get-part-url`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            s3Key: init.s3Key,
+            uploadId: init.uploadId,
+            partNumber,
+            deleteToken: activeDeleteToken,
+          }),
+        });
+        const part = await partRes.json().catch(() => ({}));
+        if (!partRes.ok || !part.presignedUrl) {
+          lastError = new Error(part.error || `Missing URL for part ${partNumber}`);
+          continue;
+        }
+        try {
+          etag = await putBlob(part.presignedUrl, blob, file.type, (loaded) => {
+            if (onProgress) onProgress(uploaded + loaded, totalSize);
+          });
+          lastError = null;
+          break;
+        } catch (err) {
+          lastError = err;
+        }
+      }
+
+      if (!etag) throw lastError || new Error(`Part ${partNumber} did not upload.`);
+      completed.push({ PartNumber: partNumber, ETag: etag });
+      uploaded = end;
+      if (onProgress) onProgress(uploaded, totalSize);
+    }
+
+    const finalRes = await fetch(`${this.apiBase}?action=complete-upload`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        s3Key: init.s3Key,
+        uploadId: init.uploadId,
+        parts: completed,
+        deleteToken: activeDeleteToken,
+      }),
+    });
+    const finalized = await finalRes.json().catch(() => ({}));
+    if (!finalRes.ok) throw new Error(finalized.error || 'The upload could not be confirmed.');
+
+    return {
+      fileId: init.s3Key,
+      filePath: init.s3Key,
       shareId: activeShareId,
       fileName,
       fileSize: totalSize,

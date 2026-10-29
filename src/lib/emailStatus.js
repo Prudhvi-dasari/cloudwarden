@@ -70,9 +70,59 @@ export function describeEmailResult(emailResult) {
   return {
     state: 'not_sent',
     badge: 'Not sent yet',
-    summary: 'The files are uploaded. iTransfer did not send the email. Use the buttons below to open your mail app with the link filled in.',
+    summary: 'The files are uploaded. SendToAnyone did not send the email. Use the buttons below to open your mail app with the link filled in.',
     detail: 'Nothing has been emailed yet.',
     showFallback: true,
+  };
+}
+
+export function emailTransportFailure() {
+  return {
+    success: false,
+    status: 'unavailable',
+    delivery: 'unknown',
+    reason: 'connection_failed',
+    code: 'CONNECTION_FAILED',
+    dispatchedCount: 0,
+  };
+}
+
+const EMAIL_RESPONSE_FIELDS = [
+  'success', 'status', 'delivery', 'provider', 'reason', 'code', 'message',
+  'downloadUrl', 'mailtoUrl', 'gmailWebUrl', 'dispatchedCount', 'uncertainCount',
+  'excludedCount', 'recipients',
+];
+
+/**
+ * A caller may treat only provider acceptance as success.
+ * HTTP failure, a missing body, or success without acceptance stays a failure.
+ */
+export function interpretSendEmailResponse(httpOk, payload) {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return emailTransportFailure();
+  }
+  const picked = {};
+  for (const key of EMAIL_RESPONSE_FIELDS) {
+    if (payload[key] !== undefined) picked[key] = payload[key];
+  }
+  const accepted = httpOk === true
+    && payload.success === true
+    && payload.status === 'accepted'
+    && payload.delivery === 'unconfirmed'
+    && payload.provider === 'resend'
+    && Number(payload.dispatchedCount) > 0;
+  if (accepted) return picked;
+  const claimedAccepted = payload.status === 'accepted' && httpOk !== true;
+  const reason = typeof payload.reason === 'string' && /^[A-Za-z0-9_]{1,64}$/.test(payload.reason)
+    ? payload.reason
+    : (claimedAccepted ? 'provider_unavailable' : 'provider_rejected');
+  return {
+    ...picked,
+    success: false,
+    status: claimedAccepted ? 'uncertain' : (typeof payload.status === 'string' ? payload.status : 'rejected'),
+    delivery: claimedAccepted ? 'unknown' : (typeof payload.delivery === 'string' ? payload.delivery : 'none'),
+    reason,
+    dispatchedCount: Number(payload.dispatchedCount) || 0,
   };
 }
 

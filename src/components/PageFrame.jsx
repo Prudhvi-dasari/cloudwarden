@@ -1,11 +1,12 @@
 import { Link } from 'react-router-dom';
+import { ArrowRight } from 'lucide-react';
 import Navbar from './Navbar';
 import Footer from './Footer';
-import { ArrowRight } from 'lucide-react';
+import AnimatedHeadline from './ds/AnimatedHeadline';
 
 /**
- * Shared shell for marketing / tool / legal pages.
- * Keeps transfer logic out — only sky wash, title, card surface, next step, footer.
+ * Shared shell for marketing, tool, and legal pages.
+ * White canvas, page hero (kicker, headline, lead, actions), content, closing footer.
  */
 export default function PageFrame({
   user,
@@ -14,46 +15,44 @@ export default function PageFrame({
   eyebrow,
   title,
   subtitle,
+  accent = 1,
+  actions,
+  center = false,
   children,
   nextLabel = 'Send a file',
   nextTo = '/',
   hideNext = false,
 }) {
   return (
-    <div className="min-h-screen flex flex-col text-white relative overflow-hidden bg-[#07080d]">
-      <div className="page-sky" aria-hidden="true" />
+    <div className="ds-page">
       <Navbar user={user} onOpenAuth={onOpenAuth} onOpenProfile={onOpenProfile} />
 
-      <main className="relative z-10 flex-1 w-full max-w-6xl mx-auto px-4 sm:px-6 pt-12 sm:pt-16 pb-16">
+      <main className="flex-1">
         {(title || subtitle) && (
-          <header className="mb-10 sm:mb-12 max-w-2xl">
-            {eyebrow && (
-              <p className="text-[11px] uppercase tracking-[0.22em] text-white/45 mb-3">{eyebrow}</p>
-            )}
-            {title && (
-              <h1 className="text-4xl sm:text-5xl font-semibold tracking-tight leading-[1.05] text-white">
-                {title}
-              </h1>
-            )}
-            {subtitle && (
-              <p className="mt-4 text-sm sm:text-base text-white/55 leading-relaxed">{subtitle}</p>
-            )}
+          <header className={`ds-page-hero${center ? ' is-center' : ''}`}>
+            <div className="ds-wrap">
+              {eyebrow && <p className="ds-kicker"><b>●</b> {eyebrow}</p>}
+              {typeof title === 'string'
+                ? <AnimatedHeadline text={title} accent={accent} />
+                : title && <h1 className="ds-h1">{title}</h1>}
+              {subtitle && <p className="ds-lead">{subtitle}</p>}
+              {actions && <div className="ds-hero-actions">{actions}</div>}
+            </div>
           </header>
         )}
 
-        <div className="page-body space-y-8">{children}</div>
+        <div className="ds-wrap pb-16 sm:pb-24 space-y-10">
+          {children}
 
-        {!hideNext && (
-          <div className="mt-14 pt-8 border-t border-white/10">
-            <Link
-              to={nextTo}
-              className="inline-flex items-center gap-2 rounded-full bg-white text-black text-sm font-semibold px-5 py-3 hover:bg-white/90 transition-colors"
-            >
-              {nextLabel}
-              <ArrowRight className="w-4 h-4" />
-            </Link>
-          </div>
-        )}
+          {!hideNext && nextTo !== '/' && (
+            <div className="pt-2">
+              <Link to={nextTo} className="ds-btn ds-btn-dark">
+                {nextLabel}
+                <ArrowRight className="ds-btn-arrow w-4 h-4" />
+              </Link>
+            </div>
+          )}
+        </div>
       </main>
 
       <Footer />

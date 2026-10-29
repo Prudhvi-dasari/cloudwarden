@@ -1,0 +1,22 @@
+# Copy this file to env/isolated/.env and replace every placeholder.
+# Vite isolated mode reads that file only. It does not load the root .env.
+# Do not put production Supabase, R2, Resend, service-role, or cleanup secrets here.
+
+# API port of supabase/testing/local-stack, not the repository supabase/config.toml port.
+SUPABASE_URL=http://127.0.0.1:55421
+SUPABASE_PUBLISHABLE_KEY=replace-with-local-publishable-key
+SUPABASE_SERVICE_ROLE_KEY=replace-with-local-service-role-key
+VITE_SUPABASE_URL=http://127.0.0.1:55421
+VITE_SUPABASE_PUBLISHABLE_KEY=replace-with-local-publishable-key
+
+CLOUDFLARE_R2_ENDPOINT=http://127.0.0.1:9000
+CLOUDFLARE_R2_REGION=us-east-1
+CLOUDFLARE_R2_ACCOUNT_ID=replace-with-local-account
+CLOUDFLARE_R2_ACCESS_KEY_ID=replace-with-local-access-key
+CLOUDFLARE_R2_SECRET_ACCESS_KEY=replace-with-local-secret-key
+CLOUDFLARE_R2_BUCKET=itransfer-local
+
+APP_URL=http://127.0.0.1:5173
+
+# Local cleanup header only. It must start with local- and must not be the production secret.
+CLEANUP_SECRET=local-cleanup-secret

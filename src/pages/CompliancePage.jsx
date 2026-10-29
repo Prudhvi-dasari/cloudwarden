@@ -1,14 +1,76 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import Navbar from '../components/Navbar';
-import Footer from '../components/Footer';
+import PageFrame from '../components/PageFrame';
 import AuthModal from '../components/AuthModal';
 import ProfileModal from '../components/ProfileModal';
 import { getStoredUser, clearUserSession } from '../lib/authSession';
 import {
-  ShieldCheck, FileText, CheckCircle2, Lock, Globe,
-  Server, UserCheck, Scale, Sparkles, Send, ArrowRight
+  ArrowRight, Ban, BrainCircuit, Clock, FileX2, Globe, KeyRound, UserCheck,
 } from 'lucide-react';
+
+const complianceStandards = [
+  {
+    icon: FileX2,
+    title: 'Not a certification',
+    desc: 'This page does not certify SendToAnyone against GDPR or any other standard. There is no signed data-processing agreement to request.',
+    badge: 'No certificate',
+  },
+  {
+    icon: BrainCircuit,
+    title: 'Files are not a training set here',
+    desc: 'The terms say uploaded files are not used to train models. That is a policy line, not an audit.',
+    badge: 'Policy',
+  },
+  {
+    icon: KeyRound,
+    title: 'No named cipher',
+    desc: 'A download password, when you set one, gates the download. It does not encrypt the file. This page does not name a cipher for transit or storage.',
+    badge: 'Password gate',
+  },
+  {
+    icon: Clock,
+    title: 'Expiry refuses the download',
+    desc: 'When the time you picked is up, the download is refused. Cleanup removes expired files. The longest cloud link is 7 days.',
+    badge: 'Up to 7 days',
+  },
+  {
+    icon: Globe,
+    title: 'No region picker',
+    desc: 'The app does not offer a choice of country or data-residency region.',
+    badge: 'No residency control',
+  },
+  {
+    icon: UserCheck,
+    title: 'No account required to send',
+    desc: 'A cloud transfer can be sent without an account. The cap is 6 GB. Email is optional and only carries the link.',
+    badge: '6 GB',
+  },
+];
+
+const HANDLING = [
+  ['Where files are kept', "Cloudflare R2, on Cloudflare's global network"],
+  ['In transit', 'HTTPS (TLS) between your browser and the service'],
+  ['Download password', 'Stored as a SHA-256 hash. Gates the download. Does not encrypt the file.'],
+  ['After expiry', 'The download is refused. A scheduled cleanup deletes the files.'],
+  ['Device transfer', 'WebRTC between two browsers. The file is not stored.'],
+  ['Executable files', 'Blocked by file type on upload'],
+  ['Download pages', 'Marked noindex for search engines'],
+];
+
+const PROMISES = [
+  {
+    q: 'Does this page certify the service?',
+    a: 'No. There is no GDPR certificate, no residency guarantee, and no data-processing agreement on offer.',
+  },
+  {
+    q: 'What happens when a link expires?',
+    a: 'The download is refused. Cleanup removes expired files. That is not a promise that every copy disappears from every disk at the same second.',
+  },
+  {
+    q: 'Can we sign a data-processing agreement?',
+    a: 'No. A signed DPA is not offered. Teams and paid plans are not available either.',
+  },
+];
 
 export default function CompliancePage() {
   const [user, setUser] = useState(() => getStoredUser());
@@ -16,149 +78,94 @@ export default function CompliancePage() {
   const [authMode, setAuthMode] = useState('signup');
   const [isProfileOpen, setIsProfileOpen] = useState(false);
 
-  const complianceStandards = [
-    {
-      title: 'EU GDPR Compliant',
-      desc: 'Full compliance with General Data Protection Regulation (GDPR) requirements including Article 17 (Right to Erasure) and Article 32 (Security of Processing).',
-      badge: 'EU Standard',
-    },
-    {
-      title: 'Zero AI Training Guarantee',
-      desc: 'We strictly never use your uploaded files, customer records, or transfer metadata to train machine learning or AI models.',
-      badge: 'Strict Policy',
-    },
-    {
-      title: 'Encrypted Data at Rest & in Transit',
-      desc: 'All data transferred through iTransfer is encrypted in transit using TLS 1.3 and stored with AES-256 server-side encryption.',
-      badge: 'Cryptographic Standard',
-    },
-    {
-      title: 'Automatic Ephemeral Data Purging',
-      desc: 'Transfers automatically expire and are permanently wiped from all physical disks when their scheduled expiration date is reached.',
-      badge: 'Zero Residuals',
-    },
-    {
-      title: 'Regional Data Sovereignty',
-      desc: 'Data routing through dedicated regional infrastructure in India (Mumbai), Europe (Frankfurt), and US East (Virginia) with strict residency controls.',
-      badge: 'Multi-Region',
-    },
-    {
-      title: 'Zero Mandatory Identity Tracking',
-      desc: 'Send files without mandatory email registration or social logins. One-time link transfers require zero user profiling.',
-      badge: 'Privacy First',
-    },
-  ];
-
   return (
-    <div className="min-h-screen flex flex-col text-white relative overflow-hidden bg-[#07080d]">
-      <div className="page-sky" aria-hidden="true" />
-<Navbar
+    <>
+      <PageFrame
         user={user}
         onOpenAuth={(mode) => { setAuthMode(mode); setIsAuthOpen(true); }}
         onOpenProfile={() => setIsProfileOpen(true)}
-      />
-
-      <main className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 py-12 sm:py-16 z-10 relative">
-        
-        {/* Header */}
-        <div className="text-center max-w-2xl mx-auto mb-14 animate-fadeIn">
-          <div className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold theme-bg-light theme-text mb-4 border border-[#c4a574]/25/80 shadow-2xs">
-            <Scale className="w-3.5 h-3.5" /> Trust & Compliance Center
-          </div>
-          <h1 className="text-4xl sm:text-5xl font-semibold text-white tracking-tight mb-4 leading-tight">
-            Compliance, GDPR & Data Sovereignty
-          </h1>
-          <p className="text-base sm:text-lg text-white/55 font-medium leading-relaxed">
-            Discover how iTransfer safeguards enterprise privacy, satisfies international data protection laws, and guarantees zero AI exploitation.
-          </p>
-        </div>
-
-        {/* Standards Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-16">
-          {complianceStandards.map((std, idx) => (
-            <div key={idx} className="custom-card p-6 bg-[#17192e] space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="w-10 h-10 rounded-xl bg-[#c4a574]/12 text-[#c4a574] flex items-center justify-center">
-                  <ShieldCheck className="w-5 h-5" />
+        eyebrow="Notes, not a certificate"
+        title="Data handling notes"
+        accent={2}
+        subtitle="What the product actually does with a file: a 6 GB cap, a link that lasts up to 7 days, and an optional download password. This is not a compliance certificate."
+      >
+        <section aria-label="Notes">
+          <div className="ds-grid cols-3">
+            {complianceStandards.map(({ icon: Icon, title, desc, badge }, i) => (
+              <div key={title} className="ds-feature" data-reveal style={{ '--d': `${(i % 3) * 60}ms` }}>
+                <div className="pgb-tile-top">
+                  <span className="ds-icon is-sm"><Icon aria-hidden="true" /></span>
+                  <span className="ds-badge">{badge}</span>
                 </div>
-                <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-white/5 text-white/55 border border-white/10">
-                  {std.badge}
-                </span>
+                <h3>{title}</h3>
+                <p>{desc}</p>
               </div>
-              <h3 className="text-base font-bold text-white">{std.title}</h3>
-              <p className="text-sm text-white/45 font-medium leading-relaxed">{std.desc}</p>
+            ))}
+          </div>
+        </section>
+
+        <section className="pt-6" aria-labelledby="handling-title">
+          <div className="pgb-head" data-reveal>
+            <div>
+              <p className="ds-kicker"><b>●</b> In practice</p>
+              <h2 id="handling-title" className="ds-h2">How a file is handled.</h2>
+              <p className="ds-lead">Facts about the running service. None of them is a certification.</p>
             </div>
-          ))}
-        </div>
+          </div>
+          <div className="ds-table-wrap mt-8" data-reveal>
+            <table className="ds-table">
+              <tbody>
+                {HANDLING.map(([label, value]) => (
+                  <tr key={label}>
+                    <th scope="row" className="font-semibold text-[#060a12] w-[38%]">{label}</th>
+                    <td>{value}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
 
-        {/* Plain Language FAQ Accordion */}
-        <div className="custom-card p-8 sm:p-10 bg-[#17192e] shadow-md mb-16 space-y-6">
-          <h2 className="text-2xl font-semibold text-white tracking-tight text-center">
-            Enterprise Compliance Commitments
-          </h2>
-
-          <div className="space-y-4 text-sm text-white/55 font-medium leading-relaxed">
-            <div className="p-4 bg-white/5 rounded-2xl border border-white/10/80 space-y-1.5">
-              <h4 className="font-bold text-white text-base flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                Does iTransfer share or sell uploaded files to third parties?
-              </h4>
-              <p>
-                No. Never. Your data and uploaded assets are strictly your property. We do not inspect file contents, monetize user data, or share transfer links with any third-party marketing entities.
-              </p>
+        <section className="ds-band-soft" aria-labelledby="promise-title" data-reveal>
+          <div className="ds-split items-start">
+            <div>
+              <p className="ds-kicker"><b>●</b> Limits</p>
+              <h2 id="promise-title" className="ds-h2 mt-3">What this page will not promise</h2>
             </div>
+            <dl className="grid gap-3">
+              {PROMISES.map((item) => (
+                <div key={item.q} className="ds-panel ds-panel-pad">
+                  <dt className="flex items-start gap-2 font-semibold text-[#060a12]">
+                    <Ban className="w-4 h-4 mt-1 shrink-0 text-[#6b7486]" aria-hidden="true" />
+                    {item.q}
+                  </dt>
+                  <dd className="mt-2 text-[0.9375rem] leading-relaxed text-[#6b7486]">{item.a}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        </section>
 
-            <div className="p-4 bg-white/5 rounded-2xl border border-white/10/80 space-y-1.5">
-              <h4 className="font-bold text-white text-base flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                How are expired files deleted?
-              </h4>
-              <p>
-                When a transfer expires or reaches its maximum download count, our automated database routines trigger an immediate cryptographic deletion across all active storage nodes.
-              </p>
+        <div className="ds-band" data-reveal>
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
+            <div className="max-w-xl">
+              <h2 className="ds-h2">Send a file within the real limits</h2>
+              <p className="ds-lead mt-3">Up to 6 GB, no account required to send, and a link that lasts up to 7 days.</p>
             </div>
-
-            <div className="p-4 bg-white/5 rounded-2xl border border-white/10/80 space-y-1.5">
-              <h4 className="font-bold text-white text-base flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                Can we sign a Data Processing Agreement (DPA) for our business?
-              </h4>
-              <p>
-                Yes. Enterprise and Teams customers can request a signed standard contractual DPA covering EU/EEA and Indian data sovereignty standards. Contact support@iprudhvi.in.
-              </p>
+            <div className="flex flex-wrap gap-3 shrink-0">
+              <Link to="/" className="ds-btn ds-btn-light ds-btn-lg">
+                Send a file
+                <ArrowRight className="ds-btn-arrow w-4 h-4" aria-hidden="true" />
+              </Link>
+              <Link to="/security" className="ds-btn ds-btn-outline-light ds-btn-lg">Security details</Link>
             </div>
           </div>
         </div>
 
-        {/* CTA */}
-        <div className="text-center custom-card p-8 sm:p-12 bg-[#17192e] shadow-md">
-          <h2 className="text-2xl sm:text-3xl font-semibold text-white mb-3">
-            Transfer with verified security & compliance
-          </h2>
-          <p className="text-sm sm:text-base text-white/55 max-w-md mx-auto mb-6 font-medium">
-            Send client deliverables or confidential legal records with guaranteed privacy.
-          </p>
-          <Link
-            to="/"
-            className="theme-btn-primary px-7 py-3.5 text-sm font-bold shadow-md inline-flex items-center gap-2"
-          >
-            <Send className="w-4 h-4" />
-            <span>Send Files Securely</span>
-          </Link>
-        </div>
-
-      </main>
-
-      
-      <div className="relative z-10 max-w-6xl mx-auto px-4 sm:px-6 pb-12">
-        <div className="pt-8 border-t border-white/10">
-          <Link to="/" className="inline-flex items-center gap-2 rounded-full bg-white text-black text-sm font-semibold px-5 py-3 hover:bg-white/90">
-            Send a file
-          </Link>
-        </div>
-      </div>
-
-      <Footer />
+        <p className="ds-hint">
+          Read the <Link to="/privacy" className="ds-link">privacy page</Link> and the <Link to="/terms" className="ds-link">terms</Link> for the full text.
+        </p>
+      </PageFrame>
 
       <AuthModal
         isOpen={isAuthOpen}
@@ -176,6 +183,6 @@ export default function CompliancePage() {
           setUser(null);
         }}
       />
-    </div>
+    </>
   );
 }

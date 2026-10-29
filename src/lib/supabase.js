@@ -1,7 +1,11 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = 'https://giyeepztahdbsejsozog.supabase.co';
-export const supabaseAnonKey = 'sb_publishable_XenT3T8l2M0-SWsHDJZpUg_3elJqmVU';
+const productionUrl = 'https://giyeepztahdbsejsozog.supabase.co';
+const productionPublishableKey = 'sb_publishable_XenT3T8l2M0-SWsHDJZpUg_3elJqmVU';
+const configuredUrl = import.meta.env.VITE_SUPABASE_URL || '';
+const configuredKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+const supabaseUrl = configuredUrl || (import.meta.env.DEV ? 'http://127.0.0.1:54321' : productionUrl);
+export const supabaseAnonKey = configuredKey || (import.meta.env.DEV ? 'local-dev-publishable-key' : productionPublishableKey);
 
 // 1. Client with session persistence for Auth, user metadata, and settings
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
@@ -12,11 +16,15 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   },
 });
 
-// 2. Clean client for public file uploads and transfers to bypass any JWT token conflicts
+// Storage calls stay on the anon key and must not share the signed-in session.
+// A second client with the default storage key registers another GoTrueClient
+// on the same lock, which is the "Multiple GoTrueClient instances" warning.
 export const publicSupabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     persistSession: false,
     autoRefreshToken: false,
+    detectSessionInUrl: false,
+    storageKey: 'sb-public-transfer-auth',
   },
 });
 

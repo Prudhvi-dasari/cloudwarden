@@ -1,15 +1,23 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import {
-  Download, Trash2, Copy, Check, Clock, Lock, ExternalLink,
-  Loader2, HardDrive, RefreshCw, Send, Inbox, ShieldCheck,
-  Flame, PlusCircle, Sparkles, Filter, Search, Users, UserPlus,
-  Settings, Volume2, VolumeX, BarChart2, CheckCircle2, ChevronRight,
-  Share2, Mail, FileText, ArrowRight, Eye, Code, Link2
+  Copy, Check, Trash2, ExternalLink, Search, RefreshCw,
+  Plus, Inbox, Users, Settings, Volume2, VolumeX, Lock,
+  AlertCircle, ArrowLeft, Ban, FolderOpen, MousePointerClick,
+  File, Image as ImageIcon, Film, Music, FileText,
 } from 'lucide-react';
 import { isSoundEnabled, setSoundEnabled, playSuccessChime } from '../lib/sound';
 import { useToast } from './Toast';
-import { closeFileRequest, createFileRequest, deleteOwnedTransfer, loadFileRequests, loadOwnedTransfers } from '../lib/guestSession';
+import Portal from './Portal';
+import {
+  closeFileRequest,
+  createFileRequest,
+  deleteOwnedTransfer,
+  loadFileRequests,
+  loadOwnedTransfers,
+  renameOwnedTransfer,
+} from '../lib/guestSession';
+import { fileDownloadSummary, transferFilesExhausted } from '../lib/downloadLimit';
 
 function formatBytes(bytes) {
   if (!bytes || bytes === 0) return '0 Bytes';
@@ -19,38 +27,175 @@ function formatBytes(bytes) {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
 
-export default function DashboardView({ user }) {
+function fileMeta(file) {
+  const summary = fileDownloadSummary(file);
+  const size = formatBytes(file.size);
+  return summary ? `${size} · ${summary}` : size;
+}
+
+function formatWhen(iso) {
+  if (!iso) return null;
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return null;
+  return new Intl.DateTimeFormat(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  }).format(date);
+}
+
+function requestStatus(portal, now = Date.now()) {
+  if (!portal) return 'Status unavailable';
+  if (portal.status === 'closed') return 'Closed';
+  if (portal.status === 'active') {
+    const expiry = portal.expiresAt ? new Date(portal.expiresAt).getTime() : NaN;
+    if (Number.isFinite(expiry) && expiry <= now) return 'No longer accepting files';
+    return 'Accepting files';
+  }
+  return portal.status ? String(portal.status) : 'Status unavailable';
+}
+
+function visibleSender(email) {
+  const value = String(email || '').trim();
+  if (!value || value.toLowerCase().startsWith('guest:')) return '';
+  return value;
+}
+
+function requestLimitError(title, instructions) {
+  if (title.trim().length > 120) return 'Title must be 120 characters or fewer.';
+  if (instructions.trim().length > 500) return 'Instructions must be 500 characters or fewer.';
+  return '';
+}
+
+function publicMessage(value) {
+  const message = typeof value === 'string' ? value.trim() : '';
+  if (!message || message.length > 160 || /password_hash|secret|token|LOCAL_/i.test(message)) return '';
+  return message;
+}
+
+async function copyText(value) {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(value);
+      return true;
+    }
+  } catch {
+    /* fall through to the older copy path */
+  }
+  try {
+    const field = document.createElement('textarea');
+    field.value = value;
+    field.setAttribute('readonly', '');
+    field.style.position = 'fixed';
+    field.style.left = '-9999px';
+    document.body.appendChild(field);
+    field.select();
+    const ok = document.execCommand('copy');
+    field.remove();
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
+function transferTiming(transfer, now = Date.now()) {
+  if (transfer?.status === 'expired') return { state: 'expired', label: 'Expired' };
+  const expires = transfer?.expiresAt ? new Date(transfer.expiresAt).getTime() : NaN;
+  if (!Number.isFinite(expires)) return { state: 'open', label: null };
+  if (expires <= now) return { state: 'expired', label: 'Expired' };
+  if (transferFilesExhausted(transfer)) {
+    return { state: 'limit', label: 'Link limit reached' };
+  }
+  return { state: 'open', label: `Open until ${formatWhen(transfer.expiresAt)}` };
+}
+
+function transferTitle(transfer) {
+  return transfer?.subject || transfer?.files?.[0]?.name || 'Untitled transfer';
+}
+
+function matchesQuery(transfer, query) {
+  if (!query) return true;
+  const haystack = [
+    transfer.subject,
+    transfer.recipientEmails,
+    transfer.message,
+    ...(transfer.files || []).map((file) => file.name),
+  ].filter(Boolean).join(' ').toLowerCase();
+  return haystack.includes(query);
+}
+
+const SECTIONS = [
+  { id: 'transfers', label: 'Transfers' },
+  { id: 'requests', label: 'Requests' },
+  { id: 'contacts', label: 'Contacts' },
+  { id: 'preferences', label: 'Preferences' },
+];
+
+const SECTION_ICONS = {
+  transfers: FolderOpen,
+  requests: Inbox,
+  contacts: Users,
+  preferences: Settings,
+};
+
+function getFileIcon(type, name) {
+  const ext = name?.split('.').pop()?.toLowerCase();
+  if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes(ext) || type?.startsWith('image/')) return ImageIcon;
+  if (['mp4', 'mov', 'avi', 'mkv', 'webm'].includes(ext) || type?.startsWith('video/')) return Film;
+  if (['mp3', 'wav', 'ogg', 'm4a'].includes(ext) || type?.startsWith('audio/')) return Music;
+  if (['pdf', 'doc', 'docx', 'txt'].includes(ext)) return FileText;
+  return File;
+}
+
+function timingBadgeClass(state) {
+  if (state === 'expired') return 'ds-badge acct-badge-danger';
+  if (state === 'limit') return 'ds-badge acct-badge-warn';
+  return 'ds-badge ds-badge-green';
+}
+
+function requestBadgeClass(status) {
+  if (status === 'Accepting files') return 'ds-badge ds-badge-green';
+  if (status === 'No longer accepting files') return 'ds-badge acct-badge-warn';
+  return 'ds-badge';
+}
+
+export default function DashboardView({ user, onStartTransfer, onOpenAuth }) {
   const { addToast } = useToast();
-
-  // Navigation State: 'overview' | 'transfers' | 'requests' | 'contacts' | 'storage' | 'settings'
-  const [sidebarTab, setSidebarTab] = useState('overview');
-
-  // Transfers Data State
+  const [section, setSection] = useState('transfers');
   const [transfers, setTransfers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [copiedId, setCopiedId] = useState(null);
-  const [transferFilter, setTransferFilter] = useState('all'); // 'all' | 'active' | 'sent' | 'received' | 'expired'
+  const [filter, setFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedTransfer, setSelectedTransfer] = useState(null);
+  const [selectedId, setSelectedId] = useState(null);
+  const [draftName, setDraftName] = useState('');
+  const [renaming, setRenaming] = useState(false);
+  const [confirmTarget, setConfirmTarget] = useState(null);
+  const [confirming, setConfirming] = useState(false);
   const [soundEnabled, setSoundEnabledState] = useState(() => isSoundEnabled());
 
-  // File Request Generator State
-  const [isCreatingRequest, setIsCreatingRequest] = useState(false);
   const [requestName, setRequestName] = useState('');
   const [requestInstructions, setRequestInstructions] = useState('');
+  const [requestComposerOpen, setRequestComposerOpen] = useState(false);
+  const [requestFieldError, setRequestFieldError] = useState('');
+  const [selectedRequestId, setSelectedRequestId] = useState(null);
+  const [isCreatingRequest, setIsCreatingRequest] = useState(false);
   const [newRequestUrl, setNewRequestUrl] = useState('');
+  const newRequestButtonRef = useRef(null);
   const [requestLinks, setRequestLinks] = useState([]);
   const [requestsLoading, setRequestsLoading] = useState(false);
+  const [requestsError, setRequestsError] = useState('');
 
-  // Contacts / Address Book State (Saved locally & in Supabase metadata)
   const [contacts, setContacts] = useState(() => {
     try {
       const saved = JSON.parse(localStorage.getItem('itransfer_contacts') || '[]');
       return Array.isArray(saved) ? saved : [];
-    } catch (e) {
+    } catch {
       return [];
     }
   });
+  const [contactQuery, setContactQuery] = useState('');
   const [newContactName, setNewContactName] = useState('');
   const [newContactEmail, setNewContactEmail] = useState('');
   const [newContactGroup, setNewContactGroup] = useState('Clients');
@@ -64,724 +209,986 @@ export default function DashboardView({ user }) {
   }, [user]);
 
   useEffect(() => {
-    if (sidebarTab === 'requests' && user) refreshRequests();
-  }, [sidebarTab, user]);
+    if (section === 'requests' && user) refreshRequests();
+  }, [section, user]);
+
+  useEffect(() => {
+    if (!confirmTarget) return undefined;
+    const onKey = (event) => {
+      if (event.key === 'Escape' && !confirming) setConfirmTarget(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [confirmTarget, confirming]);
+
+  useEffect(() => {
+    if (!requestComposerOpen) return undefined;
+    document.getElementById('request-title')?.focus();
+    return undefined;
+  }, [requestComposerOpen]);
+
+  useEffect(() => {
+    if (!requestComposerOpen) return undefined;
+    const onKey = (event) => {
+      if (event.key === 'Escape' && !isCreatingRequest && !confirmTarget) {
+        setRequestComposerOpen(false);
+        window.setTimeout(() => newRequestButtonRef.current?.focus(), 0);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [requestComposerOpen, isCreatingRequest, confirmTarget]);
 
   async function loadUserTransfers() {
     if (!user) {
       setTransfers([]);
       setLoading(false);
+      setLoadError('');
       return;
     }
-
     setLoading(true);
+    setLoadError('');
     try {
       const { data: sessionWrap } = await supabase.auth.getSession();
       const rows = await loadOwnedTransfers(sessionWrap?.session?.access_token);
-      setTransfers(rows);
+      setTransfers(Array.isArray(rows) ? rows : []);
     } catch (err) {
-      console.error('Error loading transfers:', err);
-      setTransfers([]);
+      setLoadError(publicMessage(err?.message) || 'Your transfers could not be loaded.');
     } finally {
       setLoading(false);
     }
   }
 
-  const handleCopyLink = async (shareId) => {
-    const url = `${window.location.origin}/download/${shareId}`;
-    try {
-      await navigator.clipboard.writeText(url);
-      setCopiedId(shareId);
-      addToast('Transfer link copied! 📋', 'success');
-      setTimeout(() => setCopiedId(null), 2000);
-    } catch (e) {
-      addToast('Link copied! 📋', 'success');
-    }
-  };
-
-  const handleDeleteTransfer = async (t) => {
-    if (!confirm('Are you sure you want to delete this transfer? Files will be permanently removed.')) return;
-    try {
-      const { data: sessionWrap } = await supabase.auth.getSession();
-      await deleteOwnedTransfer({
-        shareId: t.shareId,
-        accessToken: sessionWrap?.session?.access_token,
-      });
-      setTransfers(prev => prev.filter(item => item.shareId !== t.shareId));
-      if (selectedTransfer?.shareId === t.shareId) setSelectedTransfer(null);
-      addToast('Transfer permanently deleted 🗑️', 'info');
-    } catch (err) {
-      addToast(err.message || 'Delete failed.', 'error');
-    }
-  };
-
-  const refreshRequests = async () => {
+  async function refreshRequests() {
     setRequestsLoading(true);
+    setRequestsError('');
     try {
       const { data: sessionWrap } = await supabase.auth.getSession();
       const payload = await loadFileRequests(sessionWrap?.session?.access_token);
       setRequestLinks(Array.isArray(payload.requests) ? payload.requests : []);
     } catch (err) {
-      addToast(err.message || 'Request links could not be loaded.', 'error');
+      setRequestsError(publicMessage(err?.message) || 'Request links could not be loaded.');
     } finally {
       setRequestsLoading(false);
     }
-  };
+  }
 
-  const handleCreateRequest = async () => {
+  const selected = transfers.find((item) => item.shareId === selectedId) || null;
+
+  function openTransfer(transfer) {
+    setSelectedId(transfer.shareId);
+    setDraftName(transfer.subject || '');
+  }
+
+  async function handleCopy(value, id, success) {
+    const ok = await copyText(value);
+    if (!ok) {
+      addToast('Could not copy that.', 'error');
+      return;
+    }
+    if (id) {
+      setCopiedId(id);
+      window.setTimeout(() => setCopiedId((current) => (current === id ? null : current)), 2000);
+    }
+    addToast(success, 'success');
+  }
+
+  async function handleRename(event) {
+    event.preventDefault();
+    if (!selected || renaming) return;
+    const next = draftName.trim();
+    if (!next || next === (selected.subject || '')) return;
+    setRenaming(true);
+    try {
+      const { data: sessionWrap } = await supabase.auth.getSession();
+      await renameOwnedTransfer({
+        shareId: selected.shareId,
+        subject: next,
+        accessToken: sessionWrap?.session?.access_token,
+      });
+      setTransfers((current) => current.map((item) => (
+        item.shareId === selected.shareId ? { ...item, subject: next } : item
+      )));
+      addToast('Name saved.', 'success');
+    } catch (err) {
+      addToast(publicMessage(err?.message) || 'The name could not be saved.', 'error');
+    } finally {
+      setRenaming(false);
+    }
+  }
+
+  async function runConfirm() {
+    if (!confirmTarget || confirming) return;
+    setConfirming(true);
+    try {
+      const { data: sessionWrap } = await supabase.auth.getSession();
+      const accessToken = sessionWrap?.session?.access_token;
+      if (confirmTarget.kind === 'transfer') {
+        await deleteOwnedTransfer({ shareId: confirmTarget.transfer.shareId, accessToken });
+        setTransfers((current) => current.filter((item) => item.shareId !== confirmTarget.transfer.shareId));
+        if (selectedId === confirmTarget.transfer.shareId) setSelectedId(null);
+        addToast('Transfer deleted.', 'info');
+      } else if (confirmTarget.kind === 'request') {
+        await closeFileRequest({ accessToken, requestId: confirmTarget.request.requestId });
+        setRequestLinks((current) => current.map((item) => (
+          item.requestId === confirmTarget.request.requestId ? { ...item, status: 'closed' } : item
+        )));
+        addToast('Request link closed.', 'info');
+      } else if (confirmTarget.kind === 'contact') {
+        const updated = contacts.filter((item) => item.id !== confirmTarget.contact.id);
+        setContacts(updated);
+        localStorage.setItem('itransfer_contacts', JSON.stringify(updated));
+        addToast('Contact removed.', 'info');
+      }
+      setConfirmTarget(null);
+    } catch (err) {
+      addToast(publicMessage(err?.message) || 'That could not be completed.', 'error');
+    } finally {
+      setConfirming(false);
+    }
+  }
+
+  function closeRequestComposer() {
     if (isCreatingRequest) return;
-    const title = requestName.trim() || 'File request';
+    setRequestComposerOpen(false);
+    window.setTimeout(() => newRequestButtonRef.current?.focus(), 0);
+  }
+
+  async function handleCreateRequest() {
+    if (isCreatingRequest) return;
+    const title = requestName.trim();
+    const instructions = requestInstructions.trim();
+    const problem = requestLimitError(title, instructions);
+    if (problem) {
+      setRequestFieldError(problem);
+      return;
+    }
+    setRequestFieldError('');
     setIsCreatingRequest(true);
     try {
       const { data: sessionWrap } = await supabase.auth.getSession();
       const created = await createFileRequest({
         accessToken: sessionWrap?.session?.access_token,
-        title,
-        instructions: requestInstructions.trim(),
+        title: title || 'File request',
+        instructions,
       });
+      if (!created?.requestId) throw new Error('The request link was not returned.');
       const url = `${window.location.origin}/request/${created.requestId}`;
       setNewRequestUrl(url);
+      setSelectedRequestId(created.requestId);
       setRequestName('');
       setRequestInstructions('');
-      addToast('Request link created', 'success');
+      setRequestComposerOpen(false);
+      addToast('Request link created.', 'success');
+      window.setTimeout(() => newRequestButtonRef.current?.focus(), 0);
       await refreshRequests();
     } catch (err) {
-      addToast(err.message || 'Could not create the request link', 'error');
+      setRequestFieldError(publicMessage(err?.message) || 'Could not create the request link. Try again.');
     } finally {
       setIsCreatingRequest(false);
     }
-  };
+  }
 
-  const handleCloseRequest = async (requestId) => {
-    try {
-      const { data: sessionWrap } = await supabase.auth.getSession();
-      await closeFileRequest({
-        accessToken: sessionWrap?.session?.access_token,
-        requestId,
-      });
-      setRequestLinks((current) => current.map((item) => (
-        item.requestId === requestId ? { ...item, status: 'closed' } : item
-      )));
-      addToast('Request link closed', 'info');
-    } catch (err) {
-      addToast(err.message || 'Could not close that request link', 'error');
-    }
-  };
-
-  const handleAddContact = (e) => {
-    e.preventDefault();
-    if (!newContactEmail.trim()) return;
-    const newEntry = {
+  function handleAddContact(event) {
+    event.preventDefault();
+    const email = newContactEmail.trim();
+    if (!email) return;
+    const entry = {
       id: Date.now(),
-      name: newContactName.trim() || newContactEmail.trim(),
-      email: newContactEmail.trim(),
+      name: newContactName.trim() || email,
+      email,
       group: newContactGroup,
     };
-    const updated = [newEntry, ...contacts];
+    const updated = [entry, ...contacts];
     setContacts(updated);
     localStorage.setItem('itransfer_contacts', JSON.stringify(updated));
     setNewContactName('');
     setNewContactEmail('');
-    addToast('Contact added to address book! 👤', 'success');
-  };
+    addToast('Contact saved on this device.', 'success');
+  }
 
-  const handleDeleteContact = (id) => {
-    const updated = contacts.filter(c => c.id !== id);
-    setContacts(updated);
-    localStorage.setItem('itransfer_contacts', JSON.stringify(updated));
-    addToast('Contact removed', 'info');
-  };
+  function handleToggleSound(next) {
+    setSoundEnabledState(next);
+    setSoundEnabled(next);
+    if (next) playSuccessChime();
+    addToast(next ? 'Sound is on.' : 'Sound is off.', 'info');
+  }
 
-  const handleToggleSoundSetting = (val) => {
-    setSoundEnabledState(val);
-    setSoundEnabled(val);
-    if (val) playSuccessChime();
-    addToast(val ? 'Sound effects enabled 🔔' : 'Sound effects muted 🔕', 'info');
-  };
-
-  // Metrics computation
-  const now = new Date();
-  const activeList = transfers.filter(t => new Date(t.expiresAt) > now);
-  const expiredList = transfers.filter(t => new Date(t.expiresAt) <= now);
-  const totalSentBytes = transfers.reduce((acc, t) => acc + t.totalSize, 0);
-  const totalDownloads = transfers.reduce((acc, t) => acc + t.downloadCount, 0);
-
-  // Filter transfers for the Transfer tab
-  const filteredTransfers = transfers.filter(t => {
-    const isExpired = new Date(t.expiresAt) <= now;
-    if (transferFilter === 'active' && isExpired) return false;
-    if (transferFilter === 'expired' && !isExpired) return false;
-    if (transferFilter === 'sent' && t.transferType !== 'email') return false;
-    if (transferFilter === 'received' && t.transferType !== 'request') return false;
-
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      const matchSubject = t.subject?.toLowerCase().includes(q);
-      const matchRec = t.recipientEmails?.toLowerCase().includes(q);
-      const matchFile = t.files.some(f => f.name.toLowerCase().includes(q));
-      if (!matchSubject && !matchRec && !matchFile) return false;
-    }
-    return true;
+  const now = Date.now();
+  const query = searchQuery.trim().toLowerCase();
+  const filteredTransfers = transfers.filter((transfer) => {
+    const timing = transferTiming(transfer, now);
+    if (filter === 'open' && timing.state === 'expired') return false;
+    if (filter === 'expired' && timing.state !== 'expired') return false;
+    return matchesQuery(transfer, query);
+  });
+  const selectedRequest = requestLinks.find((item) => item.requestId === selectedRequestId) || null;
+  const visibleContacts = contacts.filter((contact) => {
+    const q = contactQuery.trim().toLowerCase();
+    if (!q) return true;
+    return `${contact.name} ${contact.email} ${contact.group}`.toLowerCase().includes(q);
   });
 
   if (!user) {
     return (
-      <div className="max-w-md mx-auto my-14 p-8 bg-[#1a1916] border border-white/10 rounded-3xl text-center space-y-4 shadow-sm animate-fadeIn">
-        <div className="w-14 h-14 rounded-2xl theme-bg-light theme-text mx-auto flex items-center justify-center">
-          <Lock className="w-7 h-7" />
+      <section className="acct-ui acct-dash">
+        <div className="acct-box is-dashed ds-empty acct-empty">
+          <span className="ds-icon is-dark" aria-hidden="true"><Lock /></span>
+          <p className="ds-kicker"><b>●</b> My files</p>
+          <h1 className="acct-dash-title !mt-0">Sign in to see your transfers</h1>
+          <p className="acct-lead">Transfer history is available after you sign in. Guest sends stay on the link you were given.</p>
+          <button
+            type="button"
+            className="ds-btn ds-btn-dark"
+            onClick={() => onOpenAuth?.('login')}
+          >
+            <Lock className="w-4 h-4" aria-hidden="true" />
+            Sign in
+          </button>
         </div>
-        <h2 className="text-xl font-black text-[#f5f0e8]">Sign In to View Dashboard</h2>
-        <p className="text-sm text-[#a39e94] font-medium">
-          Only logged-in members can access the transfers management dashboard and cloud vault.
-        </p>
-        <button
-          type="button"
-          onClick={() => window.dispatchEvent(new CustomEvent('open-auth-modal', { detail: 'login' }))}
-          className="w-full py-2.5 theme-btn-primary text-white font-bold text-sm rounded-xl shadow-xs cursor-pointer"
-        >
-          Sign In to Your Account
-        </button>
-      </div>
+      </section>
     );
   }
 
+  const openCount = transfers.filter((transfer) => transferTiming(transfer, now).state === 'open').length;
+  const totalBytes = transfers.reduce((sum, transfer) => sum + (Number(transfer.totalSize) || 0), 0);
+
   return (
-    <div className="space-y-6 animate-fadeIn">
-      
-      {/* Dashboard Top Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-5 border-b border-white/10">
+    <section className="acct-ui acct-dash">
+      <header className="acct-dash-head">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-display font-semibold text-[#f5f0e8] tracking-tight flex items-center gap-2.5">
-            <span>Transfer Dashboard</span>
-            <span className="text-xs font-bold px-2.5 py-0.5 rounded-full theme-bg-light theme-text border border-[#c4a574]/20">
-              Pro Ready
-            </span>
-          </h1>
-          <p className="text-sm text-[#a39e94] font-medium mt-1">
-            Manage your active transfers, download tracking, file requests, and contacts.
-          </p>
+          <p className="ds-kicker"><b>●</b> My files</p>
+          <h1 className="acct-dash-title">Your transfers</h1>
+          <p className="acct-hint mt-1 acct-truncate" title={user.email}>{user.email}</p>
         </div>
-
-        <div className="flex items-center gap-2">
+        <div className="acct-head-actions flex-wrap">
           <button
+            type="button"
+            className="ds-btn ds-btn-ghost ds-btn-sm"
             onClick={loadUserTransfers}
-            className="p-2.5 rounded-xl bg-[#1a1916] border border-white/10 text-[#a39e94] hover:bg-[#141311] text-sm font-bold shadow-2xs flex items-center gap-2 transition-colors"
-            title="Refresh Transfers"
+            disabled={loading}
+            aria-busy={loading}
           >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-            <span className="hidden sm:inline">Refresh</span>
+            <RefreshCw className={`w-4 h-4 ${loading ? 'motion-safe:animate-spin' : ''}`} aria-hidden="true" />
+            {loading ? 'Refreshing…' : 'Refresh'}
           </button>
+          {onStartTransfer ? (
+            <button type="button" className="ds-btn ds-btn-dark ds-btn-sm" onClick={onStartTransfer}>
+              <Plus className="w-4 h-4" aria-hidden="true" />
+              New transfer
+            </button>
+          ) : null}
         </div>
-      </div>
+      </header>
 
-      {/* Main Layout: Sidebar Tabs + Content Area */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        
-        {/* Sidebar Nav */}
-        <div className="lg:col-span-1 space-y-1.5 custom-card p-3 rounded-2xl border border-white/10 shadow-2xs h-fit">
-          {[
-            { id: 'overview', name: 'Overview', icon: BarChart2 },
-            { id: 'transfers', name: 'Transfers', icon: Send, badge: transfers.length },
-            { id: 'requests', name: 'File Requests', icon: Inbox },
-            { id: 'contacts', name: 'Contacts', icon: Users, badge: contacts.length },
-            { id: 'storage', name: 'Storage', icon: HardDrive },
-            { id: 'settings', name: 'Preferences', icon: Settings },
-          ].map((tab) => {
-            const Icon = tab.icon;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => { setSidebarTab(tab.id); setSelectedTransfer(null); }}
-                className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl text-sm font-bold transition-all ${
-                  sidebarTab === tab.id
-                    ? 'theme-btn-primary shadow-xs'
-                    : 'text-[#a39e94] hover:bg-[#1a1916] hover:text-[#f5f0e8]'
-                }`}
-              >
-                <div className="flex items-center gap-2.5">
-                  <Icon className="w-4 h-4" />
-                  <span>{tab.name}</span>
-                </div>
-                {tab.badge !== undefined && tab.badge > 0 && (
-                  <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${
-                    sidebarTab === tab.id ? 'bg-white/20 text-white' : 'bg-[#1a1916] text-[#a39e94]'
-                  }`}>
-                    {tab.badge}
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </div>
+      <nav className="ds-tabs acct-dash-tabs" aria-label="My files sections">
+        {SECTIONS.map((item) => {
+          const Icon = SECTION_ICONS[item.id];
+          return (
+            <button
+              key={item.id}
+              type="button"
+              className="ds-tab"
+              aria-pressed={section === item.id}
+              onClick={() => setSection(item.id)}
+            >
+              {Icon ? <Icon aria-hidden="true" /> : null}
+              {item.label}
+            </button>
+          );
+        })}
+      </nav>
 
-        {/* Main Content Area */}
-        <div className="lg:col-span-3 space-y-6">
-          
-          {/* TAB 1: OVERVIEW */}
-          {sidebarTab === 'overview' && (
-            <div className="space-y-6 animate-fadeIn">
-              
-              {/* Metric Cards */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
-                <div className="custom-card p-4 sm:p-5 space-y-1.5">
-                  <span className="text-xs font-bold text-[#6b665c] uppercase tracking-wider">Active</span>
-                  <p className="text-2xl sm:text-3xl font-black text-[#f5f0e8]">{activeList.length}</p>
-                  <span className="text-xs text-emerald-600 font-bold">Available now</span>
-                </div>
-
-                <div className="custom-card p-4 sm:p-5 space-y-1.5">
-                  <span className="text-xs font-bold text-[#6b665c] uppercase tracking-wider">Downloads</span>
-                  <p className="text-2xl sm:text-3xl font-black text-[#f5f0e8]">{totalDownloads}</p>
-                  <span className="text-xs text-[#a39e94] font-bold">Total tracked</span>
-                </div>
-
-                <div className="custom-card p-4 sm:p-5 space-y-1.5">
-                  <span className="text-xs font-bold text-[#6b665c] uppercase tracking-wider">Total Sent</span>
-                  <p className="text-2xl sm:text-3xl font-black text-[#f5f0e8]">{formatBytes(totalSentBytes)}</p>
-                  <span className="text-xs theme-text font-bold">{transfers.length} transfers</span>
-                </div>
-
-                <div className="custom-card p-4 sm:p-5 space-y-1.5">
-                  <span className="text-xs font-bold text-[#6b665c] uppercase tracking-wider">Storage</span>
-                  <p className="text-2xl sm:text-3xl font-black text-[#f5f0e8]">{formatBytes(totalSentBytes)}</p>
-                  <span className="text-xs text-[#a39e94] font-bold">of 1 TB (HDD/Cloud)</span>
-                </div>
+      {section === 'transfers' && (
+        <div className="acct-stack">
+          {transfers.length > 0 ? (
+            <dl className="acct-stats">
+              <div className="acct-stat">
+                <dt><small>Transfers</small></dt>
+                <dd><b>{transfers.length}</b></dd>
               </div>
+              <div className="acct-stat">
+                <dt><small>Open links</small></dt>
+                <dd><b>{openCount}</b></dd>
+              </div>
+              <div className="acct-stat">
+                <dt><small>Total size</small></dt>
+                <dd><b>{formatBytes(totalBytes)}</b></dd>
+              </div>
+            </dl>
+          ) : null}
 
-              {/* Recent Transfers Quick List */}
-              <div className="custom-card p-5 ">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-xs font-bold text-[#f5f0e8] uppercase tracking-wider">Recent Transfers</h3>
-                  <button
-                    onClick={() => setSidebarTab('transfers')}
-                    className="text-xs font-bold theme-text hover:underline flex items-center gap-1"
-                  >
-                    <span>View all</span>
-                    <ArrowRight className="w-3 h-3" />
-                  </button>
+          <div className="acct-tools">
+            <label className="ds-input-wrap acct-search">
+              <Search aria-hidden="true" />
+              <span className="acct-sr">Search transfers</span>
+              <input
+                type="search"
+                className="ds-input"
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder="Title, filename, or recipient"
+              />
+            </label>
+            <div className="ds-tabs" role="group" aria-label="Filter transfers">
+              {[
+                ['all', 'All'],
+                ['open', 'Open'],
+                ['expired', 'Expired'],
+              ].map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  className="ds-tab"
+                  aria-pressed={filter === id}
+                  onClick={() => setFilter(id)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {loadError ? (
+            <p className="ds-alert is-danger" role="alert">
+              <AlertCircle aria-hidden="true" />
+              <span>{loadError}</span>
+            </p>
+          ) : null}
+
+          {loading && transfers.length === 0 && !loadError ? (
+            <div className="acct-rows" aria-busy="true" aria-live="polite">
+              <h2 className="acct-hint flex items-center gap-2">
+                <span className="ds-spinner !w-3.5 !h-3.5" aria-hidden="true" />
+                Loading transfers…
+              </h2>
+              <p className="acct-sr">Checking the transfers on this account.</p>
+              {[0, 1, 2].map((key) => (
+                <div key={key} className="acct-row pointer-events-none" aria-hidden="true">
+                  <span className="ds-skeleton w-9 h-9 shrink-0" />
+                  <span className="flex-1 grid gap-2">
+                    <span className="ds-skeleton h-3.5 w-1/2" />
+                    <span className="ds-skeleton h-3 w-1/4" />
+                  </span>
                 </div>
+              ))}
+            </div>
+          ) : null}
 
-                {transfers.length === 0 ? (
-                  <div className="py-8 text-center text-[#6b665c] text-xs">
-                    No transfers yet. Send your first file above!
+          {!loading && !loadError && transfers.length === 0 ? (
+            <div className="acct-box is-dashed ds-empty acct-empty">
+              <span className="ds-icon is-blue" aria-hidden="true"><Inbox /></span>
+              <h2>No transfers yet</h2>
+              <p>Transfers you send while signed in are listed here.</p>
+              {onStartTransfer ? (
+                <button type="button" className="ds-btn ds-btn-dark" onClick={onStartTransfer}>
+                  <Plus className="w-4 h-4" aria-hidden="true" />
+                  New transfer
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+
+          {(transfers.length > 0 || (loadError && transfers.length > 0)) && !(loading && transfers.length === 0) ? (
+            <div className="acct-split">
+              <div className={`acct-list ${selected ? 'has-selection' : ''}`}>
+                {filteredTransfers.length === 0 ? (
+                  <div className="acct-box ds-empty acct-empty">
+                    <span className="ds-icon" aria-hidden="true"><Search /></span>
+                    <h2>Nothing matches</h2>
+                    <p>Try another title, filename, or filter.</p>
                   </div>
                 ) : (
-                  <div className="space-y-2">
-                    {transfers.slice(0, 4).map((t) => (
-                      <div
-                        key={t.shareId}
-                        onClick={() => setSelectedTransfer(t)}
-                        className="p-3 bg-[#141311] hover:bg-[#1a1916] rounded-xl border border-white/10 flex items-center justify-between cursor-pointer transition-all"
-                      >
-                        <div className="flex items-center gap-2.5 min-w-0 pr-2">
-                          <div className="w-8 h-8 rounded-lg theme-bg-light theme-text flex items-center justify-center shrink-0">
-                            {t.transferType === 'email' ? <Mail className="w-4 h-4" /> : <Link2 className="w-4 h-4" />}
-                          </div>
-                          <div className="min-w-0">
-                            <p className="text-xs font-bold text-[#f5f0e8] truncate">
-                              {t.subject || t.files[0]?.name || 'Untitled Transfer'}
-                            </p>
-                            <p className="text-[11px] text-[#a39e94]">
-                              {t.files.length} file{t.files.length !== 1 ? 's' : ''} • {formatBytes(t.totalSize)} • {t.downloadCount} download{t.downloadCount !== 1 ? 's' : ''}
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-2 shrink-0">
+                  <ul className="acct-rows">
+                    {filteredTransfers.map((transfer) => {
+                      const timing = transferTiming(transfer, now);
+                      const created = formatWhen(transfer.createdAt);
+                      const firstFile = transfer.files?.[0];
+                      const Icon = getFileIcon(firstFile?.type, firstFile?.name);
+                      const badge = timing.label ? <span className={timingBadgeClass(timing.state)}>{timing.label}</span> : null;
+                      return (
+                        <li key={transfer.shareId}>
                           <button
-                            onClick={(e) => { e.stopPropagation(); handleCopyLink(t.shareId); }}
-                            className="p-1.5 rounded-lg bg-[#1a1916] border border-white/10 text-[#a39e94] hover:text-[#f5f0e8]"
-                            title="Copy link"
+                            type="button"
+                            className={`acct-row ${selectedId === transfer.shareId ? 'is-selected' : ''}`}
+                            onClick={() => openTransfer(transfer)}
+                            aria-pressed={selectedId === transfer.shareId}
+                            aria-label={`${transferTitle(transfer)}. View details`}
                           >
-                            <Copy className="w-3.5 h-3.5" />
+                            <span className="ds-file-icon" aria-hidden="true"><Icon className="w-4 h-4" /></span>
+                            <span className="acct-row-body">
+                              <span className="acct-row-title acct-truncate">{transferTitle(transfer)}</span>
+                              <span className="acct-meta block">
+                                {transfer.files?.length || 0} files · {formatBytes(transfer.totalSize)}
+                                {created ? ` · ${created}` : ''}
+                              </span>
+                              {badge ? <span className="acct-row-badge-mobile">{badge}</span> : null}
+                            </span>
+                            {badge ? <span className="acct-row-side">{badge}</span> : null}
                           </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
                 )}
               </div>
 
-            </div>
-          )}
-
-          {/* TAB 2: TRANSFERS MANAGEMENT */}
-          {sidebarTab === 'transfers' && (
-            <div className="space-y-4 animate-fadeIn">
-              
-              {/* Filters & Search */}
-              <div className="flex flex-col sm:flex-row gap-2.5 items-stretch sm:items-center justify-between">
-                <div className="relative flex-1">
-                  <Search className="w-3.5 h-3.5 text-[#6b665c] absolute left-3 top-2.5" />
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search by title, recipient, or filename..."
-                    className="w-full pl-8 pr-3 py-1.5 bg-[#1a1916] border border-white/12 rounded-xl text-xs font-medium focus:outline-none focus:border-[#c4a574]/55 shadow-2xs"
+              <aside className={`acct-detail ${selected ? '' : 'is-empty'}`} aria-live="polite">
+                {selected ? (
+                  <TransferDetail
+                    transfer={selected}
+                    copied={copiedId === selected.shareId}
+                    draftName={draftName}
+                    renaming={renaming}
+                    onDraftName={setDraftName}
+                    onRename={handleRename}
+                    onBack={() => setSelectedId(null)}
+                    onCopy={() => handleCopy(`${window.location.origin}/download/${selected.shareId}`, selected.shareId, 'Link copied.')}
+                    onDelete={() => setConfirmTarget({ kind: 'transfer', transfer: selected })}
                   />
-                </div>
+                ) : (
+                  <div className="acct-box is-dashed ds-empty acct-empty">
+                    <span className="ds-icon" aria-hidden="true"><MousePointerClick /></span>
+                    <h2>Transfer details</h2>
+                    <p>Select a transfer to see its files, expiry, and actions.</p>
+                  </div>
+                )}
+              </aside>
+            </div>
+          ) : null}
+        </div>
+      )}
 
-                <div className="flex items-center gap-1 bg-[#1a1916] p-1 rounded-xl border border-white/10 shadow-2xs">
-                  {['all', 'active', 'sent', 'expired'].map((f) => (
-                    <button
-                      key={f}
-                      onClick={() => setTransferFilter(f)}
-                      className={`px-2.5 py-1 rounded-lg text-[11px] font-bold capitalize transition-all ${
-                        transferFilter === f ? 'theme-btn-primary shadow-xs' : 'text-[#a39e94] hover:bg-[#1a1916]'
-                      }`}
-                    >
-                      {f}
-                    </button>
-                  ))}
-                </div>
+      {section === 'requests' && (
+        <div className="acct-stack">
+          <header className="acct-panel-head">
+            <div>
+              <h2>Requests</h2>
+              <p className="acct-lead mt-1 text-sm">Ask someone else to send you files. They open your link and upload. They do not need an account.</p>
+            </div>
+            <button
+              ref={newRequestButtonRef}
+              type="button"
+              className="ds-btn ds-btn-dark ds-btn-sm"
+              onClick={() => {
+                setRequestFieldError('');
+                setRequestComposerOpen(true);
+              }}
+            >
+              <Plus className="w-4 h-4" aria-hidden="true" />
+              New request
+            </button>
+          </header>
+
+          {newRequestUrl ? (
+            <div className="ds-callout is-blue flex-col !gap-0">
+              <p className="ds-kicker"><b>●</b> Request link</p>
+              <p className="acct-lead mt-1 text-sm !text-[var(--ds-text)]">The link is ready. Send it to the person who has the files.</p>
+              <p className="ds-url acct-url bg-white"><span>{newRequestUrl}</span></p>
+              <div className="acct-actions">
+                <button type="button" className="ds-btn ds-btn-dark ds-btn-sm" onClick={() => handleCopy(newRequestUrl, 'request', 'Request link copied.')}>
+                  {copiedId === 'request' ? <Check className="w-4 h-4" aria-hidden="true" /> : <Copy className="w-4 h-4" aria-hidden="true" />}
+                  {copiedId === 'request' ? 'Copied' : 'Copy link'}
+                </button>
+                <a className="ds-btn ds-btn-ghost ds-btn-sm" href={newRequestUrl}>
+                  <ExternalLink className="w-4 h-4" aria-hidden="true" />
+                  Open
+                </a>
               </div>
+            </div>
+          ) : null}
 
-              {/* Transfers List */}
-              {loading ? (
-                <div className="py-12 text-center text-[#6b665c] text-xs flex items-center justify-center gap-2">
-                  <Loader2 className="w-4 h-4 animate-spin theme-text" />
-                  <span>Loading transfers...</span>
-                </div>
-              ) : filteredTransfers.length === 0 ? (
-                <div className="custom-card p-8 text-center text-[#6b665c] text-xs">
-                  No transfers found matching your filter.
-                </div>
-              ) : (
-                <div className="space-y-2.5">
-                  {filteredTransfers.map((t) => {
-                    const isExpired = new Date(t.expiresAt) <= now;
+          {requestsError && requestLinks.length > 0 ? (
+            <p className="ds-alert is-danger" role="alert">
+              <AlertCircle aria-hidden="true" />
+              <span>{requestsError}</span>
+            </p>
+          ) : null}
+
+          {requestsLoading && requestLinks.length === 0 ? (
+            <div className="acct-box ds-empty acct-empty" aria-busy="true" aria-live="polite">
+              <span className="ds-spinner" aria-hidden="true" />
+              <h2>Loading requests…</h2>
+              <p>Checking the links on this account.</p>
+            </div>
+          ) : null}
+
+          {!requestsLoading && requestsError && requestLinks.length === 0 ? (
+            <div className="acct-box ds-empty acct-empty" role="alert">
+              <span className="ds-icon acct-icon-danger" aria-hidden="true"><AlertCircle /></span>
+              <h2>Requests could not be loaded</h2>
+              <p>{requestsError}</p>
+              <button type="button" className="ds-btn ds-btn-ghost" onClick={refreshRequests}>
+                <RefreshCw className="w-4 h-4" aria-hidden="true" />
+                Try again
+              </button>
+            </div>
+          ) : null}
+
+          {!requestsLoading && !requestsError && requestLinks.length === 0 ? (
+            <div className="acct-box is-dashed ds-empty acct-empty">
+              <span className="ds-icon is-blue" aria-hidden="true"><Inbox /></span>
+              <h2>No requests yet</h2>
+              <p>A request link lets someone upload files to you without creating an account.</p>
+              <button
+                type="button"
+                className="ds-btn ds-btn-dark"
+                onClick={() => {
+                  setRequestFieldError('');
+                  setRequestComposerOpen(true);
+                }}
+              >
+                <Plus className="w-4 h-4" aria-hidden="true" />
+                Create your first request
+              </button>
+            </div>
+          ) : null}
+
+          {requestLinks.length > 0 ? (
+            <div className="acct-split">
+              <div className={`acct-list ${selectedRequest ? 'has-selection' : ''}`}>
+                <ul className="acct-rows">
+                  {requestLinks.map((portal) => {
+                    const status = requestStatus(portal, now);
+                    const created = formatWhen(portal.createdAt);
+                    const badge = <span className={requestBadgeClass(status)}>{status}</span>;
                     return (
-                      <div
-                        key={t.shareId}
-                        className={`custom-card p-4 space-y-3  transition-all ${
-                          isExpired ? 'opacity-70 bg-[#141311]' : ''
-                        }`}
-                      >
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
-                              isExpired ? 'bg-[#1a1916] text-[#6b665c]' : 'theme-bg-light theme-text'
-                            }`}>
-                              {t.transferType === 'email' ? <Mail className="w-4 h-4" /> : <Link2 className="w-4 h-4" />}
-                            </div>
-                            <div className="min-w-0">
-                              <h4 className="text-xs font-bold text-[#f5f0e8] truncate">
-                                {t.subject || t.files[0]?.name || 'Untitled Transfer'}
-                              </h4>
-                              <p className="text-[11px] text-[#a39e94] font-medium">
-                                {t.files.length} file{t.files.length !== 1 ? 's' : ''} • {formatBytes(t.totalSize)} • {new Date(t.createdAt).toLocaleDateString()}
-                              </p>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-1.5 self-end sm:self-center">
-                            <button
-                              onClick={() => handleCopyLink(t.shareId)}
-                              className="px-2.5 py-1 rounded-lg bg-[#1a1916] hover:bg-[#22211d] text-[#a39e94] text-xs font-semibold flex items-center gap-1 transition-colors"
-                            >
-                              {copiedId === t.shareId ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
-                              <span>{copiedId === t.shareId ? 'Copied' : 'Copy Link'}</span>
-                            </button>
-
-                            <a
-                              href={`/download/${t.shareId}`}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="p-1.5 rounded-lg bg-[#1a1916] hover:bg-[#22211d] text-[#a39e94] text-xs transition-colors"
-                              title="Open Download Page"
-                            >
-                              <ExternalLink className="w-3.5 h-3.5" />
-                            </a>
-
-                            <button
-                              onClick={() => handleDeleteTransfer(t)}
-                              className="p-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 text-xs transition-colors"
-                              title="Delete Transfer"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* Status bar */}
-                        <div className="flex items-center justify-between text-[11px] pt-2 border-t border-white/8 font-medium text-[#a39e94]">
-                          <span className="flex items-center gap-1">
-                            <Clock className="w-3 h-3" />
-                            {isExpired ? 'Expired' : `Expires ${new Date(t.expiresAt).toLocaleDateString()}`}
+                      <li key={portal.requestId}>
+                        <button
+                          type="button"
+                          className={`acct-row ${selectedRequest?.requestId === portal.requestId ? 'is-selected' : ''}`}
+                          aria-pressed={selectedRequest?.requestId === portal.requestId}
+                          onClick={() => setSelectedRequestId(portal.requestId)}
+                        >
+                          <span className="ds-file-icon" aria-hidden="true"><Inbox className="w-4 h-4" /></span>
+                          <span className="acct-row-body">
+                            <span className="acct-row-title acct-truncate">{portal.title || 'File request'}</span>
+                            {created ? <span className="acct-meta block">{created}</span> : null}
+                            <span className="acct-row-badge-mobile">{badge}</span>
                           </span>
-                          <span className="flex items-center gap-1">
-                            <Download className="w-3 h-3" />
-                            {t.downloadCount} download{t.downloadCount !== 1 ? 's' : ''}
-                          </span>
-                          {t.passwordRequired && (
-                            <span className="flex items-center gap-1 text-amber-600 font-semibold">
-                              <Lock className="w-3 h-3" /> Password Protected
-                            </span>
-                          )}
-                        </div>
-                      </div>
+                          <span className="acct-row-side">{badge}</span>
+                        </button>
+                      </li>
                     );
                   })}
-                </div>
-              )}
-
-            </div>
-          )}
-
-          {/* TAB 3: FILE REQUESTS / DROP LINKS */}
-          {sidebarTab === 'requests' && (
-            <div className="space-y-4 animate-fadeIn">
-              <div className="custom-card p-5  space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="text-xs font-bold text-[#f5f0e8] uppercase tracking-wider">Generate File Request Portal</h3>
-                    <p className="text-xs text-[#a39e94] mt-0.5">Visitors can upload without an account. Files stay available for 7 days. You will see them here.</p>
-                  </div>
-                </div>
-
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={requestName}
-                    onChange={(e) => setRequestName(e.target.value)}
-                    placeholder="Portal Name (e.g. Client-Assets-2026)"
-                    className="flex-1 px-3 py-2 bg-[#141311] border border-white/12 rounded-xl text-xs font-medium focus:outline-none focus:border-[#c4a574]/55"
+                </ul>
+              </div>
+              <aside className={`acct-detail ${selectedRequest ? '' : 'is-empty'}`} aria-live="polite">
+                {selectedRequest ? (
+                  <RequestDetail
+                    portal={selectedRequest}
+                    copied={copiedId === selectedRequest.requestId}
+                    onBack={() => setSelectedRequestId(null)}
+                    onCopy={() => handleCopy(`${window.location.origin}/request/${selectedRequest.requestId}`, selectedRequest.requestId, 'Request link copied.')}
+                    onClose={() => setConfirmTarget({ kind: 'request', request: selectedRequest })}
                   />
-                  <button
-                    type="button"
-                    onClick={handleCreateRequest}
-                    disabled={isCreatingRequest}
-                    className="theme-btn-primary px-4 py-2 text-xs font-bold shadow-xs flex items-center gap-1.5 disabled:opacity-60"
-                  >
-                    <PlusCircle className="w-3.5 h-3.5" />
-                    <span>Create Portal</span>
+                ) : (
+                  <div className="acct-box is-dashed ds-empty acct-empty">
+                    <span className="ds-icon" aria-hidden="true"><MousePointerClick /></span>
+                    <h2>Request details</h2>
+                    <p>Select a request to copy its link, see uploads, or close it.</p>
+                  </div>
+                )}
+              </aside>
+            </div>
+          ) : null}
+        </div>
+      )}
+
+      {section === 'contacts' && (
+        <div className="acct-stack">
+          <form className="acct-box p-4 sm:p-5 acct-stack" onSubmit={handleAddContact}>
+            <div className="acct-panel-head">
+              <div>
+                <h2>Contacts</h2>
+                <p className="acct-lead mt-1 text-sm">Saved on this device. These names are not stored with your transfers.</p>
+              </div>
+            </div>
+            <div className="acct-form-grid is-3">
+              <div className="ds-field">
+                <label htmlFor="contact-name" className="ds-label">Name</label>
+                <input id="contact-name" className="ds-input" value={newContactName} onChange={(event) => setNewContactName(event.target.value)} />
+              </div>
+              <div className="ds-field">
+                <label htmlFor="contact-email" className="ds-label">Email</label>
+                <input id="contact-email" className="ds-input" type="email" required value={newContactEmail} onChange={(event) => setNewContactEmail(event.target.value)} />
+              </div>
+              <div className="ds-field">
+                <label htmlFor="contact-group" className="ds-label">Group</label>
+                <select id="contact-group" className="ds-select" value={newContactGroup} onChange={(event) => setNewContactGroup(event.target.value)}>
+                  <option>Clients</option>
+                  <option>Team</option>
+                  <option>Friends</option>
+                  <option>Family</option>
+                </select>
+              </div>
+            </div>
+            <div>
+              <button type="submit" className="ds-btn ds-btn-dark">
+                <Plus className="w-4 h-4" aria-hidden="true" />
+                Save contact
+              </button>
+            </div>
+          </form>
+
+          {contacts.length > 0 ? (
+            <label className="ds-input-wrap acct-search">
+              <Search aria-hidden="true" />
+              <span className="acct-sr">Search contacts</span>
+              <input
+                type="search"
+                className="ds-input"
+                value={contactQuery}
+                onChange={(event) => setContactQuery(event.target.value)}
+                placeholder="Name or email"
+              />
+            </label>
+          ) : null}
+
+          {contacts.length === 0 ? (
+            <div className="acct-box is-dashed ds-empty acct-empty">
+              <span className="ds-icon" aria-hidden="true"><Users /></span>
+              <h2>No contacts saved</h2>
+            </div>
+          ) : visibleContacts.length === 0 ? (
+            <div className="acct-box ds-empty acct-empty">
+              <span className="ds-icon" aria-hidden="true"><Search /></span>
+              <h2>Nothing matches</h2>
+            </div>
+          ) : (
+            <ul className="acct-rows">
+              {visibleContacts.map((contact) => (
+                <li key={contact.id} className="acct-contact">
+                  <span className="acct-avatar !w-9 !h-9 !text-base !rounded-[10px]" aria-hidden="true">
+                    {String(contact.name || contact.email || '?').trim().charAt(0).toUpperCase()}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="acct-truncate">{contact.name}</h3>
+                    <p className="acct-meta acct-truncate !mt-0.5">{contact.email}{contact.group ? ` · ${contact.group}` : ''}</p>
+                  </div>
+                  <button type="button" className="ds-btn ds-btn-danger ds-btn-sm shrink-0" onClick={() => setConfirmTarget({ kind: 'contact', contact })}>
+                    Remove
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {section === 'preferences' && (
+        <div className="acct-stack">
+          <div className="acct-pref">
+            <div className="acct-pref-main">
+              <span className="ds-icon" aria-hidden="true">
+                {soundEnabled ? <Volume2 /> : <VolumeX />}
+              </span>
+              <div className="min-w-0">
+                <h2>Sound</h2>
+                <p className="acct-lead mt-0.5 text-sm">Play a chime when a transfer on this device finishes.</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              className="acct-toggle"
+              role="switch"
+              aria-checked={soundEnabled}
+              onClick={() => handleToggleSound(!soundEnabled)}
+            >
+              <span className="acct-toggle-track" aria-hidden="true" />
+              {soundEnabled ? 'On' : 'Off'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {requestComposerOpen ? (
+        <Portal>
+          <div className="ds-modal-backdrop acct-modal-backdrop acct-ui" onClick={closeRequestComposer}>
+            <div
+              className="ds-modal"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="request-dialog-title"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <span className="acct-grabber" aria-hidden="true" />
+              <div className="ds-modal-head">
+                <p className="ds-kicker"><b>●</b> File request</p>
+                <h2 id="request-dialog-title" className="ds-modal-title mt-2">New request</h2>
+                <p className="ds-modal-sub">You are asking someone else to send you files. They open the link and upload. They do not need an account.</p>
+              </div>
+              <form
+                className="ds-modal-body acct-stack"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  handleCreateRequest();
+                }}
+              >
+                <p className="ds-hint">Both fields are optional. A blank title is saved as File request.</p>
+                <div className="ds-field">
+                  <label htmlFor="request-title" className="ds-label">Title</label>
+                  <input
+                    id="request-title"
+                    className="ds-input"
+                    value={requestName}
+                    onChange={(event) => {
+                      setRequestName(event.target.value);
+                      setRequestFieldError('');
+                    }}
+                    placeholder="What you need"
+                    aria-invalid={requestFieldError.startsWith('Title') || undefined}
+                    aria-describedby="request-title-count"
+                  />
+                  <p id="request-title-count" className="acct-count">{requestName.trim().length} of 120 characters</p>
+                </div>
+                <div className="ds-field">
+                  <label htmlFor="request-instructions" className="ds-label">Instructions</label>
+                  <textarea
+                    id="request-instructions"
+                    className="ds-textarea"
+                    rows={4}
+                    value={requestInstructions}
+                    onChange={(event) => {
+                      setRequestInstructions(event.target.value);
+                      setRequestFieldError('');
+                    }}
+                    placeholder="What to upload"
+                    aria-invalid={requestFieldError.startsWith('Instructions') || undefined}
+                    aria-describedby="request-instructions-count"
+                  />
+                  <p id="request-instructions-count" className="acct-count">{requestInstructions.trim().length} of 500 characters</p>
+                </div>
+                {requestFieldError ? (
+                  <p className="ds-alert is-danger" role="alert">
+                    <AlertCircle aria-hidden="true" />
+                    <span>{requestFieldError}</span>
+                  </p>
+                ) : null}
+                <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
+                  <button type="button" className="ds-btn ds-btn-ghost" onClick={closeRequestComposer} disabled={isCreatingRequest}>
+                    Cancel
+                  </button>
+                  <button type="submit" className="ds-btn ds-btn-dark" disabled={isCreatingRequest} aria-busy={isCreatingRequest}>
+                    {isCreatingRequest && <span className="ds-spinner" aria-hidden="true" />}
+                    {isCreatingRequest ? 'Creating…' : 'Create request link'}
                   </button>
                 </div>
-                <textarea
-                  rows={2}
-                  value={requestInstructions}
-                  onChange={(e) => setRequestInstructions(e.target.value)}
-                  placeholder="Optional instructions for the person uploading"
-                  className="w-full px-3 py-2 bg-[#141311] border border-white/12 rounded-xl text-xs font-medium focus:outline-none focus:border-[#c4a574]/55 resize-none"
-                />
-
-                {newRequestUrl && (
-                  <div className="p-3 theme-bg-light border border-[#c4a574]/20 rounded-xl space-y-2 animate-fadeIn">
-                    <p className="text-xs font-bold theme-text">Your Shareable Request Link:</p>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="text"
-                        readOnly
-                        value={newRequestUrl}
-                        className="flex-1 px-3 py-1.5 bg-[#1a1916] border border-[#c4a574]/25 rounded-lg text-xs font-mono text-[#f5f0e8]"
-                      />
-                      <button
-                        onClick={() => {
-                          navigator.clipboard.writeText(newRequestUrl);
-                          addToast('Request link copied! 📥', 'success');
-                        }}
-                        className="theme-btn-primary px-3 py-1.5 text-xs font-bold"
-                      >
-                        Copy
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                <div className="space-y-3">
-                  {requestsLoading && <p className="text-xs text-[#a39e94]">Loading request links…</p>}
-                  {!requestsLoading && requestLinks.length === 0 && (
-                    <p className="text-xs text-[#a39e94]">No request links yet.</p>
-                  )}
-                  {requestLinks.map((portal) => (
-                    <div key={portal.requestId} className="rounded-xl border border-white/10 p-3 space-y-2">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="text-sm font-semibold text-[#f5f0e8]">{portal.title}</p>
-                          <p className="text-[11px] text-[#a39e94]">{portal.status === 'active' ? 'Accepting files' : 'Closed'} · {portal.received?.length || 0} upload{portal.received?.length === 1 ? '' : 's'}</p>
-                        </div>
-                        {portal.status === 'active' && (
-                          <button type="button" onClick={() => handleCloseRequest(portal.requestId)} className="text-[11px] font-semibold text-[#c47a7a]">
-                            Close
-                          </button>
-                        )}
-                      </div>
-                      {(portal.received || []).map((item) => (
-                        <p key={item.shareId} className="text-[11px] text-[#d9d3c7]">
-                          {item.fileCount} file{item.fileCount === 1 ? '' : 's'} · {formatBytes(item.totalSize)} · {item.senderEmail || 'No email'} · {item.status}
-                        </p>
-                      ))}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* TAB 4: CONTACTS / ADDRESS BOOK */}
-          {sidebarTab === 'contacts' && (
-            <div className="space-y-4 animate-fadeIn">
-              
-              {/* Add Contact Form */}
-              <form onSubmit={handleAddContact} className="custom-card p-4  space-y-3">
-                <h3 className="text-xs font-bold text-[#f5f0e8] uppercase tracking-wider">Add Saved Contact</h3>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                  <input
-                    type="text"
-                    value={newContactName}
-                    onChange={(e) => setNewContactName(e.target.value)}
-                    placeholder="Contact Name"
-                    className="px-3 py-1.5 bg-[#141311] border border-white/12 rounded-xl text-xs font-medium focus:outline-none focus:border-[#c4a574]/55"
-                  />
-                  <input
-                    type="email"
-                    required
-                    value={newContactEmail}
-                    onChange={(e) => setNewContactEmail(e.target.value)}
-                    placeholder="Email Address"
-                    className="px-3 py-1.5 bg-[#141311] border border-white/12 rounded-xl text-xs font-medium focus:outline-none focus:border-[#c4a574]/55"
-                  />
-                  <div className="flex gap-2">
-                    <select
-                      value={newContactGroup}
-                      onChange={(e) => setNewContactGroup(e.target.value)}
-                      className="px-2 py-1.5 bg-[#141311] border border-white/12 rounded-xl text-xs font-medium text-[#a39e94]"
-                    >
-                      <option value="Clients">Clients</option>
-                      <option value="Team">Team</option>
-                      <option value="Friends">Friends</option>
-                      <option value="Family">Family</option>
-                    </select>
-                    <button
-                      type="submit"
-                      className="theme-btn-primary px-3 py-1.5 text-xs font-bold shadow-2xs flex-1"
-                    >
-                      Add
-                    </button>
-                  </div>
-                </div>
               </form>
-
-              {/* Contacts List */}
-              <div className="custom-card p-4 ">
-                <h3 className="text-xs font-bold text-[#f5f0e8] uppercase tracking-wider mb-3">
-                  Address Book ({contacts.length})
-                </h3>
-
-                {contacts.length === 0 ? (
-                  <div className="py-6 text-center text-[#6b665c] text-xs">
-                    No saved contacts. Add frequent recipients above for instant sending!
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    {contacts.map((c) => (
-                      <div
-                        key={c.id}
-                        className="p-2.5 bg-[#141311] rounded-xl border border-white/10 flex items-center justify-between text-xs"
-                      >
-                        <div>
-                          <p className="font-bold text-[#f5f0e8]">{c.name}</p>
-                          <p className="text-[11px] text-[#a39e94]">{c.email}</p>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-indigo-50 theme-text border border-[#c4a574]/20">
-                            {c.group}
-                          </span>
-                          <button
-                            onClick={() => handleDeleteContact(c.id)}
-                            className="p-1 text-[#6b665c] hover:text-rose-600 rounded transition-colors"
-                            title="Remove contact"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
             </div>
-          )}
+          </div>
+        </Portal>
+      ) : null}
 
-          {/* TAB 5: STORAGE */}
-          {sidebarTab === 'storage' && (
-            <div className="space-y-4 animate-fadeIn">
-              <div className="custom-card p-5  space-y-4">
-                <h3 className="text-xs font-bold text-[#f5f0e8] uppercase tracking-wider">Storage Allocation</h3>
-                
-                <div className="space-y-2">
-                  <div className="flex justify-between text-xs font-semibold">
-                    <span className="text-[#a39e94]">Total Used:</span>
-                    <span className="text-[#f5f0e8] font-bold">{formatBytes(totalSentBytes)} / 1.0 TB</span>
-                  </div>
-                  <div className="h-2.5 w-full bg-[#1a1916] rounded-full overflow-hidden border border-white/10">
-                    <div
-                      className="h-full theme-btn-primary"
-                      style={{ width: `${Math.min(100, Math.max(1, (totalSentBytes / (1024 * 1024 * 1024 * 1024)) * 100))}%` }}
-                    />
-                  </div>
-                </div>
-
-                <div className="pt-3 border-t border-white/8 grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
-                  <div className="p-3 bg-[#141311] rounded-xl border border-white/10">
-                    <p className="text-[#a39e94] font-medium">Active Storage</p>
-                    <p className="text-sm font-black text-[#f5f0e8] mt-0.5">{formatBytes(totalSentBytes)}</p>
-                  </div>
-                  <div className="p-3 bg-[#141311] rounded-xl border border-white/10">
-                    <p className="text-[#a39e94] font-medium">Provider</p>
-                    <p className="text-sm font-black theme-text mt-0.5">Cloud + HDD</p>
-                  </div>
-                  <div className="p-3 bg-[#141311] rounded-xl border border-white/10">
-                    <p className="text-[#a39e94] font-medium">Auto-Cleanup</p>
-                    <p className="text-sm font-black text-emerald-600 mt-0.5">Enabled</p>
-                  </div>
-                </div>
+      {confirmTarget ? (
+        <Portal>
+          <div className="ds-modal-backdrop acct-modal-backdrop acct-ui" onClick={() => { if (!confirming) setConfirmTarget(null); }}>
+            <div
+              className="ds-modal acct-modal-narrow"
+              role="alertdialog"
+              aria-modal="true"
+              aria-labelledby="files-confirm-title"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <span className="acct-grabber" aria-hidden="true" />
+              <div className="ds-modal-head">
+                <span className="ds-icon acct-icon-danger" aria-hidden="true">
+                  {confirmTarget.kind === 'request' ? <Ban /> : <Trash2 />}
+                </span>
+                <h2 id="files-confirm-title" className="ds-modal-title mt-3 !text-[1.3rem]">
+                  {confirmTarget.kind === 'transfer' && 'Delete this transfer?'}
+                  {confirmTarget.kind === 'request' && 'Close this request link?'}
+                  {confirmTarget.kind === 'contact' && 'Remove this contact?'}
+                </h2>
+                <p className="ds-modal-sub">
+                  {confirmTarget.kind === 'transfer' && 'The files will be removed. This cannot be undone from here.'}
+                  {confirmTarget.kind === 'request' && 'People will no longer be able to upload with this link.'}
+                  {confirmTarget.kind === 'contact' && `${confirmTarget.contact.name} will be removed from this device.`}
+                </p>
+              </div>
+              <div className="ds-modal-body flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
+                <button type="button" className="ds-btn ds-btn-ghost" onClick={() => setConfirmTarget(null)} disabled={confirming}>
+                  Cancel
+                </button>
+                <button type="button" className="ds-btn ds-btn-danger" onClick={runConfirm} disabled={confirming} aria-busy={confirming}>
+                  {confirming && <span className="ds-spinner" aria-hidden="true" />}
+                  {confirming ? 'Working…' : confirmTarget.kind === 'transfer' ? 'Delete' : confirmTarget.kind === 'request' ? 'Close link' : 'Remove'}
+                </button>
               </div>
             </div>
-          )}
+          </div>
+        </Portal>
+      ) : null}
+    </section>
+  );
+}
 
-          {/* TAB 6: SETTINGS */}
-          {sidebarTab === 'settings' && (
-            <div className="space-y-4 animate-fadeIn">
-              <div className="custom-card p-5  space-y-4">
-                <h3 className="text-xs font-bold text-[#f5f0e8] uppercase tracking-wider">Preferences & Notifications</h3>
-
-                <div className="space-y-3 text-xs">
-                  <div className="flex items-center justify-between p-3 bg-[#141311] rounded-xl border border-white/10">
-                    <div>
-                      <p className="font-bold text-[#f5f0e8]">Sound Effects</p>
-                      <p className="text-[#a39e94] text-[11px]">Play chime when uploads and downloads complete.</p>
-                    </div>
-                    <button
-                      onClick={() => handleToggleSoundSetting(!soundEnabled)}
-                      className={`px-3 py-1.5 rounded-lg font-bold text-xs transition-colors ${
-                        soundEnabled ? 'theme-btn-primary' : 'bg-slate-200 text-[#a39e94]'
-                      }`}
-                    >
-                      {soundEnabled ? 'Enabled' : 'Disabled'}
-                    </button>
-                  </div>
-
-                  <div className="flex items-center justify-between p-3 bg-[#141311] rounded-xl border border-white/10">
-                    <div>
-                      <p className="font-bold text-[#f5f0e8]">Email Delivery Receipts</p>
-                      <p className="text-[#a39e94] text-[11px]">Receive notification when a recipient downloads your files.</p>
-                    </div>
-                    <span className="text-[10px] font-bold px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-md">
-                      Active
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
+function TransferDetail({ transfer, copied, draftName, renaming, onDraftName, onRename, onBack, onCopy, onDelete }) {
+  const timing = transferTiming(transfer);
+  const created = formatWhen(transfer.createdAt);
+  return (
+    <div className="acct-detail-card">
+      <button type="button" className="acct-back" onClick={onBack}>
+        <ArrowLeft className="w-4 h-4" aria-hidden="true" />
+        Back to list
+      </button>
+      <p className="ds-kicker"><b>●</b> Transfer</p>
+      <h2 className="acct-detail-title">{transferTitle(transfer)}</h2>
+      <dl className="acct-facts">
+        <div>
+          <dt>Files</dt>
+          <dd>{transfer.files?.length || 0} · {formatBytes(transfer.totalSize)}</dd>
         </div>
-
+        {created ? (
+          <div>
+            <dt>Created</dt>
+            <dd>{created}</dd>
+          </div>
+        ) : null}
+        {timing.label ? (
+          <div>
+            <dt>Status</dt>
+            <dd>{timing.label}</dd>
+          </div>
+        ) : null}
+        {transfer.passwordRequired ? (
+          <div>
+            <dt>Password</dt>
+            <dd>Required</dd>
+          </div>
+        ) : null}
+        {transfer.recipientEmails ? (
+          <div>
+            <dt>Recipients</dt>
+            <dd>{transfer.recipientEmails}</dd>
+          </div>
+        ) : null}
+        {transfer.transferType && transfer.transferType !== 'link' ? (
+          <div>
+            <dt>Type</dt>
+            <dd>{transfer.transferType}</dd>
+          </div>
+        ) : null}
+      </dl>
+      {transfer.message ? <p className="ds-callout !text-sm mb-4">{transfer.message}</p> : null}
+      <ul className="acct-files !mt-0">
+        {(transfer.files || []).map((file) => {
+          const Icon = getFileIcon(file.type, file.name);
+          return (
+            <li key={file.id || file.name} className="acct-file">
+              <span className="ds-file-icon" aria-hidden="true"><Icon /></span>
+              <span className="acct-file-body">
+                <span className="acct-file-name acct-truncate" title={file.name}>{file.name}</span>
+                <span className="acct-meta block !mt-0.5">{fileMeta(file)}</span>
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+      <form className="acct-rename" onSubmit={onRename}>
+        <label htmlFor="transfer-name" className="ds-label">Name</label>
+        <div className="acct-rename-row">
+          <input
+            id="transfer-name"
+            className="ds-input"
+            value={draftName}
+            onChange={(event) => onDraftName(event.target.value)}
+          />
+          <button type="submit" className="ds-btn ds-btn-ghost shrink-0" disabled={renaming || !draftName.trim() || draftName.trim() === (transfer.subject || '')}>
+            {renaming ? 'Saving…' : 'Save name'}
+          </button>
+        </div>
+      </form>
+      <div className="acct-actions">
+        <button type="button" className="ds-btn ds-btn-dark ds-btn-sm" onClick={onCopy}>
+          {copied ? <Check className="w-4 h-4" aria-hidden="true" /> : <Copy className="w-4 h-4" aria-hidden="true" />}
+          {copied ? 'Copied' : 'Copy link'}
+        </button>
+        <a className="ds-btn ds-btn-ghost ds-btn-sm" href={`/download/${transfer.shareId}`} target="_blank" rel="noreferrer">
+          <ExternalLink className="w-4 h-4" aria-hidden="true" />
+          Open
+        </a>
+        <button type="button" className="ds-btn ds-btn-danger ds-btn-sm" onClick={onDelete}>
+          <Trash2 className="w-4 h-4" aria-hidden="true" />
+          Delete
+        </button>
       </div>
+    </div>
+  );
+}
 
+function RequestDetail({ portal, copied, onBack, onCopy, onClose }) {
+  const status = requestStatus(portal);
+  const created = formatWhen(portal.createdAt);
+  const expires = formatWhen(portal.expiresAt);
+  const url = `${window.location.origin}/request/${portal.requestId}`;
+  const uploads = Array.isArray(portal.received) ? portal.received : [];
+  return (
+    <div className="acct-detail-card">
+      <button type="button" className="acct-back" onClick={onBack}>
+        <ArrowLeft className="w-4 h-4" aria-hidden="true" />
+        Back to list
+      </button>
+      <p className="ds-kicker"><b>●</b> Request</p>
+      <h2 className="acct-detail-title">{portal.title || 'File request'}</h2>
+      <dl className="acct-facts">
+        <div>
+          <dt>Status</dt>
+          <dd>{status}</dd>
+        </div>
+        {created ? (
+          <div>
+            <dt>Created</dt>
+            <dd>{created}</dd>
+          </div>
+        ) : null}
+        {expires ? (
+          <div>
+            <dt>Listed until</dt>
+            <dd>{expires}</dd>
+          </div>
+        ) : null}
+      </dl>
+      {portal.instructions ? <p className="ds-callout !text-sm mb-3">{portal.instructions}</p> : null}
+      {status === 'Closed' || status === 'No longer accepting files' ? (
+        <p className="acct-lead text-sm">People can no longer upload with this link.</p>
+      ) : (
+        <p className="acct-lead text-sm">Send this link to the person who has the files.</p>
+      )}
+      <p className="ds-url acct-url"><span>{url}</span></p>
+      {uploads.length > 0 ? (
+        <ul className="acct-received">
+          {uploads.map((item) => {
+            const sender = visibleSender(item.senderEmail);
+            const when = formatWhen(item.createdAt);
+            return (
+              <li key={item.shareId}>
+                {item.fileCount} files · {formatBytes(item.totalSize)}
+                {sender ? ` · ${sender}` : ''}
+                {when ? ` · ${when}` : ''}
+                {item.subject ? ` · ${item.subject}` : ''}
+              </li>
+            );
+          })}
+        </ul>
+      ) : (
+        <p className="acct-hint mt-3">No uploads yet.</p>
+      )}
+      <div className="acct-actions">
+        <button type="button" className="ds-btn ds-btn-dark ds-btn-sm" onClick={onCopy}>
+          {copied ? <Check className="w-4 h-4" aria-hidden="true" /> : <Copy className="w-4 h-4" aria-hidden="true" />}
+          {copied ? 'Copied' : 'Copy link'}
+        </button>
+        <a className="ds-btn ds-btn-ghost ds-btn-sm" href={url} target="_blank" rel="noreferrer">
+          <ExternalLink className="w-4 h-4" aria-hidden="true" />
+          Open
+        </a>
+        {portal.status === 'active' ? (
+          <button type="button" className="ds-btn ds-btn-danger ds-btn-sm" onClick={onClose}>
+            Close request
+          </button>
+        ) : null}
+      </div>
     </div>
   );
 }

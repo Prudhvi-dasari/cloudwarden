@@ -1,7 +1,22 @@
 import { useState, useEffect } from 'react';
-import { X, Download, ExternalLink, FileText, Film, Music, Image as ImageIcon, File, Loader2, Sparkles, Check, Copy } from 'lucide-react';
+import { X, Download, FileText, Film, Music, Image as ImageIcon, File, Check, Copy } from 'lucide-react';
 import { activeStorageProvider } from '../lib/storageProvider';
 import Portal from './Portal';
+
+const TYPE_ICONS = {
+  image: ImageIcon,
+  video: Film,
+  audio: Music,
+  pdf: FileText,
+  text: FileText,
+  file: File,
+};
+
+function fileExt(name) {
+  const parts = String(name || '').split('.');
+  if (parts.length < 2) return '';
+  return parts.pop().slice(0, 5).toUpperCase();
+}
 
 function formatBytes(bytes) {
   if (!bytes || bytes === 0) return '0 Bytes';
@@ -50,11 +65,13 @@ export default function FilePreviewModal({ file, shareId, onClose }) {
                 const text = await res.text();
                 if (isMounted) setTextContent(text.slice(0, 50000)); // Cap to 50KB for fast render
               }
-            } catch (e) {}
+            } catch {
+              // Ignore preview fetch errors
+            }
           }
           setLoading(false);
         }
-      } catch (err) {
+      } catch {
         if (isMounted) setLoading(false);
       }
     }
@@ -85,129 +102,111 @@ export default function FilePreviewModal({ file, shareId, onClose }) {
 
   if (!file) return null;
 
+  const TypeIcon = TYPE_ICONS[category] || File;
+  const ext = fileExt(file.file_name);
+
   return (
     <Portal>
-    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-2 sm:p-4 bg-slate-950/80 backdrop-blur-md animate-fadeIn">
-      <div className="relative w-full max-w-4xl max-h-[92vh] flex flex-col bg-white rounded-3xl shadow-2xl overflow-hidden border border-slate-200 animate-scale-in">
-        
-        {/* Header */}
-        <div className="flex items-center justify-between px-4 sm:px-6 py-3.5 sm:py-4 border-b border-slate-200/80 bg-slate-50/90">
-          <div className="flex items-center gap-3 min-w-0 pr-4">
-            <div className="w-10 h-10 rounded-2xl theme-btn-primary flex items-center justify-center shrink-0 shadow-sm text-white">
-              {category === 'image' && <ImageIcon className="w-5 h-5" />}
-              {category === 'video' && <Film className="w-5 h-5" />}
-              {category === 'audio' && <Music className="w-5 h-5" />}
-              {category === 'pdf' && <FileText className="w-5 h-5" />}
-              {category === 'text' && <FileText className="w-5 h-5" />}
-              {category === 'file' && <File className="w-5 h-5" />}
-            </div>
-            <div className="min-w-0">
-              <h3 className="text-sm sm:text-base font-black text-slate-900 truncate">{file.file_name}</h3>
-              <p className="text-xs text-slate-500 font-semibold">{formatBytes(file.file_size)}</p>
-            </div>
+    <div className="ds-modal-backdrop z-[10000]">
+      <div className="ds-modal is-wide dl-preview" role="dialog" aria-modal="true" aria-labelledby="file-preview-title">
+
+        <div className="dl-preview-head">
+          <span className="dl-type is-sm" data-kind={category} aria-hidden="true">
+            <TypeIcon />
+          </span>
+          <div className="min-w-0 flex-1">
+            <h3 id="file-preview-title" className="dl-preview-title" title={file.file_name}>{file.file_name}</h3>
+            <p className="dl-preview-sub">{ext ? `${ext} · ` : ''}{formatBytes(file.file_size)}</p>
           </div>
 
-          <div className="flex items-center gap-1.5 sm:gap-2">
+          <div className="dl-preview-tools">
             <button
+              type="button"
               onClick={handleCopyLink}
-              className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-bold text-slate-700 flex items-center gap-1.5 transition-all shadow-2xs"
+              aria-label={copied ? 'Link copied' : 'Copy link'}
+              className="ds-btn ds-btn-ghost ds-btn-sm min-h-11 sm:min-h-9"
             >
-              {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-              <span className="hidden sm:inline">{copied ? 'Copied' : 'Share Link'}</span>
+              {copied ? <Check className="w-4 h-4 text-[var(--ds-green)]" aria-hidden="true" /> : <Copy className="w-4 h-4" aria-hidden="true" />}
+              <span className="hidden sm:inline">{copied ? 'Copied' : 'Copy link'}</span>
             </button>
 
             <button
+              type="button"
               onClick={handleDirectDownload}
-              className="px-3 py-1.5 rounded-xl theme-btn-primary text-white text-xs font-bold flex items-center gap-1.5 transition-all shadow-2xs"
+              aria-label="Download"
+              className="ds-btn ds-btn-dark ds-btn-sm min-h-11 sm:min-h-9"
             >
-              <Download className="w-3.5 h-3.5" />
+              <Download className="w-4 h-4" aria-hidden="true" />
               <span className="hidden sm:inline">Download</span>
             </button>
 
             <button
+              type="button"
               onClick={onClose}
-              className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-200/50 transition-colors"
+              aria-label="Close preview"
+              className="ds-close"
             >
-              <X className="w-5 h-5" />
+              <X className="w-5 h-5" aria-hidden="true" />
             </button>
           </div>
         </div>
 
-        {/* Viewer Content Area */}
-        <div className="flex-1 overflow-auto bg-slate-900/95 flex items-center justify-center p-3 sm:p-6 min-h-[300px] max-h-[70vh]">
+        <div className="dl-preview-body" aria-live="polite">
           {loading ? (
-            <div className="flex flex-col items-center gap-3 text-slate-400">
-              <Loader2 className="w-10 h-10 animate-spin theme-text" />
-              <span className="text-sm font-semibold">Streaming preview from Cloud Edge CDN...</span>
-            </div>
+            <p className="dl-preview-wait">
+              <span className="ds-spinner" aria-hidden="true" />
+              Loading preview…
+            </p>
           ) : streamUrl ? (
             <>
               {category === 'image' && (
-                <img
-                  src={streamUrl}
-                  alt={file.file_name}
-                  className="max-h-full max-w-full object-contain rounded-xl shadow-lg animate-fadeIn"
-                />
+                <img src={streamUrl} alt={file.file_name} />
               )}
 
               {category === 'video' && (
-                <video
-                  src={streamUrl}
-                  controls
-                  autoPlay
-                  playsInline
-                  className="max-h-full max-w-full rounded-2xl shadow-2xl bg-black"
-                />
+                <video src={streamUrl} controls autoPlay playsInline />
               )}
 
               {category === 'audio' && (
-                <div className="w-full max-w-md p-6 bg-slate-800 rounded-3xl border border-slate-700 text-center space-y-4 shadow-2xl">
-                  <div className="w-20 h-20 mx-auto rounded-full theme-btn-primary flex items-center justify-center shadow-lg animate-pulse">
-                    <Music className="w-10 h-10 text-white" />
-                  </div>
-                  <h4 className="text-white font-bold text-base truncate">{file.file_name}</h4>
-                  <audio src={streamUrl} controls autoPlay className="w-full" />
+                <div className="dl-preview-audio">
+                  <span className="dl-type" data-kind="audio" aria-hidden="true">
+                    <Music />
+                  </span>
+                  <p className="dl-preview-title max-w-full">{file.file_name}</p>
+                  <audio src={streamUrl} controls autoPlay />
                 </div>
               )}
 
               {category === 'pdf' && (
-                <iframe
-                  src={`${streamUrl}#toolbar=1&navpanes=0`}
-                  title={file.file_name}
-                  className="w-full h-[65vh] rounded-xl border border-slate-700 bg-white"
-                />
+                <iframe src={`${streamUrl}#toolbar=1&navpanes=0`} title={file.file_name} />
               )}
 
               {category === 'text' && (
-                <pre className="w-full max-h-[60vh] overflow-auto p-4 bg-slate-950 text-emerald-400 font-mono text-xs sm:text-sm rounded-2xl border border-slate-800 text-left">
-                  {textContent || 'No text content or binary format.'}
-                </pre>
+                <pre>{textContent || 'No text content or binary format.'}</pre>
               )}
 
               {category === 'file' && (
-                <div className="text-center p-8 text-slate-400 space-y-3">
-                  <File className="w-16 h-16 mx-auto text-slate-600" />
-                  <p className="text-sm font-medium text-slate-300">Binary file preview not supported directly in browser.</p>
-                  <button
-                    onClick={handleDirectDownload}
-                    className="px-5 py-2.5 rounded-xl theme-btn-primary text-white text-xs font-bold inline-flex items-center gap-2 shadow-md"
-                  >
-                    <Download className="w-4 h-4" /> Download to View
+                <div className="ds-empty">
+                  <span className="dl-type" aria-hidden="true">
+                    <File />
+                  </span>
+                  <h3>No preview for this file type</h3>
+                  <p>Download it to open it on your device.</p>
+                  <button type="button" onClick={handleDirectDownload} className="ds-btn ds-btn-dark mt-2">
+                    <Download className="w-4 h-4" aria-hidden="true" /> Download to open
                   </button>
                 </div>
               )}
             </>
           ) : (
-            <div className="text-center text-slate-400">
-              <p className="text-sm">Preview stream offline.</p>
-            </div>
+            <p className="dl-preview-wait">The preview could not be loaded.</p>
           )}
         </div>
 
-        {/* Footer info */}
-        <div className="px-4 sm:px-6 py-2.5 bg-slate-50 border-t border-slate-200/80 flex items-center justify-between text-xs font-medium text-slate-500">
-          <span className="truncate">Public Link: <a href={downloadUrl} target="_blank" rel="noreferrer" className="theme-text font-bold hover:underline">{downloadUrl}</a></span>
-          <span className="shrink-0 font-bold text-slate-700">Encrypted Cloud Storage</span>
+        <div className="dl-preview-foot">
+          <p className="dl-preview-link">
+            Public link: <a href={downloadUrl} target="_blank" rel="noreferrer">{downloadUrl}</a>
+          </p>
         </div>
       </div>
     </div>

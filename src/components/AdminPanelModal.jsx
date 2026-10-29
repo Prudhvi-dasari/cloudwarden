@@ -162,7 +162,6 @@ export default function AdminPanelModal({ isOpen, onClose, user }) {
   const totalUsers = usersList.length;
   const proUsers = usersList.filter(u => u.plan === 'pro').length;
   const freeUsers = totalUsers - proUsers;
-  const estimatedRevenue = (proUsers * 9.99).toFixed(2);
 
   const filteredUsers = usersList.filter(u => {
     const matchesSearch = u.email.toLowerCase().includes(searchQuery.toLowerCase());
@@ -172,220 +171,199 @@ export default function AdminPanelModal({ isOpen, onClose, user }) {
 
   return (
     <Portal>
-    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-3 sm:p-4 bg-slate-950/75 backdrop-blur-md animate-fadeIn">
-      <div className="relative w-full max-w-4xl max-h-[92vh] flex flex-col bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden animate-scale-in">
-        
+    <div className="ds-modal-backdrop acct-modal-backdrop acct-ui">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="admin-panel-title"
+        className="ds-modal is-wide acct-admin"
+      >
+        <span className="acct-grabber" aria-hidden="true" />
+
         {/* Header */}
-        <div className="p-4 sm:p-6 bg-slate-900 text-white flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400 shadow-sm">
-              <Crown className="w-5 h-5 fill-amber-400" />
-            </div>
-            <div>
-              <h2 className="text-base sm:text-lg font-black tracking-tight flex items-center gap-2">
-                iTransfer Master Admin Hub
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500 text-slate-950 font-black">
-                  ADMIN ONLY
-                </span>
+        <div className="flex items-start justify-between gap-3 px-5 pt-5 pb-4 sm:px-6 border-b border-[var(--ds-line)]">
+          <div className="flex items-center gap-3 min-w-0">
+            <span className="ds-icon is-dark" aria-hidden="true"><Crown /></span>
+            <div className="min-w-0">
+              <h2 id="admin-panel-title" className="ds-modal-title !text-[1.2rem] flex flex-wrap items-center gap-2">
+                Admin hub
+                <span className="ds-badge ds-badge-dark">Admin only</span>
               </h2>
-              <p className="text-xs text-slate-400 font-medium">Logged in as {user?.email || 'iprudhvichowdary@gmail.com'}</p>
+              <p className="acct-hint acct-truncate mt-0.5">Signed in as {user?.email || 'iprudhvichowdary@gmail.com'}</p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="acct-head-actions">
             <button
+              type="button"
               onClick={fetchAdminData}
-              className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
-              title="Refresh Data"
+              className="acct-iconbtn"
+              title="Refresh data"
+              aria-label="Refresh data"
+              aria-busy={loading}
             >
-              <RefreshCw className="w-4 h-4" />
+              <RefreshCw aria-hidden="true" />
             </button>
-            <button
-              onClick={onClose}
-              className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
-            >
-              <X className="w-5 h-5" />
+            <button type="button" onClick={onClose} className="acct-iconbtn" aria-label="Close">
+              <X aria-hidden="true" />
             </button>
           </div>
         </div>
 
-        {/* Top KPI Metrics Bar */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 sm:p-6 bg-slate-50 border-b border-slate-200">
-          <div className="p-3.5 bg-white border border-slate-200 rounded-2xl shadow-2xs">
-            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Total Users</span>
-            <p className="text-xl sm:text-2xl font-black text-slate-900 mt-0.5">{totalUsers}</p>
+        <div className="acct-admin-scroll">
+          {/* Top KPI Metrics Bar */}
+          <dl className="grid grid-cols-2 sm:grid-cols-4 gap-2 px-5 py-4 sm:px-6">
+            <div className="acct-stat">
+              <dt><small>Users</small></dt>
+              <dd><b>{totalUsers}</b></dd>
+            </div>
+            <div className="acct-stat">
+              <dt><small>Pro</small></dt>
+              <dd><b>{proUsers}</b></dd>
+            </div>
+            <div className="acct-stat">
+              <dt><small>Free</small></dt>
+              <dd><b>{freeUsers}</b></dd>
+            </div>
+            <div className="acct-stat">
+              <dt><small>Free limit</small></dt>
+              <dd><b>6 GB · 7 days</b></dd>
+            </div>
+          </dl>
+
+          {/* Quick Grant Form */}
+          <div className="px-5 pb-4 sm:px-6">
+            <form onSubmit={handleAddNewUser} className="flex flex-col sm:flex-row sm:items-end gap-2">
+              <div className="ds-field flex-1 w-full">
+                <label htmlFor="admin-grant-email" className="ds-label">Customer email</label>
+                <input
+                  id="admin-grant-email"
+                  type="email"
+                  required
+                  value={newEmail}
+                  onChange={(e) => setNewEmail(e.target.value)}
+                  placeholder="client@agency.com"
+                  className="ds-input"
+                />
+              </div>
+
+              <div className="ds-field">
+                <label htmlFor="admin-grant-plan" className="ds-label">Plan</label>
+                <select
+                  id="admin-grant-plan"
+                  value={newPlan}
+                  onChange={(e) => setNewPlan(e.target.value)}
+                  className="ds-select"
+                >
+                  <option value="pro">Pro</option>
+                  <option value="free">Free</option>
+                </select>
+              </div>
+
+              <button type="submit" className="ds-btn ds-btn-dark shrink-0">
+                <PlusCircle className="w-4 h-4" aria-hidden="true" /> Save plan
+              </button>
+            </form>
           </div>
 
-          <div className="p-3.5 bg-white border border-amber-200 rounded-2xl shadow-2xs">
-            <span className="text-[11px] font-bold text-amber-700 uppercase tracking-wider flex items-center gap-1">
-              <Crown className="w-3 h-3 fill-amber-500 text-amber-500" /> PRO Members
-            </span>
-            <p className="text-xl sm:text-2xl font-black text-amber-900 mt-0.5">{proUsers}</p>
-          </div>
-
-          <div className="p-3.5 bg-white border border-emerald-200 rounded-2xl shadow-2xs">
-            <span className="text-[11px] font-bold text-emerald-700 uppercase tracking-wider">Est. Monthly Rev</span>
-            <p className="text-xl sm:text-2xl font-black text-emerald-900 mt-0.5">${estimatedRevenue}</p>
-          </div>
-
-          <div className="p-3.5 bg-white border border-indigo-200 rounded-2xl shadow-2xs">
-            <span className="text-[11px] font-bold text-indigo-700 uppercase tracking-wider">Vault Storage</span>
-            <p className="text-xl sm:text-2xl font-black text-indigo-900 mt-0.5">6 GB / 7 days</p>
-          </div>
-        </div>
-
-        {/* Quick Grant Form */}
-        <div className="p-4 sm:p-6 bg-white border-b border-slate-200">
-          <form onSubmit={handleAddNewUser} className="flex flex-col sm:flex-row items-center gap-2.5">
-            <div className="flex-1 w-full relative">
+          {/* User Search & Filter */}
+          <div className="px-5 py-3 sm:px-6 bg-[var(--ds-bg-soft)] border-y border-[var(--ds-line)] flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+            <label className="ds-input-wrap w-full sm:w-72">
+              <Search aria-hidden="true" />
+              <span className="acct-sr">Search users by email</span>
               <input
-                type="email"
-                required
-                value={newEmail}
-                onChange={(e) => setNewEmail(e.target.value)}
-                placeholder="Enter customer email (e.g. client@agency.com)"
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs sm:text-sm font-medium focus:outline-none focus:border-indigo-500"
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search users by email"
+                className="ds-input"
               />
+            </label>
+
+            <div className="ds-tabs self-start sm:self-auto" role="group" aria-label="Filter by plan">
+              {[
+                ['all', `All (${totalUsers})`],
+                ['pro', `Pro (${proUsers})`],
+                ['free', `Free (${freeUsers})`],
+              ].map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  className="ds-tab"
+                  aria-pressed={filterPlan === id}
+                  onClick={() => setFilterPlan(id)}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
-
-            <select
-              value={newPlan}
-              onChange={(e) => setNewPlan(e.target.value)}
-              className="px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs sm:text-sm font-bold text-slate-700 focus:outline-none"
-            >
-              <option value="pro">👑 Grant PRO Plan</option>
-              <option value="free">Free Plan</option>
-            </select>
-
-            <button
-              type="submit"
-              className="w-full sm:w-auto px-5 py-2.5 theme-btn-primary text-white text-xs sm:text-sm font-bold rounded-xl flex items-center justify-center gap-2 shadow-sm shrink-0"
-            >
-              <PlusCircle className="w-4 h-4" /> Grant Access
-            </button>
-          </form>
-        </div>
-
-        {/* User Search & Filter */}
-        <div className="p-4 sm:px-6 py-3 bg-slate-50/70 border-b border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-2.5">
-          <div className="relative w-full sm:w-72">
-            <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search users by email..."
-              className="w-full pl-9 pr-3.5 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium focus:outline-none focus:border-indigo-500"
-            />
           </div>
 
-          <div className="flex items-center gap-1.5 w-full sm:w-auto justify-end">
-            <button
-              onClick={() => setFilterPlan('all')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
-                filterPlan === 'all' ? 'bg-slate-900 text-white' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
-              }`}
-            >
-              All ({totalUsers})
-            </button>
-            <button
-              onClick={() => setFilterPlan('pro')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
-                filterPlan === 'pro' ? 'bg-amber-500 text-slate-950 font-black' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
-              }`}
-            >
-              Pro ({proUsers})
-            </button>
-            <button
-              onClick={() => setFilterPlan('free')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
-                filterPlan === 'free' ? 'bg-slate-700 text-white' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
-              }`}
-            >
-              Free ({freeUsers})
-            </button>
-          </div>
-        </div>
+          {/* Users Table */}
+          <div className="px-5 py-4 sm:px-6">
+            {loading ? (
+              <div className="ds-empty" aria-busy="true">
+                <span className="ds-spinner" aria-hidden="true" />
+                <span className="text-sm font-semibold">Loading users…</span>
+              </div>
+            ) : filteredUsers.length === 0 ? (
+              <div className="ds-empty acct-empty">
+                <span className="ds-icon" aria-hidden="true"><Users /></span>
+                <h3>No users match your filter</h3>
+              </div>
+            ) : (
+              <ul className="acct-rows">
+                {filteredUsers.map((u) => {
+                  const isProUser = u.plan === 'pro';
+                  const isMasterAdmin = u.email === 'iprudhvichowdary@gmail.com';
 
-        {/* Users Table */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6">
-          {loading ? (
-            <div className="flex flex-col items-center justify-center py-20 gap-3 text-slate-400">
-              <RefreshCw className="w-8 h-8 animate-spin theme-text" />
-              <span className="text-sm font-semibold">Loading user database...</span>
-            </div>
-          ) : filteredUsers.length === 0 ? (
-            <div className="text-center py-16 text-slate-400 space-y-2">
-              <Users className="w-12 h-12 mx-auto text-slate-300" />
-              <p className="text-sm font-bold text-slate-700">No users match your filter</p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {filteredUsers.map((u) => {
-                const isProUser = u.plan === 'pro';
-                const isMasterAdmin = u.email === 'iprudhvichowdary@gmail.com';
+                  return (
+                    <li key={u.email} className="acct-admin-user">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="font-semibold text-sm text-[var(--ds-ink)] acct-truncate" title={u.email}>{u.email}</span>
+                          {isMasterAdmin ? (
+                            <span className="ds-badge ds-badge-dark shrink-0">Admin</span>
+                          ) : isProUser ? (
+                            <span className="ds-badge ds-badge-blue shrink-0">
+                              <Crown className="w-3 h-3" aria-hidden="true" /> Pro
+                            </span>
+                          ) : (
+                            <span className="ds-badge shrink-0">Free</span>
+                          )}
+                        </div>
 
-                return (
-                  <div
-                    key={u.email}
-                    className="p-3 sm:p-4 bg-white border border-slate-200/90 rounded-2xl flex items-center justify-between gap-3 hover:border-indigo-200 transition-colors shadow-2xs"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-sm text-slate-900 truncate">{u.email}</span>
-                        {isMasterAdmin ? (
-                          <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 border border-purple-200">
-                            MASTER ADMIN
-                          </span>
-                        ) : isProUser ? (
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200 flex items-center gap-1">
-                            <Crown className="w-3 h-3 fill-amber-500" /> PRO
-                          </span>
-                        ) : (
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
-                            FREE
-                          </span>
-                        )}
+                        <p className="acct-meta flex items-center gap-2 flex-wrap">
+                          <span>{u.uploadsCount} uploads ({formatBytes(u.totalBytes)})</span>
+                          <span aria-hidden="true">·</span>
+                          <span>Active {new Date(u.lastActive).toLocaleDateString()}</span>
+                        </p>
                       </div>
 
-                      <p className="text-xs text-slate-500 font-medium mt-0.5 flex items-center gap-2 flex-wrap">
-                        <span>{u.uploadsCount} uploads ({formatBytes(u.totalBytes)})</span>
-                        <span>•</span>
-                        <span>Active: {new Date(u.lastActive).toLocaleDateString()}</span>
-                      </p>
-                    </div>
-
-                    {/* Action Buttons */}
-                    {!isMasterAdmin && (
-                      <div className="shrink-0 flex items-center gap-2">
+                      {/* Action Buttons */}
+                      {!isMasterAdmin && (
                         <button
+                          type="button"
                           onClick={() => handleTogglePlan(u.email, u.plan)}
-                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-2xs ${
-                            isProUser
-                              ? 'bg-rose-50 border border-rose-200 text-rose-700 hover:bg-rose-100'
-                              : 'bg-emerald-50 border border-emerald-200 text-emerald-700 hover:bg-emerald-100'
-                          }`}
+                          className={`ds-btn ds-btn-sm shrink-0 ${isProUser ? 'ds-btn-danger' : 'ds-btn-ghost'}`}
                         >
-                          {isProUser ? <UserX className="w-3.5 h-3.5" /> : <UserCheck className="w-3.5 h-3.5" />}
-                          <span>{isProUser ? 'Revoke to Free' : 'Grant PRO 👑'}</span>
+                          {isProUser ? <UserX className="w-4 h-4" aria-hidden="true" /> : <UserCheck className="w-4 h-4" aria-hidden="true" />}
+                          <span>{isProUser ? 'Set to Free' : 'Set to Pro'}</span>
                         </button>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
         </div>
 
         {/* Footer */}
-        <div className="p-4 border-t border-slate-200 bg-slate-50 flex items-center justify-between text-xs text-slate-500 font-medium">
-          <span>Changes take effect immediately across all client sessions.</span>
-          <button
-            onClick={onClose}
-            className="px-4 py-2 bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 font-bold rounded-xl"
-          >
-            Close Panel
+        <div className="ds-modal-foot flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-[var(--ds-muted)]">
+          <span>Plan changes here are saved in this browser only.</span>
+          <button type="button" onClick={onClose} className="ds-btn ds-btn-ghost ds-btn-sm">
+            Close
           </button>
         </div>
       </div>

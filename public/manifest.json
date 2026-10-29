@@ -1,6 +1,6 @@
 {
-  "name": "iTransfer — Fast & Secure File Sharing",
-  "short_name": "iTransfer",
+  "name": "SendToAnyone — Fast & Secure File Sharing",
+  "short_name": "SendToAnyone",
   "description": "Send large files free up to 6 GB. Password protection, expiry up to 7 days, and device transfer. Larger plans are not available yet.",
   "start_url": "/",
   "display": "standalone",

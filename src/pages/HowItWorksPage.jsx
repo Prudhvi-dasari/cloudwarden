@@ -1,15 +1,147 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import Navbar from '../components/Navbar';
-import Footer from '../components/Footer';
+import PageFrame from '../components/PageFrame';
 import AuthModal from '../components/AuthModal';
 import ProfileModal from '../components/ProfileModal';
+import { HomeFaq } from '../components/home/HomeSections';
 import { getStoredUser, clearUserSession } from '../lib/authSession';
 import {
-  Send, UploadCloud, Link2, Mail, ShieldCheck, Clock,
-  ArrowRight, Smartphone, Laptop, Sparkles, CheckCircle2,
-  Lock, Eye, RefreshCw, Zap
+  UploadCloud, Link2, Mail, Lock, ArrowRight, Check, Copy, QrCode,
+  FileArchive, FileVideo, Wifi, Zap,
 } from 'lucide-react';
+
+const STEPS = [
+  {
+    number: 1,
+    title: 'Drop files and pick how they leave',
+    desc: 'Drag in files or a folder, up to 6 GB free or 250 GB on Pro. Choose a link, an email, or a device transfer.',
+    detail: 'Nothing to install. It runs in the browser tab.',
+  },
+  {
+    number: 2,
+    title: 'Set the expiry and a password',
+    desc: 'Pick 1 hour, 24 hours, 3 days, or 7 days. Pro adds up to 180 days. A password is optional.',
+    detail: 'The password gates the download. The file is uploaded as you selected it.',
+  },
+  {
+    number: 3,
+    title: 'Share the link, or let us email it',
+    desc: 'Copy the link, show its QR code, or email the link. The message does not attach the file.',
+    detail: 'The recipient opens it in a browser, without an account. Speed depends on both connections.',
+  },
+];
+
+const MODES = [
+  {
+    icon: Link2,
+    tone: 'is-blue',
+    title: 'Shareable link',
+    body: 'For Slack, WhatsApp, or a client message. Upload once and paste the link anywhere.',
+    checks: ['Up to 6 GB free, 250 GB on Pro', 'QR code for the download link', 'Optional password'],
+  },
+  {
+    icon: Zap,
+    tone: '',
+    title: 'Device to device',
+    body: 'For moving a file between a phone and a laptop while both screens stay open.',
+    checks: ['Browser to browser over WebRTC', 'Both screens stay open', 'Not saved as a download link'],
+  },
+  {
+    icon: Mail,
+    tone: 'is-green',
+    title: 'Email the link',
+    body: 'For work inboxes that refuse anything over 25 MB. The mail carries the link, not the file.',
+    checks: ['Up to 10 recipients', 'The email contains the link', 'Accepted by mail is not opened'],
+  },
+];
+
+const FAQS = [
+  { q: 'Do I need to install anything?', a: 'No. Sending and receiving both happen in a browser tab on a phone or a computer.' },
+  { q: 'What does the recipient see?', a: 'A download page with the file names and sizes. If you set a password, they type it first. They do not need an account.' },
+  { q: 'How long does an upload take?', a: 'It depends on your connection and theirs. We do not promise a speed.' },
+  { q: 'What happens after the link expires?', a: 'The download page stops working. A scheduled cleanup deletes the files from storage.' },
+];
+
+function StepOneMock() {
+  return (
+    <>
+      <div className="ds-tabs">
+        <span className="ds-tab" aria-pressed="true"><Link2 className="w-3.5 h-3.5" />Link</span>
+        <span className="ds-tab"><Mail className="w-3.5 h-3.5" />Email</span>
+        <span className="ds-tab"><Wifi className="w-3.5 h-3.5" />Device</span>
+      </div>
+      <div className="pa-mini-drop mt-4">
+        <span><UploadCloud className="w-4 h-4" /></span>
+        <p className="ds-row-title">Drop files or a folder</p>
+        <p className="ds-row-sub">Up to 6 GB free · no account</p>
+      </div>
+      <div className="mt-3 rounded-2xl border border-[#e6e8ee]">
+        <div className="ds-row">
+          <span className="ds-file-icon"><FileVideo className="w-4 h-4" /></span>
+          <div className="flex-1 min-w-0"><p className="ds-row-title truncate">launch-film.mp4</p><p className="ds-row-sub">2.1 GB</p></div>
+        </div>
+        <div className="ds-row">
+          <span className="ds-file-icon"><FileArchive className="w-4 h-4" /></span>
+          <div className="flex-1 min-w-0"><p className="ds-row-title truncate">press-kit.zip</p><p className="ds-row-sub">340 MB</p></div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function StepTwoMock() {
+  return (
+    <>
+      <p className="ds-label">Link expires after</p>
+      <div className="mt-2 ds-choices">
+        {['1 hour', '24 hours', '3 days', '7 days'].map((label) => (
+          <span key={label} className={`ds-choice${label === '3 days' ? ' is-on' : ''}`}>{label}</span>
+        ))}
+      </div>
+      <div className="mt-5 rounded-2xl border border-[#e6e8ee]">
+        <div className="ds-row">
+          <span className="ds-icon is-sm"><Lock /></span>
+          <div className="flex-1 min-w-0"><p className="ds-row-title">Password</p><p className="ds-row-sub">Gates the download</p></div>
+          <span className="pa-toggle is-on" />
+        </div>
+        <div className="ds-row">
+          <div className="flex items-center h-10 w-full px-3 rounded-xl border border-[#d5d9e1] bg-white">
+            <span className="text-[#060a12] tracking-[0.3em] leading-none">••••••••</span>
+          </div>
+        </div>
+      </div>
+      <p className="mt-4 pa-spec">Stored as a SHA-256 hash · not in the email</p>
+    </>
+  );
+}
+
+function StepThreeMock() {
+  return (
+    <>
+      <div className="flex items-center justify-between gap-3">
+        <p className="ds-row-title">Your link is ready</p>
+        <span className="ds-badge ds-badge-green"><Check className="w-3 h-3" />Uploaded</span>
+      </div>
+      <div className="mt-4 flex items-center gap-2">
+        <div className="ds-url"><span className="truncate">sendtoanyone.com/d/<b>launch-film-q8m3x2ta</b></span></div>
+        <span className="ds-copy-btn"><span><Copy className="w-3.5 h-3.5" />Copy</span></span>
+      </div>
+      <div className="mt-4 grid grid-cols-[auto_minmax(0,1fr)] gap-4 items-center rounded-2xl border border-[#e6e8ee] p-4">
+        <span className="grid place-items-center w-16 h-16 rounded-xl bg-[#f6f7f9] border border-[#e6e8ee]"><QrCode className="w-8 h-8 text-[#060a12]" /></span>
+        <div className="min-w-0">
+          <p className="ds-row-title">Scan to open on a phone</p>
+          <p className="ds-row-sub">Same link as a QR code</p>
+        </div>
+      </div>
+      <div className="mt-3 ds-row rounded-2xl border border-[#e6e8ee]">
+        <span className="ds-file-icon bg-[#060a12] text-white"><Mail className="w-4 h-4" /></span>
+        <div className="flex-1 min-w-0"><p className="ds-row-title truncate">Sent to 2 addresses</p><p className="ds-row-sub">The email holds the link</p></div>
+      </div>
+    </>
+  );
+}
+
+const MOCKS = { 1: StepOneMock, 2: StepTwoMock, 3: StepThreeMock };
 
 export default function HowItWorksPage() {
   const [user, setUser] = useState(() => getStoredUser());
@@ -18,176 +150,133 @@ export default function HowItWorksPage() {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [activeStep, setActiveStep] = useState(1);
 
-  const steps = [
-    {
-      number: 1,
-      title: 'Choose your transfer mode & select files',
-      desc: 'Drag and drop files or folders up to 6 GB. Choose a device transfer, a share link, or email delivery.',
-      icon: UploadCloud,
-      detail: 'No software installation required. Drag files directly into the browser.',
-    },
-    {
-      number: 2,
-      title: 'Configure security, passwords & expiry',
-      desc: 'Choose an expiry from 1 hour up to 7 days and add a password. Longer retention is not available yet.',
-      icon: Lock,
-      detail: 'Files are client-encrypted with AES-256 before streaming to high-speed storage.',
-    },
-    {
-      number: 3,
-      title: 'Share the link or let iTransfer notify recipients',
-      desc: 'Copy the generated short link, scan the QR code from your smartphone, or let our automated mailer deliver high-priority inbox download links.',
-      icon: Link2,
-      detail: 'Recipients download at uncapped gigabit speeds with zero mandatory signup.',
-    },
-  ];
+  const onOpenAuth = (mode = 'signup') => {
+    setAuthMode(mode);
+    setIsAuthOpen(true);
+  };
+  const onOpenProfile = () => setIsProfileOpen(true);
+
+  const Mock = MOCKS[activeStep];
+  const active = STEPS[activeStep - 1];
 
   return (
-    <div className="min-h-screen flex flex-col text-white relative overflow-hidden bg-[#07080d]">
-      <div className="page-sky" aria-hidden="true" />
-<Navbar user={user} onOpenAuth={onOpenAuth} onOpenProfile={onOpenProfile} />
+    <>
+      <PageFrame
+        user={user}
+        onOpenAuth={onOpenAuth}
+        onOpenProfile={onOpenProfile}
+        eyebrow="How it works"
+        title="How SendToAnyone works"
+        accent={1}
+        subtitle="Three steps from your browser to theirs. Nothing to install, and no account to send up to 6 GB."
+        actions={(
+          <>
+            <Link to="/" className="ds-btn ds-btn-dark">Send a file<ArrowRight className="ds-btn-arrow w-4 h-4" /></Link>
+            <Link to="/features" className="ds-btn ds-btn-ghost">See features</Link>
+          </>
+        )}
+        nextLabel="Send a file"
+        nextTo="/"
+      >
+        <section aria-labelledby="walkthrough-title">
+          <h2 id="walkthrough-title" className="sr-only">Three steps</h2>
+          <div className="ds-split items-start">
+            <div className="pa-stepper" data-reveal>
+              {STEPS.map((step) => (
+                <button
+                  key={step.number}
+                  type="button"
+                  className="pa-stepbtn"
+                  aria-pressed={activeStep === step.number}
+                  onClick={() => setActiveStep(step.number)}
+                >
+                  <span className="pa-stepnum">0{step.number}</span>
+                  <strong>{step.title}</strong>
+                  <span>{step.desc}</span>
+                </button>
+              ))}
+              <p className="ds-callout mt-2" aria-live="polite">
+                <Check className="w-4 h-4 mt-1 shrink-0 text-[#12a150]" aria-hidden="true" />
+                <span>{active.detail}</span>
+              </p>
+            </div>
 
-      <main className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 py-12 sm:py-16 z-10 relative">
-        
-        {/* Header */}
-        <div className="text-center max-w-2xl mx-auto mb-12 animate-fadeIn">
-          <div className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold theme-bg-light theme-text mb-4 border border-[#c4a574]/25/80 shadow-2xs">
-            <Sparkles className="w-3.5 h-3.5" /> Simple, Fast & Secure
-          </div>
-          <h1 className="text-4xl sm:text-5xl font-semibold text-white tracking-tight mb-4 leading-tight">
-            How iTransfer Works
-          </h1>
-          <p className="text-base sm:text-lg text-white/55 font-medium leading-relaxed">
-            Sending large files has never been this effortless. Learn how our multi-mode file transfer engine connects your data securely.
-          </p>
-        </div>
-
-        {/* 3 Step Interactive Walkthrough */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-16">
-          {steps.map((step) => {
-            const Icon = step.icon;
-            const isActive = activeStep === step.number;
-            return (
-              <div
-                key={step.number}
-                onClick={() => setActiveStep(step.number)}
-                className={`custom-card p-6 sm:p-7 cursor-pointer transition-all duration-200 relative overflow-hidden ${
-                  isActive ? 'ring-2 ring-indigo-500 shadow-md bg-white' : 'hover:bg-[#17192e] bg-white/70'
-                }`}
-              >
-                <div className="flex items-center justify-between mb-4">
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-semibold text-base ${
-                    isActive ? 'theme-btn-primary' : 'bg-white/5 text-white/55'
-                  }`}>
-                    {step.number}
-                  </div>
-                  <div className="w-9 h-9 rounded-xl bg-[#c4a574]/12 text-[#c4a574] flex items-center justify-center">
-                    <Icon className="w-5 h-5" />
-                  </div>
-                </div>
-
-                <h3 className="text-lg font-bold text-white mb-2 tracking-tight">
-                  {step.title}
-                </h3>
-
-                <p className="text-sm text-white/55 leading-relaxed font-medium mb-4">
-                  {step.desc}
-                </p>
-
-                <div className="pt-3 border-t border-white/10 flex items-center gap-1.5 text-xs text-[#c4a574] font-bold">
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span>{step.detail}</span>
+            <div className="ds-frame lg:sticky lg:top-24" data-reveal style={{ '--d': '120ms' }}>
+              <div className="ds-frame-chrome">
+                <span className="ds-frame-dots" aria-hidden="true"><i /><i /><i /></span>
+                <span className="pa-screen-bar"><Lock aria-hidden="true" />sendtoanyone.com</span>
+                <span className="pa-spec hidden sm:inline-flex">Step 0{activeStep}/03</span>
+              </div>
+              <div className="ds-frame-screen" aria-hidden="true">
+                <div key={activeStep} className="pa-stage">
+                  <Mock />
                 </div>
               </div>
-            );
-          })}
-        </div>
-
-        {/* Transfer Methods Deep Dive */}
-        <div className="custom-card p-8 sm:p-10 mb-16 bg-[#17192e]">
-          <h2 className="text-2xl sm:text-3xl font-semibold text-white mb-6 text-center tracking-tight">
-            Choose the Perfect Method for Every Situation
-          </h2>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            
-            <div className="p-5 rounded-2xl bg-white/5 border border-white/10/80 space-y-3">
-              <div className="w-10 h-10 rounded-xl bg-indigo-100 text-[#c4a574] flex items-center justify-center font-bold">
-                <Link2 className="w-5 h-5" />
-              </div>
-              <h3 className="text-base font-bold text-white">Shareable Links</h3>
-              <p className="text-sm text-white/55 font-medium leading-relaxed">
-                Best for sending files in Slack, WhatsApp, Teams, or client project portals. Upload once and share the short link with anyone.
-              </p>
-              <ul className="space-y-1.5 text-xs font-semibold text-white/55 pt-2">
-                <li className="flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Up to 6 GB per transfer</li>
-                <li className="flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Instant QR code generation</li>
-                <li className="flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Optional password protection</li>
-              </ul>
             </div>
-
-            <div className="p-5 rounded-2xl bg-white/5 border border-white/10/80 space-y-3">
-              <div className="w-10 h-10 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center font-bold">
-                <Zap className="w-5 h-5" />
-              </div>
-              <h3 className="text-base font-bold text-white">Device P2P Streaming</h3>
-              <p className="text-sm text-white/55 font-medium leading-relaxed">
-                Best for moving files between your phone and laptop on the same Wi-Fi. Files stream directly with 0 server storage.
-              </p>
-              <ul className="space-y-1.5 text-xs font-semibold text-white/55 pt-2">
-                <li className="flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Unlimited file size</li>
-                <li className="flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> WebRTC P2P direct protocol</li>
-                <li className="flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> 100% private & zero trace</li>
-              </ul>
-            </div>
-
-            <div className="p-5 rounded-2xl bg-white/5 border border-white/10/80 space-y-3">
-              <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold">
-                <Mail className="w-5 h-5" />
-              </div>
-              <h3 className="text-base font-bold text-white">Inbox Email Delivery</h3>
-              <p className="text-sm text-white/55 font-medium leading-relaxed">
-                Best for sending client deliverables directly to work inboxes without worrying about standard 25MB attachment limits.
-              </p>
-              <ul className="space-y-1.5 text-xs font-semibold text-white/55 pt-2">
-                <li className="flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Up to 50 recipients per transfer</li>
-                <li className="flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Custom subject & message</li>
-                <li className="flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Delivery & open confirmations</li>
-              </ul>
-            </div>
-
           </div>
+        </section>
+
+        <section className="pa-block-lg" aria-labelledby="modes-title">
+          <div className="ds-section-head" data-reveal>
+            <p className="ds-kicker"><b>●</b> Transfer modes</p>
+            <h2 id="modes-title" className="ds-h2">Pick the mode that fits the person.</h2>
+            <p className="ds-lead">Each mode suits a different kind of handoff. The limits stay the same.</p>
+          </div>
+          <div className="ds-grid cols-3 mt-10">
+            {MODES.map(({ icon: Icon, tone, title, body, checks }, i) => (
+              <article key={title} className="ds-feature" data-reveal style={{ '--d': `${i * 70}ms` }}>
+                <span className={`ds-icon ${tone} mb-2`}><Icon /></span>
+                <h3>{title}</h3>
+                <p>{body}</p>
+                <ul className="ds-checks mt-auto pt-4 border-t border-[#e6e8ee]">
+                  {checks.map((c) => <li key={c}><Check strokeWidth={3} aria-hidden="true" />{c}</li>)}
+                </ul>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section className="pa-block-lg" aria-labelledby="after-title">
+          <div className="ds-section-head" data-reveal>
+            <p className="ds-kicker"><b>●</b> After you send</p>
+            <h2 id="after-title" className="ds-h2">What happens on their side.</h2>
+          </div>
+          <ol className="ds-steps is-row mt-10" style={{ '--n': 3 }}>
+            <li className="ds-step" data-reveal>
+              <h3>They open the link</h3>
+              <p>A download page lists the files and sizes. No account, no app.</p>
+            </li>
+            <li className="ds-step" data-reveal style={{ '--d': '80ms' }}>
+              <h3>They type the password</h3>
+              <p>Only if you set one. You share it on another channel.</p>
+            </li>
+            <li className="ds-step" data-reveal style={{ '--d': '160ms' }}>
+              <h3>The link closes</h3>
+              <p>On the time you picked. A scheduled cleanup deletes the files.</p>
+            </li>
+          </ol>
+        </section>
+
+        <section className="pa-block-lg" aria-labelledby="ready-title">
+          <div className="ds-band text-center" data-reveal>
+            <p className="ds-kicker justify-center text-white/60"><b>●</b> Free to start</p>
+            <h2 id="ready-title" className="ds-h2 mt-3">Ready to send a file?</h2>
+            <p className="ds-lead mt-4 mx-auto max-w-xl">Free, up to 6 GB, with no registration. Links stay open up to 7 days.</p>
+            <div className="mt-7 flex flex-wrap justify-center gap-3">
+              <Link to="/" className="ds-btn ds-btn-light ds-btn-lg">Start a transfer<ArrowRight className="ds-btn-arrow w-4 h-4" /></Link>
+              <Link to="/pricing" className="ds-btn ds-btn-outline-light ds-btn-lg">See Pro</Link>
+            </div>
+          </div>
+        </section>
+
+        <div className="pa-flush">
+          <HomeFaq
+            faqs={FAQS}
+            title="Before your first send."
+            lead="Short answers about installs, recipients, speed, and expiry."
+          />
         </div>
-
-        {/* CTA Section */}
-        <div className="text-center bg-gradient-to-r from-indigo-600 via-indigo-700 to-purple-700 text-white rounded-3xl p-8 sm:p-12 shadow-xl">
-          <h2 className="text-3xl sm:text-4xl font-semibold mb-3 tracking-tight">
-            Ready to transfer files faster?
-          </h2>
-          <p className="text-base sm:text-lg text-indigo-100 max-w-xl mx-auto mb-6 font-medium">
-            Send your first transfer now. No credit card, no registration required.
-          </p>
-          <Link
-            to="/"
-            className="inline-flex items-center gap-2 bg-[#17192e] text-indigo-900 hover:bg-white/5 font-semibold text-base px-8 py-3.5 rounded-2xl shadow-lg transition-transform hover:scale-105"
-          >
-            <span>Start Transferring Now</span>
-            <ArrowRight className="w-5 h-5" />
-          </Link>
-        </div>
-
-      </main>
-
-      
-      <div className="relative z-10 max-w-6xl mx-auto px-4 sm:px-6 pb-12">
-        <div className="pt-8 border-t border-white/10">
-          <Link to="/" className="inline-flex items-center gap-2 rounded-full bg-white text-black text-sm font-semibold px-5 py-3 hover:bg-white/90">
-            Send a file
-          </Link>
-        </div>
-      </div>
-
-      <Footer />
+      </PageFrame>
 
       <AuthModal
         isOpen={isAuthOpen}
@@ -205,6 +294,6 @@ export default function HowItWorksPage() {
           setUser(null);
         }}
       />
-    </div>
+    </>
   );
 }

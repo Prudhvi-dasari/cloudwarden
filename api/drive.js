@@ -82,7 +82,7 @@ export default async function handler(req, res) {
 
   if (req.method === 'OPTIONS') return res.status(200).end();
 
-  const urlObj = new URL(req.url, 'https://itransfer.iprudhvi.in');
+  const urlObj = new URL(req.url, 'https://sendtoanyone.com');
   const action = urlObj.searchParams.get('action') || (req.method === 'GET' ? 'stats' : null);
   const fileId = urlObj.searchParams.get('fileId');
   const shareId = urlObj.searchParams.get('shareId');

@@ -1,8 +1,9 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useDropzone } from 'react-dropzone';
 import {
-  UploadCloud, FilePlus, FolderPlus, ShieldCheck,
-  Zap, Lock, AlertTriangle, CheckCircle2
+  FilePlus, FolderPlus, ShieldCheck, Clock, Gift, UserX,
+  AlertTriangle, ArrowDown, FileArchive, FileImage, FileVideo,
 } from 'lucide-react';
 
 const DANGEROUS_EXTENSIONS = new Set([
@@ -11,10 +12,43 @@ const DANGEROUS_EXTENSIONS = new Set([
   'ps1', 'ps2', 'apk'
 ]);
 
-export default function DropZone({ onFilesSelected, variant = 'card' }) {
+function hasFiles(event) {
+  return Array.from(event.dataTransfer?.types || []).includes('Files');
+}
+
+function DropArt({ hot = false, size = 'md' }) {
+  return (
+    <div className={`ds-drop-art is-${size} ${hot ? 'is-hot' : ''}`} aria-hidden="true">
+      <span className="ds-drop-ripple" />
+      <span className="ds-drop-ripple is-late" />
+      <span className="ds-drop-tray-back" />
+      <span className="ds-drop-doc is-a">
+        <FileImage />
+        <em>JPG</em>
+      </span>
+      <span className="ds-drop-doc is-b">
+        <FileArchive />
+        <em>ZIP</em>
+      </span>
+      <span className="ds-drop-doc is-c">
+        <FileVideo />
+        <em>MP4</em>
+      </span>
+      <span className="ds-drop-tray-front">
+        <span className="ds-drop-arrow"><ArrowDown /></span>
+      </span>
+    </div>
+  );
+}
+
+export default function DropZone({ onFilesSelected, windowDrop = false }) {
   const [securityAlert, setSecurityAlert] = useState(null);
+  const [windowDragging, setWindowDragging] = useState(false);
   const fileInputRef = useRef(null);
   const folderInputRef = useRef(null);
+  const alertTimer = useRef(null);
+
+  useEffect(() => () => clearTimeout(alertTimer.current), []);
 
   const filterSafeFiles = useCallback((rawFiles) => {
     const safe = [];
@@ -29,14 +63,16 @@ export default function DropZone({ onFilesSelected, variant = 'card' }) {
     }
 
     if (blocked.length > 0) {
-      setSecurityAlert(`Blocked ${blocked.length} executable file(s) for your safety.`);
-      setTimeout(() => setSecurityAlert(null), 8000);
+      setSecurityAlert(`Blocked ${blocked.length} executable file${blocked.length === 1 ? '' : 's'} for your safety.`);
+      clearTimeout(alertTimer.current);
+      alertTimer.current = setTimeout(() => setSecurityAlert(null), 8000);
     }
     return safe;
   }, []);
 
   const onDrop = useCallback(
     (acceptedFiles) => {
+      setWindowDragging(false);
       if (acceptedFiles?.length > 0) {
         const safeFiles = filterSafeFiles(acceptedFiles);
         if (safeFiles.length > 0) onFilesSelected(safeFiles);
@@ -47,9 +83,46 @@ export default function DropZone({ onFilesSelected, variant = 'card' }) {
 
   const { getRootProps, getInputProps, isDragActive, open } = useDropzone({
     onDrop,
-    noClick: false,
-    noKeyboard: false,
+    noClick: true,
+    noKeyboard: true,
   });
+
+  const overlayZone = useDropzone({
+    onDrop,
+    noClick: true,
+    noKeyboard: true,
+    onDragLeave: () => setWindowDragging(false),
+  });
+
+  // A file dragged anywhere over the window opens a full-page drop target.
+  useEffect(() => {
+    if (!windowDrop) return undefined;
+    let depth = 0;
+    const enter = (event) => {
+      if (!hasFiles(event)) return;
+      depth += 1;
+      setWindowDragging(true);
+    };
+    const leave = (event) => {
+      if (!hasFiles(event)) return;
+      depth = Math.max(0, depth - 1);
+      if (depth === 0) setWindowDragging(false);
+    };
+    const reset = () => {
+      depth = 0;
+      setWindowDragging(false);
+    };
+    window.addEventListener('dragenter', enter);
+    window.addEventListener('dragleave', leave);
+    window.addEventListener('drop', reset);
+    window.addEventListener('dragend', reset);
+    return () => {
+      window.removeEventListener('dragenter', enter);
+      window.removeEventListener('dragleave', leave);
+      window.removeEventListener('drop', reset);
+      window.removeEventListener('dragend', reset);
+    };
+  }, [windowDrop]);
 
   const handleNativeFileChange = (e) => {
     e.stopPropagation();
@@ -57,14 +130,7 @@ export default function DropZone({ onFilesSelected, variant = 'card' }) {
       const safe = filterSafeFiles(Array.from(e.target.files));
       if (safe.length > 0) onFilesSelected(safe);
     }
-  };
-
-  const handleFolderChange = (e) => {
-    e.stopPropagation();
-    if (e.target.files?.length > 0) {
-      const safe = filterSafeFiles(Array.from(e.target.files));
-      if (safe.length > 0) onFilesSelected(safe);
-    }
+    e.target.value = '';
   };
 
   const triggerFileSelect = (e) => {
@@ -81,6 +147,16 @@ export default function DropZone({ onFilesSelected, variant = 'card' }) {
     folderInputRef.current?.click();
   };
 
+  const onKeyDown = (e) => {
+    if (e.target !== e.currentTarget) return;
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      triggerFileSelect();
+    }
+  };
+
+  const hot = isDragActive;
+
   return (
     <div className="w-full relative z-20">
       <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleNativeFileChange} />
@@ -92,124 +168,72 @@ export default function DropZone({ onFilesSelected, variant = 'card' }) {
         directory="true"
         multiple
         className="hidden"
-        onChange={handleFolderChange}
+        onChange={handleNativeFileChange}
       />
 
       {securityAlert && (
-        <div className="w-full mb-3.5 p-3 bg-[#c47a7a]/15 border border-[#c47a7a]/40 text-[#f5f0e8] text-xs font-semibold rounded-2xl flex items-center gap-2.5 animate-fadeIn">
-          <AlertTriangle className="w-4 h-4 shrink-0 text-[#c47a7a]" />
-          <span className="flex-1 leading-snug">{securityAlert}</span>
+        <div role="alert" className="ds-alert is-danger mb-3">
+          <AlertTriangle className="w-4 h-4 shrink-0" aria-hidden="true" />
+          <span>{securityAlert}</span>
         </div>
       )}
 
-      {variant === 'orbit' ? (
-        <div className="flex flex-col items-center">
-          <div
-            {...getRootProps()}
-            onClick={triggerFileSelect}
-            role="button"
-            aria-label="Start, add files"
-            className={`relative w-[260px] h-[260px] sm:w-[340px] sm:h-[340px] cursor-pointer select-none orbit-breathe ${
-              isDragActive ? 'scale-105' : ''
-            } transition-transform duration-300`}
-          >
-            <input {...getInputProps()} />
-            <div className="absolute inset-0 rounded-full border border-[rgba(196,165,116,0.25)]" />
-            <div
-              className={`absolute inset-[14px] rounded-full border-[10px] transition-colors ${
-                isDragActive ? 'border-[#f5f0e8]' : 'border-[#c4a574]'
-              }`}
-            />
-            <div className="absolute inset-[42px] rounded-full bg-[#141311] border border-white/10 flex flex-col items-center justify-center text-[#c4a574] shadow-[inset_0_0_40px_rgba(196,165,116,0.08)]">
-              <span className="font-display text-4xl sm:text-5xl font-semibold tracking-tight text-[#f5f0e8]">
-                {isDragActive ? 'Drop' : 'Start'}
-              </span>
-              <span className="mt-2 text-[11px] font-medium text-[#6b665c] uppercase tracking-[0.18em]">
-                Transfer
-              </span>
-            </div>
-          </div>
-          <p className="mt-5 text-sm font-medium text-[#a39e94]">
-            Click or drag files into the ring
+      <div
+        {...getRootProps({ onKeyDown })}
+        onClick={triggerFileSelect}
+        role="button"
+        tabIndex={0}
+        aria-label="Choose files to send, or drop them here"
+        className={`ds-drop ${hot ? 'is-drag' : ''}`}
+      >
+        <input {...getInputProps({ 'aria-label': 'Choose files to send' })} />
+        <svg className="ds-drop-border" aria-hidden="true">
+          <rect x="1" y="1" rx="21" ry="21" />
+        </svg>
+        <p className="sr-only" aria-live="polite">
+          {hot ? 'Release to add your files' : ''}
+        </p>
+
+        <DropArt hot={hot} />
+
+        <div className="ds-drop-copy">
+          <h3 className="ds-drop-title">
+            {hot ? 'Release to add them' : 'Drop files or a folder'}
+          </h3>
+          <p className="ds-drop-sub">
+            {hot ? 'We will list them before anything uploads.' : 'Or browse your device. 6 GB free, no account.'}
           </p>
-          <button
-            type="button"
-            onClick={triggerFolderSelect}
-            className="mt-3 text-sm font-semibold text-[#c4a574] underline-offset-4 hover:underline cursor-pointer"
-          >
-            or choose a folder
+        </div>
+
+        <div className="ds-drop-actions" onClick={(e) => e.stopPropagation()}>
+          <button type="button" onClick={triggerFileSelect} className="ds-btn ds-btn-dark">
+            <FilePlus className="w-4 h-4" aria-hidden="true" />
+            Browse Files
+          </button>
+          <button type="button" onClick={triggerFolderSelect} className="ds-btn ds-btn-ghost">
+            <FolderPlus className="w-4 h-4" aria-hidden="true" />
+            Select Folder
           </button>
         </div>
-      ) : (
-        <div
-          {...getRootProps()}
-          onClick={triggerFileSelect}
-          className={`group relative rounded-[28px] bg-white text-[#1c1917] shadow-[0_30px_70px_-28px_rgba(20,16,70,0.55)] cursor-pointer p-6 sm:p-8 text-center select-none transition-transform duration-300 ${
-            isDragActive ? 'scale-[1.02]' : ''
-          }`}
-        >
-          <input {...getInputProps()} />
 
-          <div className={`drop-orbit ${isDragActive ? 'is-hot' : ''}`}>
-            <svg className="drop-orbit-svg" viewBox="0 0 120 120" aria-hidden="true">
-              <circle className="orbit-dash" cx="60" cy="60" r="54" />
-              <circle className="orbit-dash inner" cx="60" cy="60" r="46" />
-            </svg>
-            <span className="drop-orbit-core">
-              <UploadCloud className="w-7 h-7 sm:w-8 sm:h-8 stroke-[2.2]" />
-            </span>
-          </div>
+        <ul className="ds-drop-meta" aria-label="Free plan">
+          <li><Gift aria-hidden="true" />6 GB free</li>
+          <li><Clock aria-hidden="true" />Up to 7 days</li>
+          <li><UserX aria-hidden="true" />No signup</li>
+          <li><ShieldCheck aria-hidden="true" />Executables blocked</li>
+        </ul>
+      </div>
 
-          <div className="space-y-1.5 mb-6">
-            <h3 className="text-base sm:text-lg font-display font-semibold text-[#1c1917] tracking-tight">
-              {isDragActive ? 'Release to add your files' : 'Drop files or folders here'}
-            </h3>
-            <p className="text-xs sm:text-sm text-[#57534e] font-medium max-w-sm mx-auto leading-relaxed">
-              Or browse. Folders work too. Up to 6 GB, no account.
-            </p>
+      {windowDrop && windowDragging && typeof document !== 'undefined' && createPortal(
+        <div {...overlayZone.getRootProps()} className="ds-drop-overlay" role="presentation">
+          <input {...overlayZone.getInputProps({ 'aria-hidden': true, tabIndex: -1 })} />
+          <div className="ds-drop-overlay-card">
+            <DropArt hot size="lg" />
+            <p className="ds-drop-overlay-title">Drop anywhere to add</p>
+            <p className="ds-drop-overlay-sub">Up to 6 GB free. Executable files are blocked.</p>
           </div>
-
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="flex flex-col sm:flex-row items-center justify-center gap-2.5 max-w-xs sm:max-w-md mx-auto"
-          >
-            <button
-              type="button"
-              onClick={triggerFileSelect}
-              className="w-full sm:w-auto px-5 py-2.5 rounded-full bg-[#1c1917] text-white text-xs sm:text-sm font-semibold flex items-center justify-center gap-2 cursor-pointer hover:bg-black"
-            >
-              <FilePlus className="w-4 h-4" />
-              Browse Files
-            </button>
-            <button
-              type="button"
-              onClick={triggerFolderSelect}
-              className="w-full sm:w-auto px-5 py-2.5 rounded-full bg-[#f4f1ea] hover:bg-[#ebe6dc] text-[#1c1917] text-xs sm:text-sm font-semibold flex items-center justify-center gap-2 border border-black/10 cursor-pointer"
-            >
-              <FolderPlus className="w-4 h-4" />
-              Select Folder
-            </button>
-          </div>
-
-          <div className="mt-6 pt-5 border-t border-black/8 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-[11px] font-semibold text-[#78716c]">
-            <span className="inline-flex items-center gap-1.5">
-              <Zap className="w-3.5 h-3.5" />
-              6 GB free
-            </span>
-            <span className="inline-flex items-center gap-1.5">
-              <Lock className="w-3.5 h-3.5" />
-              Encrypted
-            </span>
-            <span className="inline-flex items-center gap-1.5">
-              <ShieldCheck className="w-3.5 h-3.5" />
-              No ads
-            </span>
-            <span className="inline-flex items-center gap-1.5">
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              No signup
-            </span>
-          </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

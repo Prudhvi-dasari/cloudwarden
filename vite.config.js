@@ -1,19 +1,19 @@
-import { defineConfig, loadEnv } from 'vite'
+import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
-import { handleR2Request } from './functions/lib/r2Engine.js'
-import { handlePaymentRequest } from './functions/lib/dodo.js'
+import { dispatchLocalViteRequest, loadIsolatedEnv } from './functions/lib/localIsolation.js'
+import { resolve } from 'node:path'
 
 function readBody(req) {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolveBody, reject) => {
     const chunks = []
     req.on('data', (chunk) => chunks.push(chunk))
-    req.on('end', () => resolve(Buffer.concat(chunks)))
+    req.on('end', () => resolveBody(Buffer.concat(chunks)))
     req.on('error', reject)
   })
 }
 
-function localApi(env) {
+function localApi({ isolated, env }) {
   return {
     name: 'itransfer-r2-api',
     configureServer(server) {
@@ -23,14 +23,25 @@ function localApi(env) {
         if (!isR2 && !isPay) return next()
         try {
           const body = req.method === 'GET' || req.method === 'HEAD' ? undefined : await readBody(req)
-          const request = new Request(`http://localhost${req.url}`, {
+          const headers = { 'content-type': req.headers['content-type'] || 'application/json' }
+          if (req.headers.authorization) headers.authorization = req.headers.authorization
+          if (req.headers.cookie) headers.cookie = req.headers.cookie
+          if (req.headers['webhook-id']) headers['webhook-id'] = req.headers['webhook-id']
+          if (req.headers['webhook-signature']) headers['webhook-signature'] = req.headers['webhook-signature']
+          if (req.headers['webhook-timestamp']) headers['webhook-timestamp'] = req.headers['webhook-timestamp']
+          if (req.headers['x-transfer-password']) headers['x-transfer-password'] = req.headers['x-transfer-password']
+          if (req.headers['x-cleanup-secret']) headers['x-cleanup-secret'] = req.headers['x-cleanup-secret']
+          const request = new Request(`http://127.0.0.1${req.url}`, {
             method: req.method,
-            headers: { 'content-type': req.headers['content-type'] || 'application/json' },
+            headers,
             body,
           })
-          const response = isPay
-            ? await handlePaymentRequest({ request, env })
-            : await handleR2Request({ request, env })
+          const response = await dispatchLocalViteRequest({
+            request,
+            isolated,
+            env,
+            kind: isPay ? 'payment' : 'r2',
+          })
           res.statusCode = response.status
           response.headers.forEach((value, key) => res.setHeader(key, value))
           res.end(Buffer.from(await response.arrayBuffer()))
@@ -43,13 +54,41 @@ function localApi(env) {
   }
 }
 
-export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, process.cwd(), '')
+export default defineConfig(({ command }) => {
+  const isolated = command === 'serve' && process.env.ITRANSFER_ISOLATED === '1'
+  const env = isolated ? loadIsolatedEnv(process.cwd()) : {}
   return {
+    ...(isolated ? { envDir: resolve(process.cwd(), 'env/isolated') } : {}),
     plugins: [
       react(),
       tailwindcss(),
-      localApi(env),
+      localApi({ isolated, env }),
     ],
+    build: {
+      rollupOptions: {
+        output: {
+          // New URL prefix so a poisoned edge cache of the previous asset names is not reused.
+          entryFileNames: 'assets/[name]-[hash]-b.js',
+          chunkFileNames: 'assets/[name]-[hash]-b.js',
+          assetFileNames: 'assets/[name]-[hash]-b[extname]',
+          manualChunks(id) {
+            if (id.includes('node_modules')) {
+              if (id.includes('react') || id.includes('scheduler')) {
+                return 'vendor-react';
+              }
+              if (id.includes('lucide-react')) {
+                return 'vendor-icons';
+              }
+              if (id.includes('@supabase')) {
+                return 'vendor-supabase';
+              }
+              if (id.includes('peerjs')) {
+                return 'vendor-p2p';
+              }
+            }
+          },
+        },
+      },
+    },
   }
 })

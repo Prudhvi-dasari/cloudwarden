@@ -1,0 +1,24 @@
+# Preview-only placeholders. Do not copy production secrets into this file.
+# Cloudflare Preview is still pointed at production. Do not deploy this profile
+# until the dashboard values match it and the encrypted keys are known to be
+# test-only. Names do not prove that.
+
+SUPABASE_URL=https://replace-with-preview-project.supabase.co
+SUPABASE_PUBLISHABLE_KEY=replace-with-preview-publishable-key
+SUPABASE_SERVICE_ROLE_KEY=replace-with-preview-service-role-key
+VITE_SUPABASE_URL=https://replace-with-preview-project.supabase.co
+VITE_SUPABASE_PUBLISHABLE_KEY=replace-with-preview-publishable-key
+
+CLOUDFLARE_R2_BUCKET=itransfer-preview
+CLOUDFLARE_R2_ACCOUNT_ID=replace-with-preview-account
+CLOUDFLARE_R2_ACCESS_KEY_ID=replace-with-preview-access-key
+CLOUDFLARE_R2_SECRET_ACCESS_KEY=replace-with-preview-secret-key
+
+APP_URL=https://replace-with-preview-host.itransfer-app.pages.dev
+
+# Leave Resend unset unless every test recipient is listed below.
+# PREVIEW_EMAIL_MODE=allowlist
+# PREVIEW_EMAIL_ALLOWLIST=qa@example.com
+
+CLEANUP_SECRET=preview-replace-this-secret
+RATE_LIMIT_SCOPE=preview

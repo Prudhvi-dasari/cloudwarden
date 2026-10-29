@@ -10,10 +10,25 @@
     { "name": "UPLOAD_LIMIT", "namespace_id": "910001", "simple": { "limit": 30, "period": 60 } },
     { "name": "PARTS_LIMIT", "namespace_id": "910002", "simple": { "limit": 120, "period": 60 } },
     { "name": "DOWNLOAD_LIMIT", "namespace_id": "910003", "simple": { "limit": 120, "period": 60 } },
+    // Kept so a script-only rollback to the previous worker still has this native binding. The current script does not call it.
     { "name": "PASSWORD_LIMIT", "namespace_id": "910004", "simple": { "limit": 8, "period": 60 } },
     { "name": "CLAIM_LIMIT", "namespace_id": "910005", "simple": { "limit": 20, "period": 60 } },
     { "name": "DELETE_LIMIT", "namespace_id": "910006", "simple": { "limit": 20, "period": 60 } },
     { "name": "REQUEST_LIMIT", "namespace_id": "910007", "simple": { "limit": 10, "period": 60 } },
     { "name": "EMAIL_LIMIT", "namespace_id": "910008", "simple": { "limit": 5, "period": 60 } }
-  ]
+  ],
+  "durable_objects": {
+    "bindings": [
+      { "name": "PASSWORD_LIMIT_DO", "class_name": "PasswordRateLimit" }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1-password-strict",
+      "new_sqlite_classes": ["PasswordRateLimit"]
+    }
+  ],
+  "observability": {
+    "enabled": true
+  }
 }

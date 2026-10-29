@@ -1,10 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { isAdmin, isUserPro } from '../lib/authSession';
 import { useAccount } from '../lib/AccountContext';
+import { myFilesAction } from '../lib/myFilesNav';
+import MyUploadsDrawer from './MyUploadsDrawer';
 import {
   Send, Crown, FolderKanban, Menu, X,
-  ChevronDown, Wifi, Link2, Mail, ArrowRight, Lock, QrCode, Hash, Zap, Inbox, HelpCircle, Scale
+  ChevronDown, Wifi, Link2, Mail, ArrowRight, Lock, QrCode, Hash, Zap, Inbox, HelpCircle, Scale, BookOpen,
+  AppWindow, Users, Code2, Blocks, Activity, ScrollText,
 } from 'lucide-react';
 
 const NAV_LINKS = [
@@ -20,32 +23,73 @@ const MORE_GROUPS = [
     label: 'Send another way',
     items: [
       { title: 'QR Transfer', desc: 'Scan to move a file between two screens', path: '/qr-transfer', icon: QrCode },
-      { title: 'Email Transfer', desc: 'Past the inbox size limit, link in the mail', path: '/send-files-by-email', icon: Mail },
+      { title: 'Large files', desc: '6 GB, no account, link up to 7 days', path: '/send-large-files', icon: Link2 },
+      { title: 'No account', desc: 'Sender and recipient can both skip signup', path: '/send-files-without-signup', icon: Send },
+      { title: 'How to send', desc: 'The message carries the link, not the file', path: '/how-to-send-large-files', icon: Mail },
     ],
   },
   {
     label: 'Check a file',
     items: [
       { title: 'Checksum', desc: 'Verify a download has not changed', path: '/checksum', icon: Hash },
-      { title: 'Compare', desc: 'See iTransfer next to the usual tools', path: '/compare', icon: Scale },
+      { title: 'Compare', desc: 'See SendToAnyone next to the usual tools', path: '/compare', icon: Scale },
     ],
   },
   {
     label: 'Learn',
     items: [
       { title: 'Features', desc: 'What you can send and how it arrives', path: '/features', icon: Zap },
+      { title: 'How it works', desc: 'A walkthrough of link, email, and device transfer', path: '/how-it-works', icon: BookOpen },
+      { title: 'Resources', desc: 'Guides for size, password, and requests', path: '/resources', icon: BookOpen },
       { title: 'Help', desc: 'Answers and a way to reach us', path: '/help', icon: HelpCircle },
+    ],
+  },
+  {
+    label: 'Product',
+    items: [
+      { title: 'Apps', desc: 'What exists today, and what does not', path: '/apps', icon: AppWindow },
+      { title: 'Teams', desc: 'Shared sending is not a billed plan yet', path: '/teams', icon: Users },
+      { title: 'API', desc: 'Notes for the transfer routes', path: '/api-docs', icon: Code2 },
+      { title: 'Widget', desc: 'A preview of an embed, not a live install', path: '/widget', icon: Blocks },
+      { title: 'Compliance', desc: 'What this product does not certify', path: '/compliance', icon: Lock },
+      { title: 'Status', desc: 'Whether the service is up', path: '/status', icon: Activity },
+      { title: 'Changelog', desc: 'What changed in the product', path: '/changelog', icon: ScrollText },
     ],
   },
 ];
 
-export default function Navbar({ onOpenAuth, onOpenProfile, activeTab, setActiveTab }) {
+export default function Navbar({ onOpenAuth, onOpenProfile, activeTab, setActiveTab, onOpenMyUploads, myFilesOpen = false }) {
   const { user } = useAccount();
   const location = useLocation();
+  const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
+  const [filesOpen, setFilesOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const navRef = useRef(null);
+  const myFilesActive = activeTab === 'dashboard' || Boolean(myFilesOpen) || filesOpen;
+
+  function closeMenus() {
+    setMoreOpen(false);
+    setMobileMenuOpen(false);
+  }
+
+  function openMyFiles() {
+    closeMenus();
+    const action = myFilesAction({
+      hasDashboardToggle: typeof setActiveTab === 'function',
+      hasParentDrawer: typeof onOpenMyUploads === 'function',
+    });
+    if (action === 'dashboard') {
+      setActiveTab(activeTab === 'dashboard' ? 'transfer' : 'dashboard');
+      return;
+    }
+    if (action === 'parent-drawer') {
+      onOpenMyUploads();
+      return;
+    }
+    setFilesOpen((open) => !open);
+  }
 
   useEffect(() => {
     function handleClickOutside(event) {
@@ -60,10 +104,21 @@ export default function Navbar({ onOpenAuth, onOpenProfile, activeTab, setActive
   useEffect(() => {
     setMobileMenuOpen(false);
     setMoreOpen(false);
+    setFilesOpen(false);
   }, [location.pathname, location.search]);
 
   useEffect(() => {
-    const handleScroll = () => setScrolled(window.scrollY > 12);
+    if (!moreOpen && !mobileMenuOpen) return undefined;
+    function onKey(event) {
+      if (event.key !== 'Escape') return;
+      closeMenus();
+    }
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [moreOpen, mobileMenuOpen]);
+
+  useEffect(() => {
+    const handleScroll = () => setScrolled(window.scrollY > 8);
     handleScroll();
     window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
@@ -72,168 +127,174 @@ export default function Navbar({ onOpenAuth, onOpenProfile, activeTab, setActive
   const isDevice = location.pathname === '/' && new URLSearchParams(location.search).get('mode') === 'device';
   const isTransferHome = location.pathname === '/' && !isDevice && (!activeTab || activeTab === 'transfer');
 
-  let itemIndex = 0;
-
   return (
     <header
       ref={navRef}
-      className="sticky top-0 z-50 select-none bg-transparent px-3 sm:px-4 pt-3"
+      className={`ds-nav select-none ${scrolled || mobileMenuOpen ? 'is-scrolled' : ''}`}
     >
-      <div className={`mx-auto max-w-6xl rounded-full border text-white transition-colors duration-300 ${
-        scrolled
-          ? 'border-white/15 bg-[#0b1020]/92 backdrop-blur-xl'
-          : 'border-white/12 bg-[#0b1020]/80 backdrop-blur-xl'
-      }`}>
-        <div className="h-14 px-2 sm:px-3 flex items-center justify-between gap-2">
-          <div className="flex items-center gap-1 min-w-0">
-            <Link
-              to="/"
-              className="flex items-center gap-2.5 group shrink-0 pl-1.5 pr-2"
-              onClick={() => setActiveTab?.('transfer')}
-            >
-              <span className="nav-mark" aria-hidden="true">
-                <Send className="w-3.5 h-3.5 text-black" />
-              </span>
-              <span className="text-[15px] sm:text-base font-semibold tracking-tight text-white">
-                iTransfer
-              </span>
-            </Link>
+      <div className="ds-wrap ds-nav-bar">
+        <div className="flex items-center min-w-0">
+          <Link
+            to="/"
+            className="ds-logo"
+            onClick={() => setActiveTab?.('transfer')}
+          >
+            <span className="ds-logo-mark" aria-hidden="true">
+              <Send className="w-3.5 h-3.5" />
+            </span>
+            <span className="ds-logo-name">SendToAnyone</span>
+          </Link>
 
-            <nav className="hidden lg:flex items-center gap-0.5 text-[13px] font-medium text-white/70 ml-2">
-              {NAV_LINKS.filter((l) => !(l.hidePro && isUserPro(user))).map((item) => {
-                const active = item.path.includes('mode=device')
-                  ? isDevice
-                  : item.path === '/'
-                    ? isTransferHome
-                    : location.pathname === item.path;
-                return (
-                  <Link
-                    key={item.label}
-                    to={item.path}
-                    onClick={() => {
-                      if (item.tab) setActiveTab?.(item.tab);
-                    }}
-                    className={`nav-link ${active ? 'is-active' : ''}`}
-                  >
-                    {item.label}
-                  </Link>
-                );
-              })}
-
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => setMoreOpen((v) => !v)}
-                  className={`nav-link ${moreOpen ? 'is-active' : ''}`}
-                  aria-expanded={moreOpen}
+          <nav className="ds-nav-links" aria-label="Main">
+            {NAV_LINKS.filter((l) => !(l.hidePro && isUserPro(user))).map((item) => {
+              const active = item.path.includes('mode=device')
+                ? isDevice
+                : item.path === '/'
+                  ? isTransferHome
+                  : location.pathname === item.path;
+              return (
+                <Link
+                  key={item.label}
+                  to={item.path}
+                  onClick={() => {
+                    if (item.tab) setActiveTab?.(item.tab);
+                  }}
+                  className={`ds-nav-link ${active ? 'is-active' : ''}`}
+                  aria-current={active ? 'page' : undefined}
                 >
-                  More
-                  <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-300 ${moreOpen ? 'rotate-180' : ''}`} />
-                </button>
-                <div className={`nav-more ${moreOpen ? 'open' : ''}`} inert={!moreOpen}>
-                  <div className="nav-more-panel">
-                    {MORE_GROUPS.map((group) => (
-                      <div key={group.label} className="nav-more-group">
-                        <p className="nav-more-label">{group.label}</p>
-                        {group.items.map((item) => {
-                          const Icon = item.icon;
-                          const delay = moreOpen ? `${50 + itemIndex * 40}ms` : '0ms';
-                          itemIndex += 1;
-                          return (
-                            <Link
-                              key={item.path}
-                              to={item.path}
-                              style={{ transitionDelay: delay }}
-                              className="nav-more-item"
-                              onClick={() => setMoreOpen(false)}
-                            >
-                              <span className="nav-more-icon">
-                                <Icon className="w-4 h-4" />
-                              </span>
-                              <span className="min-w-0">
-                                <span className="block text-sm font-semibold text-white">{item.title}</span>
-                                <span className="block text-[11px] text-white/45 leading-snug mt-0.5">{item.desc}</span>
-                              </span>
-                            </Link>
-                          );
-                        })}
-                      </div>
+                  {item.label}
+                </Link>
+              );
+            })}
+
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setMoreOpen((v) => !v)}
+                className={`ds-nav-link ${moreOpen ? 'is-active' : ''}`}
+                aria-expanded={moreOpen}
+                aria-haspopup="true"
+              >
+                More
+                <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-300 ${moreOpen ? 'rotate-180' : ''}`} />
+              </button>
+              <div className={`ds-more ${moreOpen ? 'open' : ''}`} inert={!moreOpen}>
+                <div className="ds-more-panel">
+                  <div className="ds-more-quick">
+                    {[
+                      { to: '/', label: 'Link', icon: Link2, onClick: () => setActiveTab?.('transfer') },
+                      { to: '/?mode=device', label: 'Device', icon: Wifi },
+                      { to: '/receive', label: 'Request', icon: Inbox },
+                      { to: '/security', label: 'Security', icon: Lock },
+                    ].map((item) => (
+                      <Link
+                        key={item.label}
+                        to={item.to}
+                        onClick={() => { setMoreOpen(false); item.onClick?.(); }}
+                      >
+                        <item.icon className="w-4 h-4" aria-hidden="true" />
+                        {item.label}
+                      </Link>
                     ))}
                   </div>
+                  {MORE_GROUPS.map((group) => (
+                    <div key={group.label}>
+                      <p className="ds-more-label">{group.label}</p>
+                      {group.items.map((item) => {
+                        const Icon = item.icon;
+                        return (
+                          <Link
+                            key={item.path}
+                            to={item.path}
+                            className="ds-more-item"
+                            onClick={() => setMoreOpen(false)}
+                          >
+                            <span className="ds-more-icon">
+                              <Icon className="w-4 h-4" />
+                            </span>
+                            <span className="min-w-0">
+                              <b>{item.title}</b>
+                              <small>{item.desc}</small>
+                            </span>
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  ))}
                 </div>
               </div>
-            </nav>
-          </div>
+            </div>
+          </nav>
+        </div>
 
-          <div className="flex items-center gap-1.5 sm:gap-2 pr-1">
-            {user ? (
-              <>
-                {isAdmin(user) && (
-                  <button
-                    type="button"
-                    onClick={() => onOpenProfile?.()}
-                    className="hidden sm:flex px-2.5 py-1.5 rounded-full bg-white/10 text-white text-xs font-semibold items-center gap-1 border border-white/15 cursor-pointer"
-                  >
-                    <Crown className="w-3.5 h-3.5" />
-                    Admin
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setActiveTab?.(activeTab === 'dashboard' ? 'transfer' : 'dashboard')}
-                  className={`hidden sm:flex px-3 py-1.5 rounded-full text-xs font-semibold items-center gap-1.5 cursor-pointer transition-all ${
-                    activeTab === 'dashboard'
-                      ? 'bg-white text-black'
-                      : 'text-white bg-white/5 border border-white/10 hover:bg-white/10'
-                  }`}
-                >
-                  <FolderKanban className="w-3.5 h-3.5" />
-                  My Files
-                </button>
+        <div className="ds-nav-actions">
+          {user ? (
+            <>
+              {isAdmin(user) && (
                 <button
                   type="button"
                   onClick={() => onOpenProfile?.()}
-                  className="w-8 h-8 rounded-full bg-white text-black font-semibold text-xs flex items-center justify-center cursor-pointer"
+                  className="ds-btn ds-btn-ghost ds-btn-sm hidden sm:inline-flex"
                 >
-                  {user.email?.[0]?.toUpperCase() || 'U'}
+                  <Crown className="w-3.5 h-3.5" />
+                  Admin
                 </button>
-              </>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  onClick={() => onOpenAuth?.('login')}
-                  className="text-xs font-semibold px-2.5 py-1.5 rounded-full text-white/75 hover:text-white hover:bg-white/10 cursor-pointer"
-                >
-                  Sign In
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onOpenAuth?.('signup')}
-                  className="text-xs font-semibold px-3 py-1.5 sm:px-4 rounded-full bg-white text-black cursor-pointer flex items-center gap-1 hover:bg-white/90"
-                >
-                  Get Started
-                  <ArrowRight className="w-3.5 h-3.5 hidden sm:inline" />
-                </button>
-              </>
-            )}
+              )}
+              <button
+                type="button"
+                onClick={openMyFiles}
+                aria-label="My Files"
+                aria-pressed={myFilesActive}
+                className={`ds-btn ds-btn-ghost ds-btn-sm ds-nav-chip hidden sm:inline-flex ${myFilesActive ? 'is-active' : ''}`}
+              >
+                <FolderKanban className="w-3.5 h-3.5" />
+                My Files
+              </button>
+              <button
+                type="button"
+                onClick={() => onOpenProfile?.()}
+                className="ds-nav-icon"
+                aria-label="Profile"
+              >
+                {user.email?.[0]?.toUpperCase() || 'U'}
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={() => onOpenAuth?.('login')}
+                className="ds-nav-link hidden sm:inline-flex"
+              >
+                Sign in
+              </button>
+              <button
+                type="button"
+                data-ml-goal="signup_click"
+                onClick={() => onOpenAuth?.('signup')}
+                className="ds-btn ds-btn-dark ds-btn-sm"
+              >
+                Get started
+                <ArrowRight className="ds-btn-arrow w-3.5 h-3.5 hidden sm:inline" />
+              </button>
+            </>
+          )}
 
-            <button
-              type="button"
-              onClick={() => setMobileMenuOpen((v) => !v)}
-              className="lg:hidden grid h-8 w-8 place-items-center rounded-full bg-white text-black outline-none"
-              aria-label={mobileMenuOpen ? 'Close menu' : 'Open menu'}
-              aria-expanded={mobileMenuOpen}
-            >
-              {mobileMenuOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={() => setMobileMenuOpen((v) => !v)}
+            className="ds-nav-icon is-menu"
+            aria-label={mobileMenuOpen ? 'Close menu' : 'Open menu'}
+            aria-expanded={mobileMenuOpen}
+          >
+            {mobileMenuOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
+          </button>
         </div>
       </div>
 
       {mobileMenuOpen && (
-        <div className="lg:hidden mx-auto mt-2 max-w-6xl overflow-hidden rounded-[28px] bg-white text-[#14151c] shadow-[0_24px_50px_-24px_rgba(12,20,48,0.55)]">
-          <div className="grid grid-cols-4 gap-1 p-2">
+        <div className="ds-mobile" role="navigation" aria-label="Mobile">
+          <div className="ds-mobile-quick">
             {[
               { to: '/', label: 'Link', icon: Link2, onClick: () => setActiveTab?.('transfer') },
               { to: '/?mode=device', label: 'Device', icon: Wifi },
@@ -244,30 +305,49 @@ export default function Navbar({ onOpenAuth, onOpenProfile, activeTab, setActive
                 key={item.label}
                 to={item.to}
                 onClick={() => { setMobileMenuOpen(false); item.onClick?.(); }}
-                className="flex flex-col items-center gap-1 rounded-2xl bg-slate-50 py-3 text-[11px] font-semibold text-slate-700"
               >
                 <item.icon className="w-4 h-4" />
                 {item.label}
               </Link>
             ))}
           </div>
-          <div className="max-h-[42vh] overflow-y-auto px-2 pb-2">
+          <div className="ds-mobile-group">
+            {!user && (
+              <button
+                type="button"
+                onClick={() => { setMobileMenuOpen(false); onOpenAuth?.('login'); }}
+                className="ds-btn ds-btn-ghost w-full mt-2 sm:hidden"
+              >
+                Sign in
+              </button>
+            )}
+            {user && (
+              <button
+                type="button"
+                onClick={openMyFiles}
+                aria-pressed={myFilesActive}
+                className="ds-more-item w-full text-left mt-1"
+              >
+                <span className="ds-more-icon"><FolderKanban className="w-4 h-4" aria-hidden="true" /></span>
+                <span><b>My Files</b><small>Transfers you sent from this account</small></span>
+              </button>
+            )}
             {MORE_GROUPS.map((group) => (
-              <div key={group.label} className="pt-1">
-                <p className="px-3 pt-2 pb-1 text-[10px] uppercase tracking-[0.16em] text-slate-400 font-semibold">{group.label}</p>
+              <div key={group.label}>
+                <p className="ds-more-label">{group.label}</p>
                 {group.items.map((item) => (
                   <Link
                     key={item.path}
                     to={item.path}
                     onClick={() => setMobileMenuOpen(false)}
-                    className="flex items-center gap-3 rounded-2xl px-3 py-2.5 hover:bg-slate-50"
+                    className="ds-more-item"
                   >
-                    <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-slate-100 text-slate-700">
+                    <span className="ds-more-icon">
                       <item.icon className="w-4 h-4" />
                     </span>
                     <span className="min-w-0">
-                      <span className="block text-sm font-semibold text-slate-900">{item.title}</span>
-                      <span className="block truncate text-[11px] text-slate-500">{item.desc}</span>
+                      <b>{item.title}</b>
+                      <small className="truncate">{item.desc}</small>
                     </span>
                   </Link>
                 ))}
@@ -277,13 +357,32 @@ export default function Navbar({ onOpenAuth, onOpenProfile, activeTab, setActive
               <Link
                 to="/pricing"
                 onClick={() => setMobileMenuOpen(false)}
-                className="mt-1 flex items-center justify-center rounded-2xl bg-slate-900 py-3 text-sm font-semibold text-white"
+                className="ds-btn ds-btn-dark w-full my-2"
               >
-                Pricing
+                See pricing
               </Link>
             )}
           </div>
         </div>
+      )}
+
+      {myFilesAction({
+        hasDashboardToggle: typeof setActiveTab === 'function',
+        hasParentDrawer: typeof onOpenMyUploads === 'function',
+      }) === 'local-drawer' && (
+        <MyUploadsDrawer
+          isOpen={filesOpen}
+          onClose={() => setFilesOpen(false)}
+          user={user}
+          onOpenAuth={(mode) => {
+            setFilesOpen(false);
+            onOpenAuth?.(mode);
+          }}
+          onStartNewTransfer={() => {
+            setFilesOpen(false);
+            if (location.pathname !== '/') navigate('/');
+          }}
+        />
       )}
     </header>
   );

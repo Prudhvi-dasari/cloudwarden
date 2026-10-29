@@ -1,8 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import {
-  X, Copy, Check, Share2, QrCode, MessageCircle, Sparkles, ArrowRight, FolderKanban
+  X, Copy, Check, Share2, QrCode, MessageCircle, ArrowRight, FolderKanban
 } from 'lucide-react';
-import Confetti from './Confetti';
 import Portal from './Portal';
 import { playSuccessChime } from '../lib/sound';
 import { useToast } from './Toast';
@@ -20,7 +19,7 @@ function formatExpiry(expiresAt) {
   const d = new Date(expiresAt);
   if (Number.isNaN(d.getTime())) return 'Standard retention';
   const years = d.getFullYear() - new Date().getFullYear();
-  if (years > 50) return 'Permanent vault';
+  if (years > 50) return 'No end date set';
   return `Expires ${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`;
 }
 
@@ -93,8 +92,8 @@ export default function TransferSuccessModal({
     if (navigator.share) {
       try {
         await navigator.share({
-          title: subject || 'iTransfer',
-          text: 'Your files are ready on iTransfer',
+          title: subject || 'SendToAnyone',
+          text: 'Your files are ready on SendToAnyone',
           url: downloadUrl,
         });
       } catch {
@@ -105,127 +104,120 @@ export default function TransferSuccessModal({
     }
   };
 
-  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(downloadUrl)}&bgcolor=0c0b0a&color=c4a574`;
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(downloadUrl)}`;
 
   return (
     <Portal>
     <div
-      className="fixed inset-0 z-[10000] flex items-center justify-center p-4 sm:p-6"
+      className="ds-modal-backdrop z-[10000]"
       role="dialog"
       aria-modal="true"
       aria-labelledby="transfer-success-title"
     >
       <button
         type="button"
-        className="absolute inset-0 bg-[#1c1917]/40 backdrop-blur-sm cursor-default"
-        aria-label="Close celebration"
+        className="absolute inset-0 cursor-default"
+        aria-label="Close transfer modal"
         onClick={onClose}
       />
-      {!reduceMotion && <Confetti duration={3200} />}
 
       <div
         ref={dialogRef}
         tabIndex={-1}
-        className="relative w-full max-w-lg custom-card p-6 sm:p-8 animate-modal-rise outline-none"
+        className="ds-modal outline-none"
       >
         <button
           type="button"
           onClick={onClose}
-          className="absolute top-4 right-4 p-2 rounded-full text-white/50 hover:text-white hover:bg-white/10 cursor-pointer"
+          className="ds-close"
           aria-label="Close"
         >
           <X className="w-4 h-4" />
         </button>
 
-        <div className="text-center mb-6">
-          <div className="relative inline-flex items-center justify-center w-16 h-16 mb-4">
-            {!reduceMotion && <span className="cele-burst" />}
-            <span className="cele-ring absolute inset-0 rounded-full border border-white/70" />
-            <span className="cele-ring absolute inset-0 rounded-full border border-white/30" style={{ animationDelay: '0.35s' }} />
-            <div className="relative w-14 h-14 rounded-full bg-white text-black flex items-center justify-center">
-              <Sparkles className="w-7 h-7" />
-            </div>
-          </div>
-          <h2
-            id="transfer-success-title"
-            className="font-display text-3xl sm:text-4xl font-semibold text-white tracking-tight"
-          >
-            Congratulations
+        <div className="ds-modal-head snd-modal-head">
+          <span className="snd-done" aria-hidden="true">
+            <Check />
+          </span>
+          <h2 id="transfer-success-title" className="ds-modal-title">
+            Your transfer is ready
           </h2>
-          <p className="mt-2 text-sm text-white/60 font-medium">
-            Your transfer is live. Share the link below.
+          <p className="ds-modal-sub">
+            Your files are uploaded. Share the download link below.
           </p>
-          <p className="mt-3 text-xs text-white/45 font-medium">
-            {fileCount} file{fileCount === 1 ? '' : 's'} · {formatBytes(totalSize)} · {formatExpiry(expiresAt)}
-          </p>
-        </div>
-
-        <div className="flex items-stretch gap-2 mb-4">
-          <input
-            readOnly
-            value={downloadUrl}
-            className="noir-input flex-1 px-3.5 py-3 text-sm font-medium truncate"
-            onFocus={(e) => e.target.select()}
-          />
-          <button
-            type="button"
-            onClick={handleCopy}
-            className="shrink-0 px-4 py-3 rounded-xl theme-btn-primary text-sm font-semibold flex items-center gap-2 cursor-pointer"
-          >
-            {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-            {copied ? 'Copied' : 'Copy'}
-          </button>
-        </div>
-
-        <div className="grid grid-cols-3 gap-2 mb-5">
-          <button
-            type="button"
-            onClick={handleWhatsApp}
-            className="flex flex-col items-center gap-1.5 py-3 rounded-xl bg-white/5 border border-white/10 hover:border-[#c4a574]/40 text-[#f5f0e8] text-xs font-semibold cursor-pointer"
-          >
-            <MessageCircle className="w-4 h-4 text-[#c4a574]" />
-            WhatsApp
-          </button>
-          <button
-            type="button"
-            onClick={handleNativeShare}
-            className="flex flex-col items-center gap-1.5 py-3 rounded-xl bg-white/5 border border-white/10 hover:border-[#c4a574]/40 text-[#f5f0e8] text-xs font-semibold cursor-pointer"
-          >
-            <Share2 className="w-4 h-4 text-[#c4a574]" />
-            Share
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowQr((v) => !v)}
-            className="flex flex-col items-center gap-1.5 py-3 rounded-xl bg-white/5 border border-white/10 hover:border-[#c4a574]/40 text-[#f5f0e8] text-xs font-semibold cursor-pointer"
-          >
-            <QrCode className="w-4 h-4 text-[#c4a574]" />
-            QR Code
-          </button>
-        </div>
-
-        {showQr && (
-          <div className="mb-5 flex justify-center animate-fadeIn">
-            <img src={qrUrl} alt="Download QR code" className="w-40 h-40 rounded-xl border border-white/10" />
+          <div className="snd-meta">
+            <span>{fileCount} file{fileCount === 1 ? '' : 's'}</span>
+            <span>{formatBytes(totalSize)}</span>
+            <span className="is-blue">{formatExpiry(expiresAt)}</span>
           </div>
-        )}
+        </div>
 
-        <div className="flex flex-col sm:flex-row gap-2">
+        <div className="ds-modal-body">
+          <div className="snd-share">
+          <div className="snd-link">
+            <div className="snd-link-field">
+              <input
+                readOnly
+                value={downloadUrl}
+                aria-label="Download link"
+                className="ds-input"
+                onFocus={(e) => e.target.select()}
+              />
+            </div>
+            <button
+              type="button"
+              onClick={handleCopy}
+              className={`ds-btn ds-btn-dark snd-copy${copied ? ' is-copied' : ''}`}
+            >
+              {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+              {copied ? 'Copied' : 'Copy link'}
+            </button>
+          </div>
+
+          <div className="snd-quick">
+            <button type="button" onClick={handleWhatsApp} className="ds-btn ds-btn-ghost is-wa">
+              <MessageCircle className="w-4 h-4 shrink-0" aria-hidden="true" />
+              <span>WhatsApp</span>
+            </button>
+            <button type="button" onClick={handleNativeShare} className="ds-btn ds-btn-ghost">
+              <Share2 className="w-4 h-4 shrink-0" aria-hidden="true" />
+              <span>Share</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowQr((v) => !v)}
+              aria-expanded={showQr}
+              className="ds-btn ds-btn-ghost"
+            >
+              <QrCode className="w-4 h-4 shrink-0" aria-hidden="true" />
+              <span>QR code</span>
+            </button>
+          </div>
+
+          {showQr && (
+            <div className="snd-panel snd-qr">
+              <img src={qrUrl} alt="Download QR code" />
+            </div>
+          )}
+          </div>
+        </div>
+
+        <div className={`ds-modal-foot snd-modal-foot${onViewDashboard ? ' has-two' : ''}`}>
           <button
             type="button"
             onClick={onSendAnother}
-            className="flex-1 py-3 rounded-full theme-btn-primary text-sm font-semibold flex items-center justify-center gap-2 cursor-pointer"
+            className="ds-btn ds-btn-dark"
           >
             Send another
-            <ArrowRight className="w-4 h-4" />
+            <ArrowRight className="w-4 h-4 ds-btn-arrow" aria-hidden="true" />
           </button>
           {onViewDashboard && (
             <button
               type="button"
               onClick={onViewDashboard}
-              className="flex-1 py-3 rounded-full bg-white/5 border border-white/10 text-[#f5f0e8] text-sm font-semibold flex items-center justify-center gap-2 cursor-pointer hover:bg-white/10"
+              className="ds-btn ds-btn-ghost"
             >
-              <FolderKanban className="w-4 h-4 text-[#c4a574]" />
+              <FolderKanban className="w-4 h-4" aria-hidden="true" />
               Dashboard
             </button>
           )}

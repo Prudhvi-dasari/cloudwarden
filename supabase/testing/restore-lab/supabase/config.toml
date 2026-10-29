@@ -1,0 +1,111 @@
+# Disposable restore lab for the 23 October 2026 logical backup.
+# Workdir: supabase/testing/restore-lab
+# This file is supabase/testing/restore-lab/supabase/config.toml.
+# The CLI stops at this supabase/ directory, so it does not read
+# the repository's supabase/migrations files.
+# The migrations folder here stays empty, and db.migrations.enabled is false.
+# Do not link this project to the remote tranferfiles database.
+
+project_id = "sendtoanyone-restore-lab"
+
+[api]
+enabled = true
+port = 55521
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[api.tls]
+enabled = false
+
+[db]
+port = 55522
+shadow_port = 55520
+health_timeout = "2m"
+# The backup header says PostgreSQL 17.6. This selects the local major version only.
+major_version = 17
+orioledb_version = ""
+
+[db.pooler]
+enabled = false
+port = 55529
+pool_mode = "transaction"
+default_pool_size = 20
+max_client_conn = 100
+
+[db.migrations]
+enabled = false
+# Empty on purpose. Do not point this at the repository migrations.
+schema_paths = []
+
+[db.seed]
+enabled = false
+sql_paths = []
+
+[db.network_restrictions]
+# Not enabled. Enabling this section can target a linked remote project.
+enabled = false
+allowed_cidrs = ["127.0.0.1/32"]
+allowed_cidrs_v6 = ["::1/128"]
+
+[realtime]
+enabled = true
+ip_version = "IPv4"
+
+[studio]
+enabled = true
+port = 55523
+api_url = "http://127.0.0.1"
+openai_api_key = "env(OPENAI_API_KEY)"
+
+[local_smtp]
+enabled = true
+port = 55524
+
+[storage]
+enabled = true
+file_size_limit = "50MiB"
+
+[storage.s3_protocol]
+enabled = false
+
+[storage.analytics]
+enabled = false
+
+[storage.vector]
+enabled = false
+
+[auth]
+enabled = true
+site_url = "http://127.0.0.1:55521"
+additional_redirect_urls = ["http://127.0.0.1:55521"]
+jwt_expiry = 3600
+enable_refresh_token_rotation = true
+refresh_token_reuse_interval = 10
+enable_signup = true
+enable_anonymous_sign_ins = false
+enable_manual_linking = false
+minimum_password_length = 6
+password_requirements = ""
+
+[auth.email]
+enable_signup = true
+double_confirm_changes = true
+enable_confirmations = false
+secure_password_change = false
+max_frequency = "1s"
+otp_length = 6
+otp_expiry = 3600
+
+[analytics]
+enabled = false
+port = 55527
+backend = "postgres"
+
+[edge_runtime]
+enabled = false
+policy = "per_worker"
+inspector_port = 55583
+
+[experimental.pgdelta]
+enabled = false

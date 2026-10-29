@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react';
 
-const PATH_D = 'M 80 560 C 300 480, 520 600, 820 520 C 1060 460, 1220 420, 1360 460';
+const PATH_D = 'M 180 790 C 460 750, 740 830, 1020 800 C 1220 780, 1340 830, 1420 860';
 
 /**
  * Scroll-driven send path. Parcel sits on the path in the hero only —

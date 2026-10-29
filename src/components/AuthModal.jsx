@@ -1,8 +1,32 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { persistUserSession, resetPasswordForEmail } from '../lib/authSession';
-import { X, Lock, Mail, Loader2, Sparkles, CheckCircle, ArrowRight, ShieldCheck, KeyRound, User, AlertCircle } from 'lucide-react';
+import { identifyMinilytics, trackMinilyticsGoal } from '../lib/minilytics';
+import { X, Lock, Mail, CheckCircle, ArrowRight, User, AlertCircle, Eye, EyeOff, Send, ArrowLeft } from 'lucide-react';
 import Portal from './Portal';
+
+const AUTH_COPY = {
+  login: {
+    kicker: 'Sign in',
+    title: 'Welcome back',
+    sub: 'Sign in to keep a list of your transfers and to buy Pro.',
+  },
+  register: {
+    kicker: 'New account',
+    title: 'Create your account',
+    sub: 'Your account keeps a list of the transfers you send. Sending stays free without one.',
+  },
+  forgot: {
+    kicker: 'Password help',
+    title: 'Reset your password',
+    sub: 'Enter your email and we will send a link to set a new password.',
+  },
+  'google-prompt': {
+    kicker: 'Google',
+    title: 'Complete Google sign-in',
+    sub: 'Enter your name and Google email address to connect.',
+  },
+};
 
 function normalizeMode(mode) {
   if (mode === 'signup' || mode === 'register' || mode === 'create') return 'register';
@@ -20,6 +44,7 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
   const [error, setError] = useState(null);
   const [successMsg, setSuccessMsg] = useState('');
   const [notFoundEmail, setNotFoundEmail] = useState(null);
+  const [showPassword, setShowPassword] = useState(false);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -75,9 +100,10 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
         },
       };
       const persisted = await persistUserSession(masterUser);
+      identifyMinilytics(persisted);
       setSuccessMsg('Logged in as Master Admin (Prudhvi)! Lifetime PRO active.');
       setTimeout(() => {
-        onAuthSuccess(persisted);
+        onAuthSuccess?.(persisted);
         onClose();
       }, 500);
     } catch (err) {
@@ -134,9 +160,10 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
         }
 
         const persisted = await persistUserSession(data.user);
+        identifyMinilytics(persisted);
         setSuccessMsg('Signed in successfully!');
         setTimeout(() => {
-          onAuthSuccess(persisted);
+          onAuthSuccess?.(persisted);
           onClose();
         }, 500);
       } else {
@@ -155,15 +182,18 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
         });
 
         if (err) throw err;
+        identifyMinilytics(data.user);
+        trackMinilyticsGoal('signup_completed');
         if (!data?.session) {
           setSuccessMsg('Account created. Open the confirmation email, then sign in here.');
           setMode('login');
           return;
         }
         const persisted = await persistUserSession(data.user);
+        identifyMinilytics(persisted);
         setSuccessMsg('Account created. You are signed in.');
         setTimeout(() => {
-          onAuthSuccess(persisted);
+          onAuthSuccess?.(persisted);
           onClose();
         }, 400);
       }
@@ -174,265 +204,260 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
     }
   }
 
+  const copy = AUTH_COPY[mode] || AUTH_COPY.login;
+  const title = mode === 'forgot' && successMsg ? 'Check your email' : copy.title;
+  const switchMode = (next) => { setMode(next); setError(null); setSuccessMsg(''); };
+
   return (
     <Portal>
-    <div
-      onClick={onClose}
-      className="fixed inset-0 z-[10000] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/70 backdrop-blur-md animate-fadeIn cursor-pointer"
-    >
+    <div onClick={onClose} className="ds-modal-backdrop acct-modal-backdrop acct-ui">
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="auth-modal-title"
+        aria-describedby="auth-modal-sub"
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-md bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl border border-slate-200/80 p-6 sm:p-8 relative max-h-[90vh] overflow-y-auto cursor-default"
+        className="ds-modal acct-modal-narrow"
       >
-        
-        {/* Mobile handle indicator */}
-        <div className="sm:hidden w-12 h-1.5 bg-slate-300 rounded-full mx-auto mb-4" />
+        <span className="acct-grabber" aria-hidden="true" />
 
-        {/* Close Button */}
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close modal"
-          className="absolute top-4 right-4 text-slate-400 hover:text-slate-700 hover:bg-slate-100 p-2 rounded-xl transition-all cursor-pointer z-20"
-        >
-          <X className="w-5 h-5" />
+        <button type="button" onClick={onClose} aria-label="Close modal" className="ds-close">
+          <X className="w-5 h-5" aria-hidden="true" />
         </button>
 
-        {/* Brand Icon & Heading */}
-        <div className="text-center mb-6">
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-500 via-indigo-600 to-purple-600 text-white flex items-center justify-center mx-auto mb-3 shadow-lg shadow-indigo-500/20">
-            {mode === 'forgot' ? <KeyRound className="w-6 h-6" /> : <Sparkles className="w-6 h-6" />}
+        <div className="ds-modal-head">
+          <div className="acct-brand">
+            <span className="ds-logo-mark" aria-hidden="true">
+              <Send className="w-3.5 h-3.5" />
+            </span>
+            <p className="ds-kicker"><b>●</b> {copy.kicker}</p>
           </div>
-          <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
-            {mode === 'login' && 'Sign in to iTransfer'}
-            {mode === 'register' && 'Create your iTransfer Account'}
-            {mode === 'forgot' && 'Reset your password'}
-            {mode === 'google-prompt' && 'Complete Google Sign-In'}
-          </h2>
-          <p className="text-xs text-slate-500 font-medium mt-1">
-            {mode === 'login' && 'Access transfer history, saved settings, and Pro bandwidth'}
-            {mode === 'register' && 'Free account with multi-gigabyte transfers and dark mode'}
-            {mode === 'forgot' && 'Enter your email to receive a secure password reset link'}
-            {mode === 'google-prompt' && 'Enter your name and Google email address to connect'}
-          </p>
+          <h2 id="auth-modal-title" className="ds-modal-title acct-title">{title}</h2>
+          <p id="auth-modal-sub" className="ds-modal-sub">{copy.sub}</p>
         </div>
 
-        {/* Error / Success alert */}
-        {error && (
-          <div className="mb-4 p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs font-bold leading-relaxed animate-fadeIn">
-            {error}
-          </div>
-        )}
-        {successMsg && (
-          <div className="mb-4 p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-700 text-xs font-bold flex items-center gap-2 animate-fadeIn">
-            <CheckCircle className="w-4 h-4 shrink-0" />
-            <span>{successMsg}</span>
-          </div>
-        )}
-
-        {/* Mode Tabs (Sign In / Sign Up) */}
-        {mode !== 'forgot' && mode !== 'google-prompt' && (
-          <div className="grid grid-cols-2 p-1 bg-slate-100 rounded-2xl mb-5 text-xs font-black">
-            <button
-              type="button"
-              onClick={() => { setMode('login'); setError(null); setSuccessMsg(''); }}
-              className={`py-2 rounded-xl transition-all cursor-pointer ${
-                mode === 'login'
-                  ? 'bg-white text-slate-900 shadow-sm'
-                  : 'text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              Sign In
-            </button>
-            <button
-              type="button"
-              onClick={() => { setMode('register'); setError(null); setSuccessMsg(''); }}
-              className={`py-2 rounded-xl transition-all cursor-pointer ${
-                mode === 'register'
-                  ? 'bg-white text-slate-900 shadow-sm'
-                  : 'text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              Create Account
-            </button>
-          </div>
-        )}
-
-        {/* Google Direct Form Prompt */}
-        {mode === 'google-prompt' && (
-          <form onSubmit={handleGoogleDirectComplete} className="space-y-4">
-            <div>
-              <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">
-                Your Full Name
-              </label>
-              <div className="relative">
-                <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
-                <input
-                  type="text"
-                  required
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  placeholder="Prudhvi Dasari"
-                  className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-indigo-500 focus:bg-white"
-                />
-              </div>
+        <div className="ds-modal-body acct-stack">
+          {error && (
+            <div role="alert" className="ds-alert is-danger">
+              <AlertCircle aria-hidden="true" />
+              <span>{error}</span>
             </div>
-
-            <div>
-              <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">
-                Google Email Address
-              </label>
-              <div className="relative">
-                <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
-                <input
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="you@gmail.com"
-                  className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-indigo-500 focus:bg-white"
-                />
-              </div>
+          )}
+          {successMsg && (
+            <div role="status" className="ds-alert is-success">
+              <CheckCircle aria-hidden="true" />
+              <span>{successMsg}</span>
             </div>
+          )}
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-md flex items-center justify-center gap-2 cursor-pointer"
-            >
-              {loading && <Loader2 className="w-4 h-4 animate-spin" />}
-              <span>Complete Google Sign-In</span>
-            </button>
+          {/* Google Direct Form Prompt */}
+          {mode === 'google-prompt' && (
+            <form onSubmit={handleGoogleDirectComplete} className="acct-stack">
+              <div className="ds-field acct-field-lg">
+                <label htmlFor="auth-google-name" className="ds-label">Your name</label>
+                <div className="ds-input-wrap">
+                  <User aria-hidden="true" />
+                  <input
+                    id="auth-google-name"
+                    type="text"
+                    required
+                    autoComplete="name"
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    placeholder="Your name"
+                    className="ds-input"
+                  />
+                </div>
+              </div>
 
-            <div className="text-center pt-1">
-              <button
-                type="button"
-                onClick={() => { setMode('login'); setError(null); }}
-                className="text-xs font-bold text-slate-500 hover:text-indigo-600"
-              >
-                Back to Standard Login
+              <div className="ds-field acct-field-lg">
+                <label htmlFor="auth-google-email" className="ds-label">Google email</label>
+                <div className="ds-input-wrap">
+                  <Mail aria-hidden="true" />
+                  <input
+                    id="auth-google-email"
+                    type="email"
+                    required
+                    autoComplete="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="you@gmail.com"
+                    className="ds-input"
+                  />
+                </div>
+              </div>
+
+              <button type="submit" disabled={loading} aria-busy={loading} className="ds-btn ds-btn-dark ds-btn-lg w-full">
+                {loading && <span className="ds-spinner" aria-hidden="true" />}
+                <span>{loading ? 'Connecting…' : 'Complete Google sign-in'}</span>
               </button>
-            </div>
-          </form>
-        )}
 
-        {/* Forgot Password Form */}
-        {mode === 'forgot' && (
-          <form onSubmit={handleForgotPassword} className="space-y-4">
-            <div>
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                Your Email Address
-              </label>
-              <div className="relative">
-                <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
-                <input
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="you@company.com"
-                  className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-indigo-500 focus:bg-white transition-all"
-                />
+              <p className="acct-switch-line">
+                <button type="button" onClick={() => { setMode('login'); setError(null); }} className="acct-textlink">
+                  <ArrowLeft className="w-3.5 h-3.5" aria-hidden="true" /> Back to sign in
+                </button>
+              </p>
+            </form>
+          )}
+
+          {/* Forgot Password Form */}
+          {mode === 'forgot' && (
+            <form onSubmit={handleForgotPassword} className="acct-stack">
+              <div className="ds-field acct-field-lg">
+                <label htmlFor="auth-forgot-email" className="ds-label">Email</label>
+                <div className="ds-input-wrap">
+                  <Mail aria-hidden="true" />
+                  <input
+                    id="auth-forgot-email"
+                    type="email"
+                    required
+                    autoComplete="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="you@company.com"
+                    className="ds-input"
+                  />
+                </div>
               </div>
-            </div>
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-md flex items-center justify-center gap-2 transition-all cursor-pointer"
-            >
-              {loading && <Loader2 className="w-4 h-4 animate-spin" />}
-              <span>Send Password Reset Link</span>
-            </button>
-
-            <div className="text-center pt-2">
-              <button
-                type="button"
-                onClick={() => { setMode('login'); setError(null); setSuccessMsg(''); }}
-                className="text-xs font-bold text-slate-500 hover:text-indigo-600"
-              >
-                Back to Sign In
+              <button type="submit" disabled={loading} aria-busy={loading} className="ds-btn ds-btn-dark ds-btn-lg w-full">
+                {loading && <span className="ds-spinner" aria-hidden="true" />}
+                <span>{loading ? 'Sending link…' : 'Send reset link'}</span>
               </button>
-            </div>
-          </form>
-        )}
 
-        {/* Standard Email & Password Login / Register Form */}
-        {mode !== 'forgot' && mode !== 'google-prompt' && (
-          <form onSubmit={handleSubmit} className="space-y-3.5">
-            {mode === 'register' && (
-              <div>
-                <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">
-                  Full Name
-                </label>
-                <input
-                  type="text"
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  placeholder="Prudhvi Dasari"
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-indigo-500 focus:bg-white transition-all"
-                />
+              <p className="acct-switch-line">
+                <button type="button" onClick={() => switchMode('login')} className="acct-textlink">
+                  <ArrowLeft className="w-3.5 h-3.5" aria-hidden="true" /> Back to sign in
+                </button>
+              </p>
+            </form>
+          )}
+
+          {/* Standard Email & Password Login / Register Form */}
+          {mode !== 'forgot' && mode !== 'google-prompt' && (
+            <form onSubmit={handleSubmit} className="acct-stack">
+              {mode === 'register' && (
+                <div className="ds-field acct-field-lg">
+                  <label htmlFor="auth-name" className="ds-label">
+                    Name <span className="font-normal text-[var(--ds-faint)]">(optional)</span>
+                  </label>
+                  <div className="ds-input-wrap">
+                    <User aria-hidden="true" />
+                    <input
+                      id="auth-name"
+                      type="text"
+                      autoComplete="name"
+                      value={fullName}
+                      onChange={(e) => setFullName(e.target.value)}
+                      placeholder="Your name"
+                      className="ds-input"
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div className="ds-field acct-field-lg">
+                <label htmlFor="auth-email" className="ds-label">Email</label>
+                <div className="ds-input-wrap">
+                  <Mail aria-hidden="true" />
+                  <input
+                    id="auth-email"
+                    type="email"
+                    required
+                    autoComplete="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="you@company.com"
+                    className="ds-input"
+                  />
+                </div>
               </div>
-            )}
 
-            <div>
-              <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">
-                Email Address
-              </label>
-              <div className="relative">
-                <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
-                <input
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="you@company.com"
-                  className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-indigo-500 focus:bg-white transition-all"
-                />
-              </div>
-            </div>
-
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
-                  Password
-                </label>
-                {mode === 'login' && (
+              <div className="ds-field acct-field-lg">
+                <div className="acct-label-row">
+                  <label htmlFor="auth-password" className="ds-label">Password</label>
+                  {mode === 'login' && (
+                    <button type="button" onClick={() => switchMode('forgot')} className="acct-textlink">
+                      Forgot password?
+                    </button>
+                  )}
+                </div>
+                <div className="ds-input-wrap">
+                  <Lock aria-hidden="true" />
+                  <input
+                    id="auth-password"
+                    type={showPassword ? 'text' : 'password'}
+                    required
+                    minLength={6}
+                    autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••••"
+                    aria-describedby={mode === 'register' ? 'auth-password-hint' : undefined}
+                    className="ds-input acct-has-reveal"
+                  />
                   <button
                     type="button"
-                    onClick={() => { setMode('forgot'); setError(null); setSuccessMsg(''); }}
-                    className="text-[10px] font-bold text-indigo-600 hover:underline cursor-pointer"
+                    onClick={() => setShowPassword((value) => !value)}
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                    aria-pressed={showPassword}
+                    className="acct-reveal"
                   >
-                    Forgot password?
+                    {showPassword ? <EyeOff className="w-4 h-4" aria-hidden="true" /> : <Eye className="w-4 h-4" aria-hidden="true" />}
                   </button>
+                </div>
+                {mode === 'register' && (
+                  <p id="auth-password-hint" className="ds-hint">At least 6 characters.</p>
                 )}
               </div>
-              <div className="relative">
-                <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
-                <input
-                  type="password"
-                  required
-                  minLength={6}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-indigo-500 focus:bg-white transition-all"
-                />
-              </div>
-            </div>
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full mt-2 py-3 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white font-bold text-xs rounded-xl shadow-md shadow-indigo-500/20 flex items-center justify-center gap-2 transition-all cursor-pointer active:scale-98"
-            >
-              {loading && <Loader2 className="w-4 h-4 animate-spin" />}
-              <span>{mode === 'login' ? 'Sign In to Account' : 'Create Free Account'}</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </button>
-          </form>
-        )}
+              <button
+                type="submit"
+                disabled={loading}
+                aria-busy={loading}
+                {...(mode === 'register' ? { 'data-ml-goal': 'signup_click' } : {})}
+                className="ds-btn ds-btn-dark ds-btn-lg w-full mt-1"
+              >
+                {loading && <span className="ds-spinner" aria-hidden="true" />}
+                <span>
+                  {loading
+                    ? (mode === 'login' ? 'Signing in…' : 'Creating account…')
+                    : (mode === 'login' ? 'Sign in' : 'Create free account')}
+                </span>
+                {!loading && <ArrowRight className="ds-btn-arrow w-4 h-4" aria-hidden="true" />}
+              </button>
 
+              <p className="acct-switch-line">
+                {mode === 'login' ? (
+                  <>
+                    <span>New here?</span>
+                    <button
+                      type="button"
+                      data-ml-goal="signup_click"
+                      onClick={() => switchMode('register')}
+                      className="acct-textlink"
+                    >
+                      Create an account
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <span>Already have an account?</span>
+                    <button type="button" onClick={() => switchMode('login')} className="acct-textlink">
+                      Sign in
+                    </button>
+                  </>
+                )}
+              </p>
+            </form>
+          )}
+
+          <p className="acct-fineprint">
+            By continuing you agree to the{' '}
+            <a href="/terms" target="_blank" rel="noreferrer">Terms</a> and{' '}
+            <a href="/privacy" target="_blank" rel="noreferrer">Privacy Policy</a>.
+          </p>
+        </div>
       </div>
     </div>
     </Portal>

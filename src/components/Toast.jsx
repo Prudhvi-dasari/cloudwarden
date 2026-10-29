@@ -23,33 +23,24 @@ export function ToastProvider({ children }) {
     <ToastContext.Provider value={{ addToast }}>
       {children}
       {/* Toast container */}
-      <div className="fixed bottom-5 right-5 z-50 flex flex-col gap-2 pointer-events-none max-w-sm w-full px-4 sm:px-0">
+      <div className="acct-ui acct-toasts" aria-live="polite">
         {toasts.map((toast) => (
-          <div
-            key={toast.id}
-            className={`pointer-events-auto flex items-center justify-between gap-3 px-4 py-3 rounded-xl border shadow-lg backdrop-blur-md animate-scale-in text-xs font-semibold ${
-              toast.type === 'error'
-                ? 'bg-[#1a1916]/98 border-[#c47a7a]/40 text-[#f5f0e8]'
-                : toast.type === 'info'
-                ? 'bg-[#1a1916]/98 border-[#c4a574]/40 text-[#f5f0e8]'
-                : 'bg-[#1a1916]/98 border-white/10 text-[#f5f0e8]'
-            }`}
-          >
-            <div className="flex items-center gap-2">
-              {toast.type === 'error' ? (
-                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
-              ) : toast.type === 'info' ? (
-                <Info className="w-4 h-4 text-indigo-600 shrink-0" />
-              ) : (
-                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-              )}
-              <span>{toast.message}</span>
-            </div>
+          <div key={toast.id} className="acct-toast">
+            {toast.type === 'error' ? (
+              <span className="ds-icon is-sm acct-icon-danger" aria-hidden="true"><AlertCircle /></span>
+            ) : toast.type === 'info' ? (
+              <span className="ds-icon is-sm is-blue" aria-hidden="true"><Info /></span>
+            ) : (
+              <span className="ds-icon is-sm is-green" aria-hidden="true"><CheckCircle2 /></span>
+            )}
+            <span className="acct-toast-msg">{toast.message}</span>
             <button
+              type="button"
               onClick={() => removeToast(toast.id)}
-              className="text-slate-400 hover:text-slate-600 p-0.5"
+              aria-label="Dismiss"
+              className="acct-toast-x"
             >
-              <X className="w-3.5 h-3.5" />
+              <X className="w-4 h-4" aria-hidden="true" />
             </button>
           </div>
         ))}

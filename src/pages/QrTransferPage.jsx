@@ -1,12 +1,11 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import Navbar from '../components/Navbar';
-import Footer from '../components/Footer';
+import PageFrame from '../components/PageFrame';
 import AuthModal from '../components/AuthModal';
 import ProfileModal from '../components/ProfileModal';
 import P2PTransferView from '../components/P2PTransferView';
 import { getStoredUser, clearUserSession } from '../lib/authSession';
-import { QrCode, RefreshCw, ArrowRight } from 'lucide-react';
+import { ArrowRight, RefreshCw, Smartphone } from 'lucide-react';
 import { generateP2PCode } from '../lib/p2p';
 
 export default function QrTransferPage() {
@@ -17,7 +16,7 @@ export default function QrTransferPage() {
   const [hostCode, setHostCode] = useState(() => generateP2PCode());
 
   const joinUrl = `${window.location.origin}/?mode=device&room=${encodeURIComponent(hostCode)}`;
-  const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(joinUrl)}&bgcolor=0c0b0a&color=c4a574`;
+  const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(joinUrl)}&bgcolor=ffffff&color=060a12`;
 
   useEffect(() => {
     // Keep URL shareable for this host session
@@ -27,74 +26,105 @@ export default function QrTransferPage() {
   }, [hostCode]);
 
   return (
-    <div className="min-h-screen flex flex-col text-white relative overflow-hidden bg-[#07080d]">
-      <div className="page-sky" aria-hidden="true" />
-<Navbar
+    <>
+      <PageFrame
         user={user}
         onOpenAuth={(mode) => { setAuthMode(mode); setIsAuthOpen(true); }}
         onOpenProfile={() => setIsProfileOpen(true)}
-      />
+        eyebrow="Device transfer · QR"
+        title="Scan the code. Send across."
+        accent={2}
+        subtitle="Open this page on your laptop and scan the code with your phone. The file moves between the two browsers over WebRTC. Nothing is stored on SendToAnyone."
+      >
+        <section className="grid gap-6 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] items-start" aria-label="Pair two devices">
+          <div className="ds-frame" data-reveal>
+            <div className="ds-frame-chrome">
+              <span className="ds-frame-dots" aria-hidden="true"><i /><i /><i /></span>
+              <span className="ds-badge"><Smartphone className="w-3 h-3" aria-hidden="true" />Scan with your phone</span>
+            </div>
+            <div className="ds-frame-screen text-center">
+              <div className="pgb-qr">
+                <img src={qrCodeUrl} alt="QR code that opens this pairing on your phone" width="240" height="240" />
+              </div>
 
-      <main className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 py-12 sm:py-16 z-10 relative">
-        <div className="text-center max-w-2xl mx-auto mb-10">
-          <div className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold text-[#c4a574] bg-[#c4a574]/10 border border-[#c4a574]/25 mb-4">
-            <QrCode className="w-3.5 h-3.5" /> Device P2P
+              <p className="mt-6 ds-kicker justify-center"><b>●</b> Pairing code</p>
+              <p className="mt-2">
+                <span className="sr-only">{hostCode}</span>
+                <span className="pgb-pair" aria-hidden="true">
+                  {hostCode.split('').map((ch, i) => (
+                    <span key={`${ch}-${i}`} className={ch === '-' ? 'is-dash' : ''}>{ch}</span>
+                  ))}
+                </span>
+              </p>
+
+              <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setHostCode(generateP2PCode())}
+                  className="ds-btn ds-btn-ghost ds-btn-sm"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" aria-hidden="true" />
+                  New code
+                </button>
+                <Link
+                  to={`/?mode=device&room=${encodeURIComponent(hostCode)}`}
+                  className="ds-btn ds-btn-dark ds-btn-sm"
+                >
+                  Open as receiver
+                  <ArrowRight className="ds-btn-arrow w-3.5 h-3.5" aria-hidden="true" />
+                </Link>
+              </div>
+              <p className="mt-4 ds-hint">
+                The phone that scans joins as the receiver. Send from the panel on this device.
+              </p>
+            </div>
           </div>
-          <h1 className="font-display text-4xl sm:text-5xl font-semibold text-white tracking-tight mb-4 italic">
-            Scan & stream directly
-          </h1>
-          <p className="text-base text-white/55 font-medium leading-relaxed">
-            Open this page on your laptop, scan with your phone, and transfer over the local network — zero cloud storage.
-          </p>
-        </div>
 
-        <div className="grid lg:grid-cols-2 gap-6 items-start">
-          <div className="custom-card p-8 text-center">
-            <div className="inline-block p-4 rounded-2xl border border-white/10 bg-[#17192e] mb-6">
-              <img src={qrCodeUrl} alt="Scan to pair devices" className="w-56 h-56 rounded-xl object-contain mx-auto" />
+          <div className="pgb-device min-w-0" data-reveal style={{ '--d': '100ms' }}>
+            <div className="pgb-device-head">
+              <span>This device</span>
+              <span className="ds-mono text-[0.72rem] text-white/50">{hostCode}</span>
             </div>
-            <p className="text-xs font-semibold text-white/45 uppercase tracking-wider mb-2">Pairing code</p>
-            <div className="text-2xl font-mono font-semibold tracking-widest text-[#c4a574] mb-4">
-              {hostCode}
-            </div>
-            <div className="flex flex-wrap items-center justify-center gap-3">
-              <button
-                type="button"
-                onClick={() => setHostCode(generateP2PCode())}
-                className="px-4 py-2 rounded-full bg-white/5 border border-white/10 text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
-              >
-                <RefreshCw className="w-3.5 h-3.5" />
-                New code
-              </button>
-              <Link
-                to={`/?mode=device&room=${encodeURIComponent(hostCode)}`}
-                className="theme-btn-primary px-5 py-2 rounded-full text-xs font-semibold inline-flex items-center gap-1.5"
-              >
-                Open as receiver
-                <ArrowRight className="w-3.5 h-3.5" />
-              </Link>
-            </div>
-            <p className="mt-4 text-[11px] text-white/45">
-              Phone scans QR → joins as receiver. Use the panel to send from this device.
-            </p>
-          </div>
-
-          <div className="custom-card p-5 sm:p-6">
             <P2PTransferView preferredCode={hostCode} key={hostCode} />
           </div>
-        </div>
-      </main>
+        </section>
 
-      
-      <div className="relative z-10 max-w-6xl mx-auto px-4 sm:px-6 pb-12">
-        <div className="pt-8 border-t border-white/10">
-          <Link to="/" className="inline-flex items-center gap-2 rounded-full bg-white text-black text-sm font-semibold px-5 py-3 hover:bg-white/90">
-            Send a file
-          </Link>
-        </div>
-      </div>
+        <section className="pt-6" aria-labelledby="qr-steps-title">
+          <div className="pgb-head" data-reveal>
+            <div>
+              <p className="ds-kicker"><b>●</b> How it works</p>
+              <h2 id="qr-steps-title" className="ds-h2">Three steps, both screens open.</h2>
+            </div>
+          </div>
+          <ol className="ds-steps is-row mt-8" style={{ '--n': 3 }}>
+            <li className="ds-step" data-reveal>
+              <h3>Open this page on the sender</h3>
+              <p>A new pairing code and QR appear each time.</p>
+            </li>
+            <li className="ds-step" data-reveal style={{ '--d': '80ms' }}>
+              <h3>Scan with the other device</h3>
+              <p>The camera opens SendToAnyone with the code filled in.</p>
+            </li>
+            <li className="ds-step" data-reveal style={{ '--d': '160ms' }}>
+              <h3>Keep both screens open</h3>
+              <p>The file moves straight across. Closing either tab stops it.</p>
+            </li>
+          </ol>
+        </section>
 
-      <Footer />
+        <div className="ds-grid cols-2" data-reveal>
+          <div className="ds-callout">
+            <p>
+              Some networks block WebRTC and never connect. If that happens, send a <Link to="/" className="ds-link">cloud link</Link> instead. Keep the file within 6 GB.
+            </p>
+          </div>
+          <div className="ds-callout">
+            <p>
+              The QR image is drawn by api.qrserver.com from the pairing link. The file itself never goes there.
+            </p>
+          </div>
+        </div>
+      </PageFrame>
 
       <AuthModal
         isOpen={isAuthOpen}
@@ -112,6 +142,6 @@ export default function QrTransferPage() {
           setUser(null);
         }}
       />
-    </div>
+    </>
   );
 }

@@ -6,9 +6,13 @@
   "compatibility_flags": ["nodejs_compat"],
   "vars": {
     "CLOUDFLARE_R2_BUCKET": "itransfer-storage",
-    "APP_URL": "https://itransfer.iprudhvi.in"
+    "APP_URL": "https://sendtoanyone.com",
+    "SUPABASE_URL": "https://giyeepztahdbsejsozog.supabase.co"
   },
   "services": [
     { "binding": "RATE_LIMITER", "service": "itransfer-rate-limit" }
-  ]
+  ],
+  "observability": {
+    "enabled": true
+  }
 }

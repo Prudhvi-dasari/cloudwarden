@@ -1,12 +1,59 @@
-const PRICES = {
-  monthly: { label: 'Monthly', inr: 799 },
-  yearly: { label: 'Yearly', inr: 5999 },
-};
+import { CANONICAL_ORIGIN, publicOrigin } from './canonicalHost.js';
+import { previewBlockResponse } from './previewGuard.js';
+import { allowanceForStatus, STORAGE_POLICY } from './storagePolicy.js';
+import { handleDodoWebhook, productMap } from './dodoWebhook.js';
+
+const PLANS = new Set(['monthly', 'yearly']);
 
 function envGet(env, key) {
   if (env && env[key]) return env[key];
   if (typeof process !== 'undefined' && process.env?.[key]) return process.env[key];
   return '';
+}
+
+function cookieValue(request, name) {
+  const header = request?.headers?.get?.('cookie') || '';
+  for (const part of header.split(';')) {
+    const [rawName, ...rest] = part.trim().split('=');
+    if (rawName !== name) continue;
+    try {
+      return decodeURIComponent(rest.join('='));
+    } catch {
+      return rest.join('=');
+    }
+  }
+  return '';
+}
+
+function textValue(value) {
+  return typeof value === 'string' ? value : '';
+}
+
+function minilyticsMetadata(request) {
+  return {
+    ml_visitor_id: cookieValue(request, 'ml_vid'),
+    ml_session_id: cookieValue(request, 'ml_sid'),
+  };
+}
+
+export function dodoApiBase(env) {
+  return envGet(env, 'DODO_ENV') === 'live'
+    ? 'https://live.dodopayments.com'
+    : 'https://test.dodopayments.com';
+}
+
+export function checkoutPurchasable(env) {
+  return envGet(env, 'DODO_CHECKOUT_ENABLED') === 'true' && STORAGE_POLICY.paidFeaturesEnabled === true;
+}
+
+export function transferAllowance(entitlement) {
+  const allowance = allowanceForStatus(entitlement?.status);
+  return {
+    bytes: allowance.bytes,
+    hours: allowance.hours,
+    paidFeaturesEnabled: STORAGE_POLICY.paidFeaturesEnabled,
+    entitlementStatus: entitlement?.status || 'free',
+  };
 }
 
 function json(status, data) {
@@ -16,76 +63,168 @@ function json(status, data) {
       'content-type': 'application/json; charset=utf-8',
       'access-control-allow-origin': '*',
       'access-control-allow-methods': 'GET,POST,OPTIONS',
-      'access-control-allow-headers': 'Content-Type',
+      'access-control-allow-headers': 'Content-Type, Authorization',
+      'cache-control': 'no-store',
     },
   });
 }
 
-export async function handlePaymentRequest({ request, env }) {
-  if (request.method === 'OPTIONS') return json(200, { ok: true });
+function supabaseBase(env) {
+  return envGet(env, 'SUPABASE_URL').replace(/\/$/, '');
+}
 
-  const url = new URL(request.url);
-  const requested = url.searchParams.get('action') || 'checkout';
-  if (requested !== 'health') {
-    return json(503, { error: 'Paid plans are not available yet.', code: 'PAID_NOT_AVAILABLE' });
+const PUBLISHABLE_KEY = 'sb_publishable_XenT3T8l2M0-SWsHDJZpUg_3elJqmVU';
+
+function publishableKey(env) {
+  return envGet(env, 'SUPABASE_PUBLISHABLE_KEY')
+    || envGet(env, 'SUPABASE_ANON_KEY')
+    || (env?.ITRANSFER_ISOLATED === '1' ? '' : PUBLISHABLE_KEY);
+}
+
+async function authenticatedUser(request, env) {
+  const header = request.headers.get('authorization') || '';
+  const match = header.match(/^Bearer\s+(\S+)/i);
+  if (!match) return null;
+  const base = supabaseBase(env);
+  const key = publishableKey(env);
+  if (!base || !key) return { invalid: true };
+  let response;
+  try {
+    response = await fetch(`${base}/auth/v1/user`, {
+      headers: { apikey: key, Authorization: `Bearer ${match[1]}` },
+      signal: AbortSignal.timeout(8000),
+    });
+  } catch {
+    return { invalid: true, unavailable: true };
   }
-  const action = url.searchParams.get('action') || 'checkout';
-  const apiKey = envGet(env, 'DODO_API_KEY');
-  const testMode = envGet(env, 'DODO_ENV') === 'test' || apiKey.startsWith('test_');
-  const base = testMode ? 'https://test.dodopayments.com' : 'https://live.dodopayments.com';
-  const products = {
-    monthly: envGet(env, 'DODO_PRODUCT_MONTHLY'),
-    yearly: envGet(env, 'DODO_PRODUCT_YEARLY'),
-  };
+  if (!response.ok) return { invalid: true };
+  const body = await response.json().catch(() => ({}));
+  if (!body?.id || typeof body.id !== 'string') return { invalid: true };
+  const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+  return { id: body.id, email };
+}
 
-  if (action === 'health') {
-    return json(200, {
-      provider: 'dodo',
-      configured: Boolean(apiKey && products.monthly && products.yearly),
-      mode: testMode ? 'test' : 'live',
+function offers(env) {
+  const products = productMap(env);
+  return {
+    provider: 'dodo',
+    mode: envGet(env, 'DODO_ENV') === 'live' ? 'live' : 'test',
+    purchasable: checkoutPurchasable(env),
+    reason: checkoutPurchasable(env)
+      ? 'Dodo charges the price on its checkout page. Paid access starts after the server confirms the payment.'
+      : 'Checkout is closed. A confirmed payment allows 250 GB for 180 days.',
+    plans: ['monthly', 'yearly'].map((code) => ({
+      code,
+      priceLabel: code === 'monthly' ? '₹799' : '₹5,999',
+      interval: code === 'monthly' ? 'Billed every month' : 'Billed once a year',
+      transfer: '250 GB',
+      retention: '180 days',
+      productConfigured: Boolean(products[code]),
+      purchasable: checkoutPurchasable(env) && Boolean(products[code]),
+    })),
+  };
+}
+
+function siteOrigin(request, env) {
+  return publicOrigin(request?.url || envGet(env, 'APP_URL') || CANONICAL_ORIGIN);
+}
+
+async function createCheckout({ request, env, plan }) {
+  const user = await authenticatedUser(request, env);
+  if (user?.unavailable) {
+    return json(503, { error: 'Sign-in could not be verified. Try again.', code: 'AUTH_UNAVAILABLE' });
+  }
+  if (!user || user.invalid || !user.id) {
+    return json(401, { error: 'Sign in before starting checkout.', code: 'AUTH_REQUIRED' });
+  }
+  if (envGet(env, 'DODO_CHECKOUT_ENABLED') !== 'true') {
+    return json(503, {
+      error: 'Checkout is closed until a Dodo product and a paid transfer limit are configured.',
+      code: 'CHECKOUT_DISABLED',
     });
   }
-
+  const products = productMap(env);
+  const productId = products[plan];
+  if (!productId) {
+    return json(503, { error: 'This plan has no Dodo product configured.', code: 'PRODUCT_UNCONFIGURED' });
+  }
+  const apiKey = envGet(env, 'DODO_API_KEY') || envGet(env, 'DODO_PAYMENTS_API_KEY');
   if (!apiKey) {
-    return json(503, { error: 'Dodo Payments is not configured yet. Add DODO_API_KEY.' });
+    return json(503, { error: 'Dodo Payments is not configured.', code: 'CHECKOUT_UNAVAILABLE' });
   }
 
-  if (action === 'checkout' && request.method === 'POST') {
-    const body = await request.json().catch(() => ({}));
-    const cycle = body.billingCycle === 'monthly' ? 'monthly' : 'yearly';
-    const productId = products[cycle];
-    if (!productId) {
-      return json(503, { error: `Missing Dodo product id for ${cycle}.` });
-    }
-
-    const origin = body.origin || envGet(env, 'APP_URL') || 'https://itransfer-app.pages.dev';
-    const res = await fetch(`${base}/checkouts`, {
+  let response;
+  try {
+    response = await fetch(`${dodoApiBase(env)}/checkouts`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       },
+      signal: AbortSignal.timeout(12000),
       body: JSON.stringify({
         product_cart: [{ product_id: productId, quantity: 1 }],
-        customer: {
-          email: body.email || undefined,
-          name: body.name || undefined,
-        },
-        return_url: `${origin}/?payment=dodo`,
+        customer: user.email ? { email: user.email } : undefined,
+        return_url: `${siteOrigin(request, env)}/pricing?checkout=return`,
         metadata: {
-          billing_cycle: cycle,
-          email: body.email || '',
+          ...minilyticsMetadata(request),
+          user_id: user.id,
+          plan_code: plan,
+          email: user.email || '',
         },
       }),
     });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      return json(res.status, { error: data.message || data.error || 'Dodo checkout failed.' });
-    }
-    const checkoutUrl = data.checkout_url || data.url || data.payment_link;
-    if (!checkoutUrl) return json(502, { error: 'Dodo did not return a checkout link.' });
-    return json(200, { checkoutUrl, billingCycle: cycle });
+  } catch {
+    return json(502, { error: 'Checkout did not respond. Try again.', code: 'CHECKOUT_TIMEOUT' });
+  }
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const rejected = response.status === 401 || response.status === 403;
+    return json(502, {
+      error: rejected
+        ? 'Dodo rejected the payment key, so checkout cannot open.'
+        : 'Dodo checkout failed.',
+      code: 'CHECKOUT_FAILED',
+    });
+  }
+  const checkoutUrl = typeof data.checkout_url === 'string' ? data.checkout_url : '';
+  let host = '';
+  try { host = new URL(checkoutUrl).hostname; } catch { host = ''; }
+  if (!checkoutUrl || !host.endsWith('dodopayments.com')) {
+    return json(502, { error: 'Dodo did not return a checkout link.', code: 'CHECKOUT_URL_MISSING' });
+  }
+  return json(200, { checkoutUrl, sessionId: data.session_id || '' });
+}
+
+export async function handlePaymentRequest({ request, env }) {
+  if (request.method === 'OPTIONS') return json(200, { ok: true });
+  const previewBlock = previewBlockResponse(request, env);
+  if (previewBlock) return previewBlock;
+
+  const url = new URL(request.url);
+  const action = url.searchParams.get('action') || 'checkout';
+
+  if (action === 'webhook') {
+    if (request.method !== 'POST') return json(405, { error: 'POST required.', code: 'METHOD' });
+    return handleDodoWebhook({ request, env, store: env?.billingStore });
   }
 
-  return json(400, { error: 'Unsupported payment action.' });
+  if (action === 'health' || action === 'offers') {
+    return json(200, offers(env));
+  }
+
+  if (action !== 'checkout' || request.method !== 'POST') {
+    return json(400, { error: 'Unsupported payment action.', code: 'UNSUPPORTED' });
+  }
+
+  const body = await request.json().catch(() => null);
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return json(400, { error: 'Invalid checkout request.', code: 'INVALID_BODY' });
+  }
+  if (body.product_id || body.productId || body.price || body.amount || body.price_id) {
+    return json(400, { error: 'Product and price are chosen on the server.', code: 'PRODUCT_NOT_ALLOWED' });
+  }
+  const plan = textValue(body.plan || body.billingCycle);
+  if (!PLANS.has(plan)) return json(400, { error: 'Unknown plan.', code: 'UNKNOWN_PLAN' });
+  return createCheckout({ request, env, plan });
 }

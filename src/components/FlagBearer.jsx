@@ -107,56 +107,56 @@ export default function FlagBearer({ countryCode = '', countryName = '' }) {
 
         <g className="bearer-sway">
           {/* legs */}
-          <path d="M172 318 C168 380 162 440 158 492" stroke="#2a3148" strokeWidth="26" strokeLinecap="round" />
-          <path d="M228 318 C232 380 238 440 246 492" stroke="#2a3148" strokeWidth="26" strokeLinecap="round" />
-          <path d="M140 492 H178" stroke="#1b2033" strokeWidth="14" strokeLinecap="round" />
-          <path d="M228 492 H268" stroke="#1b2033" strokeWidth="14" strokeLinecap="round" />
+          <path d="M172 318 C168 380 162 440 158 492" stroke="#1E293B" strokeWidth="24" strokeLinecap="round" />
+          <path d="M228 318 C232 380 238 440 246 492" stroke="#1E293B" strokeWidth="24" strokeLinecap="round" />
+          <path d="M140 492 H178" stroke="#0F172A" strokeWidth="14" strokeLinecap="round" />
+          <path d="M228 492 H268" stroke="#0F172A" strokeWidth="14" strokeLinecap="round" />
 
           {/* torso */}
           <path
             d="M148 188 C142 250 150 310 178 330 H222 C252 308 258 248 250 188 Z"
-            fill="#f7f3ea"
+            fill="#F8FAFC"
           />
-          <path d="M168 248 H232" stroke="rgba(40,40,70,0.14)" strokeWidth="8" strokeLinecap="round" />
+          <path d="M168 248 H232" stroke="rgba(148,163,184,0.25)" strokeWidth="6" strokeLinecap="round" />
 
           {/* left arm (hanging) */}
           <path
             d="M152 210 C118 240 108 300 118 360"
-            stroke="#f7f3ea"
-            strokeWidth="28"
+            stroke="#F8FAFC"
+            strokeWidth="26"
             strokeLinecap="round"
             strokeLinejoin="round"
           />
-          <circle cx="118" cy="368" r="14" fill="#f3c7a6" />
+          <circle cx="118" cy="368" r="13" fill="#F3C7A6" />
 
           {/* right arm (raised to pole) — continuous stroke from shoulder */}
           <path
             d="M246 208 C278 176 300 148 312 118"
-            stroke="#f7f3ea"
-            strokeWidth="28"
+            stroke="#F8FAFC"
+            strokeWidth="26"
             strokeLinecap="round"
             strokeLinejoin="round"
           />
-          <circle cx="314" cy="112" r="15" fill="#f3c7a6" />
+          <circle cx="314" cy="112" r="14" fill="#F3C7A6" />
 
           {/* neck + head */}
-          <rect x="184" y="168" width="32" height="28" rx="12" fill="#f3c7a6" />
-          <circle cx="200" cy="142" r="44" fill="#f3c7a6" />
+          <rect x="184" y="168" width="32" height="28" rx="12" fill="#F3C7A6" />
+          <circle cx="200" cy="142" r="42" fill="#F3C7A6" />
           <path
-            d="M158 138 C162 96 186 84 208 86 C244 80 254 112 246 148 C230 116 198 112 158 138 Z"
-            fill="#1c1917"
+            d="M160 138 C164 96 186 84 208 86 C244 80 254 112 246 148 C230 116 198 112 160 138 Z"
+            fill="#0F172A"
           />
-          <circle cx="186" cy="146" r="2.8" fill="#1c1917" />
-          <circle cx="214" cy="146" r="2.8" fill="#1c1917" />
-          <path d="M190 164 Q200 172 212 164" stroke="#1c1917" strokeWidth="1.8" strokeLinecap="round" />
+          <circle cx="188" cy="144" r="2.6" fill="#0F172A" />
+          <circle cx="214" cy="144" r="2.6" fill="#0F172A" />
+          <path d="M192 162 Q200 169 210 162" stroke="#0F172A" strokeWidth="1.8" strokeLinecap="round" />
 
           {/* pole */}
-          <path d="M320 28 V300" stroke="#f4f1ea" strokeWidth="6" strokeLinecap="round" />
-          <circle cx="320" cy="24" r="6" fill="#f4f1ea" />
+          <path d="M320 28 V300" stroke="#CBD5E1" strokeWidth="5" strokeLinecap="round" />
+          <circle cx="320" cy="24" r="6" fill="#94A3B8" />
 
           {/* hand grip on pole */}
-          <circle cx="318" cy="112" r="13" fill="#f3c7a6" />
-          <path d="M310 104 C314 120 326 122 330 108" stroke="#e7b48f" strokeWidth="2" strokeLinecap="round" />
+          <circle cx="318" cy="112" r="12" fill="#F3C7A6" />
+          <path d="M312 106 C315 118 325 120 328 108" stroke="#E29D72" strokeWidth="1.8" strokeLinecap="round" />
 
           {/* flag */}
           <g transform="translate(324 34)">

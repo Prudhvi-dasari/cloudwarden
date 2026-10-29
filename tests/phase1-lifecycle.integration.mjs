@@ -13,6 +13,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { handleR2Request } from '../functions/lib/r2Engine.js';
+import { claimDownloadSlot, releaseDownloadSlot, reserveInto, withShareLock } from '../functions/lib/transferReservation.js';
 import { sha256Hex } from '../functions/lib/transferSecurity.js';
 
 const ENV = {
@@ -141,6 +142,26 @@ function installFetch(state, { restStatus = 200 } = {}) {
       const tableName = parsed.pathname.split('/').pop();
       const table = tableName === 'transfer_claims' ? state.claims : state.transfers;
       const body = options.body ? JSON.parse(options.body) : null;
+      if (tableName === 'reserve_transfer_file' && method === 'POST') {
+        const payload = await withShareLock(state, 'platform', async () => (
+          withShareLock(state, body?.p_share_id, async () => (
+            reserveInto(state.transfers, body, `id-${state.nextId++}`)
+          ))
+        ));
+        return new Response(JSON.stringify(payload), { status: 200 });
+      }
+      if (tableName === 'claim_download_slot' && method === 'POST') {
+        const payload = await withShareLock(state, body?.p_file_id, async () => (
+          claimDownloadSlot(state.transfers, body)
+        ));
+        return new Response(JSON.stringify(payload), { status: 200 });
+      }
+      if (tableName === 'release_download_slot' && method === 'POST') {
+        const payload = await withShareLock(state, body?.p_file_id, async () => (
+          releaseDownloadSlot(state.transfers, body)
+        ));
+        return new Response(JSON.stringify(payload), { status: 200 });
+      }
       if (method === 'GET') {
         return new Response(JSON.stringify(matchRows(table, parsed)), { status: 200 });
       }

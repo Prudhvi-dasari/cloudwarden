@@ -1,32 +1,38 @@
+import { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
 import ErrorBoundary from './components/ErrorBoundary';
 import { ToastProvider } from './components/Toast';
 import ScrollToTop from './components/ScrollToTop';
 import SeoHead from './components/SeoHead';
-import HomePage from './pages/HomePage';
-import DownloadPage from './pages/DownloadPage';
-import PrivacyPage from './pages/PrivacyPage';
-import TermsPage from './pages/TermsPage';
-import PricingPage from './pages/PricingPage';
-import FeaturesPage from './pages/FeaturesPage';
-import SecurityPage from './pages/SecurityPage';
-import ResourcesPage from './pages/ResourcesPage';
-import WidgetPage from './pages/WidgetPage';
-import TeamsPage from './pages/TeamsPage';
-import AppsPage from './pages/AppsPage';
-import ApiDocsPage from './pages/ApiDocsPage';
-import FileRequestPage from './pages/FileRequestPage';
-import HowItWorksPage from './pages/HowItWorksPage';
-import HelpContactPage from './pages/HelpContactPage';
-import ChecksumPage from './pages/ChecksumPage';
-import CompliancePage from './pages/CompliancePage';
-import ComparePage from './pages/ComparePage';
-import StatusPage from './pages/StatusPage';
-import ChangelogPage from './pages/ChangelogPage';
-import QrTransferPage from './pages/QrTransferPage';
-import SeoLandingPage from './pages/SeoLandingPage';
-import NotFoundPage from './pages/NotFoundPage';
+import RevealObserver from './components/RevealObserver';
 import { AccountProvider } from './lib/AccountContext';
+
+// Core entry route — eagerly loaded for instant first render without layout shift
+import HomePage from './pages/HomePage';
+
+// Route-level code-splitting for secondary, admin, tool, and SEO landing pages
+const DownloadPage = lazy(() => import('./pages/DownloadPage'));
+const FileRequestPage = lazy(() => import('./pages/FileRequestPage'));
+const PrivacyPage = lazy(() => import('./pages/PrivacyPage'));
+const TermsPage = lazy(() => import('./pages/TermsPage'));
+const PricingPage = lazy(() => import('./pages/PricingPage'));
+const FeaturesPage = lazy(() => import('./pages/FeaturesPage'));
+const SecurityPage = lazy(() => import('./pages/SecurityPage'));
+const ResourcesPage = lazy(() => import('./pages/ResourcesPage'));
+const WidgetPage = lazy(() => import('./pages/WidgetPage'));
+const TeamsPage = lazy(() => import('./pages/TeamsPage'));
+const AppsPage = lazy(() => import('./pages/AppsPage'));
+const ApiDocsPage = lazy(() => import('./pages/ApiDocsPage'));
+const HowItWorksPage = lazy(() => import('./pages/HowItWorksPage'));
+const HelpContactPage = lazy(() => import('./pages/HelpContactPage'));
+const ChecksumPage = lazy(() => import('./pages/ChecksumPage'));
+const CompliancePage = lazy(() => import('./pages/CompliancePage'));
+const ComparePage = lazy(() => import('./pages/ComparePage'));
+const StatusPage = lazy(() => import('./pages/StatusPage'));
+const ChangelogPage = lazy(() => import('./pages/ChangelogPage'));
+const QrTransferPage = lazy(() => import('./pages/QrTransferPage'));
+const SeoLandingPage = lazy(() => import('./pages/SeoLandingPage'));
+const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
 
 const SEO_KEYS = [
   'send-large-files',
@@ -60,6 +66,14 @@ function Stage({ children }) {
   );
 }
 
+function PageFallback() {
+  return (
+    <div className="min-h-screen bg-white flex items-center justify-center" role="status" aria-label="Loading page">
+      <div className="w-6 h-6 border-2 border-slate-200 border-t-[#1769F5] rounded-full animate-spin" />
+    </div>
+  );
+}
+
 export default function App() {
   return (
     <ErrorBoundary>
@@ -68,7 +82,9 @@ export default function App() {
           <AccountProvider>
           <ScrollToTop />
           <SeoHead />
+          <RevealObserver />
           <Stage>
+          <Suspense fallback={<PageFallback />}>
           <Routes>
             {/* Core Product Pages */}
             <Route path="/" element={<HomePage />} />
@@ -113,6 +129,7 @@ export default function App() {
             {/* 404 Route */}
             <Route path="*" element={<NotFoundPage />} />
           </Routes>
+          </Suspense>
           </Stage>
           </AccountProvider>
         </BrowserRouter>

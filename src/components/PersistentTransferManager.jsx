@@ -17,6 +17,14 @@ function getFileIcon(fileName, fileType) {
   return File;
 }
 
+const KIND_BY_ICON = new Map([
+  [ImageIcon, 'image'],
+  [Film, 'video'],
+  [Music, 'audio'],
+  [Archive, 'archive'],
+  [FileText, 'doc'],
+]);
+
 export default function PersistentTransferManager({
   manager,
   snapshot,
@@ -73,63 +81,55 @@ export default function PersistentTransferManager({
 
   return (
     <Portal>
-    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-3 sm:p-4 bg-slate-950/80 backdrop-blur-md animate-fadeIn">
-      <div className="w-full max-w-2xl bg-white rounded-3xl shadow-2xl border border-slate-200/90 overflow-hidden flex flex-col max-h-[90vh] animate-scale-in">
-        
-        {/* Header */}
-        <div className="p-5 sm:p-6 border-b border-slate-100 bg-gradient-to-r from-slate-900 via-slate-850 to-indigo-950 text-white relative">
-          <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0">
-              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 mb-2">
-                <Zap className="w-3 h-3 text-indigo-400 animate-pulse" />
-                <span>TurboBandwidth™ Transfer Manager</span>
-              </div>
-              <h2 className="text-xl sm:text-2xl font-black truncate tracking-tight">
-                {effectiveTransferName}
-              </h2>
-              <p className="text-xs text-slate-300 font-medium mt-0.5">
-                {isAllComplete ? (
-                  <span className="text-emerald-400 font-bold flex items-center gap-1.5">
-                    <CheckCircle2 className="w-4 h-4" /> All {totalFiles} files uploaded successfully!
-                  </span>
-                ) : (
-                  <span>Uploading {totalFiles} file{totalFiles !== 1 ? 's' : ''} • {formatBytes(uploadedBytes)} of {formatBytes(totalBytes)} ({overallProgress}%)</span>
-                )}
-              </p>
-            </div>
+    <div className="ds-modal-backdrop z-[10000]">
+      <div className="ds-modal is-wide snd-manager">
 
-            {isAllComplete && (
-              <button
-                onClick={onClose}
-                className="p-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white/80 transition-colors cursor-pointer"
-                title="Close"
-              >
-                <X className="w-5 h-5" />
-              </button>
+        {/* Header */}
+        <div className="snd-manager-head">
+          <p className="ds-kicker"><b>●</b> Transfer manager</p>
+          <h2 className="ds-modal-title mt-2 truncate" title={effectiveTransferName}>
+            {effectiveTransferName}
+          </h2>
+          <p className="ds-modal-sub">
+            {isAllComplete ? (
+              <span className="inline-flex items-center gap-1.5 font-semibold text-[#0d6b36]">
+                <CheckCircle2 className="w-4 h-4" aria-hidden="true" /> All {totalFiles} files uploaded.
+              </span>
+            ) : (
+              <span>Uploading {totalFiles} file{totalFiles !== 1 ? 's' : ''} · <span className="snd-mono">{formatBytes(uploadedBytes)} of {formatBytes(totalBytes)} ({overallProgress}%)</span></span>
             )}
-          </div>
+          </p>
+
+          {isAllComplete && (
+            <button
+              type="button"
+              onClick={onClose}
+              className="ds-close"
+              title="Close"
+              aria-label="Close"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          )}
 
           {/* Overall Progress Bar */}
-          <div className="mt-4 space-y-1.5">
-            <div className="w-full h-2.5 bg-white/10 rounded-full overflow-hidden p-0.5">
-              <div
-                className={`h-full rounded-full transition-all duration-300 ${isAllComplete ? 'bg-emerald-400' : 'bg-gradient-to-r from-indigo-500 to-violet-400'}`}
-                style={{ width: `${overallProgress}%` }}
-              />
+          <div className={`snd-manager-bar${isAllComplete ? ' is-complete' : ''}`}>
+            <div className="ds-progress" aria-hidden="true">
+              <i style={{ width: `${overallProgress}%` }} />
             </div>
-            <div className="flex items-center justify-between text-[11px] font-bold text-slate-300">
+            <div className="snd-live-meta">
               <span className="flex items-center gap-1">
-                <Zap className="w-3 h-3 text-amber-400" /> {speedStr}
+                <Zap className="w-3 h-3" aria-hidden="true" /> {speedStr}
               </span>
               <span className="flex items-center gap-1">
-                <Clock className="w-3 h-3 text-indigo-400" /> {timeRemainingStr} remaining
+                <Clock className="w-3 h-3" aria-hidden="true" /> {timeRemainingStr} remaining
               </span>
             </div>
           </div>
         </div>
 
         {/* File Transfer List */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-3 bg-slate-50 min-h-[220px]">
+        <div className="snd-manager-body">
           {files.map((file) => {
             const Icon = getFileIcon(file.name, file.type);
             const isUploading = file.status === 'uploading';
@@ -142,67 +142,59 @@ export default function PersistentTransferManager({
             return (
               <div
                 key={file.id}
-                className={`p-3.5 sm:p-4 rounded-2xl border transition-all ${
-                  isComplete
-                    ? 'bg-emerald-50/70 border-emerald-200/80 shadow-2xs'
-                    : isValidating
-                    ? 'bg-indigo-50/70 border-indigo-200/80 shadow-2xs animate-pulse'
-                    : isPaused
-                    ? 'bg-amber-50/60 border-amber-200/80'
-                    : isError
-                    ? 'bg-rose-50/70 border-rose-200/80'
-                    : 'bg-white border-slate-200/80 shadow-xs'
-                }`}
+                className={`snd-job${isComplete ? ' is-done' : ''}${isPaused ? ' is-paused' : ''}${isError ? ' is-error' : ''}`}
               >
-                <div className="flex items-center justify-between gap-3 mb-2">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
-                      isComplete ? 'bg-emerald-100 text-emerald-700' : isValidating ? 'bg-indigo-100 text-indigo-700' : 'bg-indigo-50 text-indigo-600'
-                    }`}>
-                      <Icon className="w-5 h-5" />
+                <div className="snd-job-top">
+                  <span className="snd-ftile" data-kind={KIND_BY_ICON.get(Icon) || 'other'}>
+                    <Icon aria-hidden="true" />
+                  </span>
+                  <div className="snd-file-main">
+                    <div className="snd-file-name">
+                      <p title={file.name}>{file.name}</p>
                     </div>
-                    <div className="min-w-0">
-                      <p className="text-xs sm:text-sm font-black text-slate-900 truncate">{file.name}</p>
-                      <div className="flex items-center gap-2 text-[11px] font-semibold text-slate-500 mt-0.5">
-                        <span>{formatBytes(file.size)}</span>
-                        <span>•</span>
-                        {isComplete && <span className="text-emerald-700 font-bold">100% Completed</span>}
-                        {isValidating && (
-                          <span className="text-indigo-700 font-black flex items-center gap-1">
-                            <Loader2 className="w-3 h-3 animate-spin text-indigo-600" />
-                            <span>100% • Validating file integrity...</span>
-                          </span>
-                        )}
-                        {isUploading && <span className="text-indigo-600 font-bold">{file.progress}% • {formatBytes(file.uploadedBytes)} / {formatBytes(file.size)}</span>}
-                        {isPaused && <span className="text-amber-700 font-bold">Paused at {file.progress}% ({formatBytes(file.uploadedBytes)})</span>}
-                        {isQueued && <span className="text-slate-400 font-bold">Waiting in queue...</span>}
-                        {isError && <span className="text-rose-600 font-bold">{file.error || 'Upload error'}</span>}
-                      </div>
+                    <div className="snd-job-state">
+                      <span>{formatBytes(file.size)}</span>
+                      <span aria-hidden="true">·</span>
+                      {isComplete && <span className="is-ok">Uploaded</span>}
+                      {isValidating && (
+                        <span className="is-blue inline-flex items-center gap-1">
+                          <Loader2 className="w-3 h-3 animate-spin" aria-hidden="true" />
+                          <span>Checking the upload…</span>
+                        </span>
+                      )}
+                      {isUploading && <span className="is-blue">{file.progress}% · {formatBytes(file.uploadedBytes)} / {formatBytes(file.size)}</span>}
+                      {isPaused && <span className="is-warn">Paused at {file.progress}% ({formatBytes(file.uploadedBytes)})</span>}
+                      {isQueued && <span>Waiting in queue…</span>}
+                      {isError && <span className="is-bad">{file.error || 'Upload error'}</span>}
                     </div>
                   </div>
 
                   {/* Per-File Action Buttons */}
-                  <div className="flex items-center gap-1.5 shrink-0">
+                  <div className="snd-job-actions">
                     {isValidating && (
-                      <div className="px-2.5 py-1 bg-indigo-100/80 border border-indigo-200 text-indigo-800 rounded-xl text-[11px] font-extrabold flex items-center gap-1.5 shadow-2xs">
-                        <ShieldCheck className="w-3.5 h-3.5 text-indigo-600" />
-                        <span>Validating</span>
-                      </div>
+                      <span className="ds-badge ds-badge-blue">
+                        <ShieldCheck className="w-3 h-3" aria-hidden="true" />
+                        Checking
+                      </span>
                     )}
                     {isUploading && (
                       <>
                         <button
+                          type="button"
                           onClick={() => manager.pauseFile(file.id)}
-                          className="px-2.5 py-1.5 bg-amber-100 hover:bg-amber-200 text-amber-900 rounded-xl text-xs font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                          className="ds-btn ds-btn-ghost ds-btn-sm"
                           title="Pause Upload"
+                          aria-label="Pause upload"
                         >
-                          <Pause className="w-3.5 h-3.5 fill-amber-900" />
-                          <span className="hidden xs:inline">Pause</span>
+                          <Pause className="w-3.5 h-3.5" aria-hidden="true" />
+                          <span className="hidden sm:inline">Pause</span>
                         </button>
                         <button
+                          type="button"
                           onClick={() => manager.cancelFile(file.id)}
-                          className="p-1.5 bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-700 rounded-xl transition-colors cursor-pointer"
+                          className="snd-icon-btn is-danger"
                           title="Cancel Upload"
+                          aria-label="Cancel upload"
                         >
                           <X className="w-4 h-4" />
                         </button>
@@ -212,17 +204,21 @@ export default function PersistentTransferManager({
                     {isPaused && (
                       <>
                         <button
+                          type="button"
                           onClick={() => manager.resumeFile(file.id)}
-                          className="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold flex items-center gap-1 transition-colors shadow-2xs cursor-pointer"
+                          className="ds-btn ds-btn-dark ds-btn-sm"
                           title="Resume Upload"
+                          aria-label="Resume upload"
                         >
-                          <Play className="w-3.5 h-3.5 fill-white" />
-                          <span className="hidden xs:inline">Resume</span>
+                          <Play className="w-3.5 h-3.5" aria-hidden="true" />
+                          <span className="hidden sm:inline">Resume</span>
                         </button>
                         <button
+                          type="button"
                           onClick={() => manager.cancelFile(file.id)}
-                          className="p-1.5 bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-700 rounded-xl transition-colors cursor-pointer"
+                          className="snd-icon-btn is-danger"
                           title="Cancel"
+                          aria-label="Cancel upload"
                         >
                           <X className="w-4 h-4" />
                         </button>
@@ -231,28 +227,33 @@ export default function PersistentTransferManager({
 
                     {isQueued && (
                       <button
+                        type="button"
                         onClick={() => manager.removeFile(file.id)}
-                        className="px-2.5 py-1.5 bg-slate-100 hover:bg-rose-100 text-slate-600 hover:text-rose-700 rounded-xl text-xs font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                        className="ds-btn ds-btn-ghost ds-btn-sm"
                         title="Remove from queue"
+                        aria-label="Remove from queue"
                       >
-                        <X className="w-3.5 h-3.5" />
-                        <span className="hidden xs:inline">Remove</span>
+                        <X className="w-3.5 h-3.5" aria-hidden="true" />
+                        <span className="hidden sm:inline">Remove</span>
                       </button>
                     )}
 
                     {isError && (
                       <>
                         <button
+                          type="button"
                           onClick={() => manager.retryFile(file.id)}
-                          className="px-2.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold flex items-center gap-1 transition-colors shadow-2xs cursor-pointer"
+                          className="ds-btn ds-btn-dark ds-btn-sm"
                           title="Retry Upload"
                         >
-                          <RotateCcw className="w-3.5 h-3.5" />
+                          <RotateCcw className="w-3.5 h-3.5" aria-hidden="true" />
                           <span>Retry</span>
                         </button>
                         <button
+                          type="button"
                           onClick={() => manager.removeFile(file.id)}
-                          className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-500 rounded-xl cursor-pointer"
+                          className="snd-icon-btn is-danger"
+                          aria-label="Remove file"
                         >
                           <X className="w-4 h-4" />
                         </button>
@@ -260,25 +261,20 @@ export default function PersistentTransferManager({
                     )}
 
                     {isComplete && (
-                      <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center">
-                        <Check className="w-4 h-4 stroke-[3]" />
-                      </div>
+                      <span className="ds-icon is-green is-sm rounded-full" aria-hidden="true">
+                        <Check />
+                      </span>
                     )}
                   </div>
                 </div>
 
                 {/* Per-File Progress Bar & Speed */}
                 {!isComplete && !isQueued && (
-                  <div className="space-y-1 mt-1">
-                    <div className="w-full h-1.5 bg-slate-200 rounded-full overflow-hidden">
-                      <div
-                        className={`h-full rounded-full transition-all duration-200 ${
-                          isPaused ? 'bg-amber-500' : isError ? 'bg-rose-500' : 'theme-btn-primary'
-                        }`}
-                        style={{ width: `${file.progress}%` }}
-                      />
+                  <div className="grid gap-1">
+                    <div className="ds-progress" aria-hidden="true">
+                      <i style={{ width: `${file.progress}%` }} />
                     </div>
-                    <div className="flex items-center justify-between text-[10px] font-bold text-slate-400">
+                    <div className="snd-live-meta">
                       <span>{file.speedStr}</span>
                       <span>ETA: {file.timeRemainingStr}</span>
                     </div>
@@ -289,53 +285,57 @@ export default function PersistentTransferManager({
           })}
         </div>
 
-        {/* Celebration & Share Link Card when Complete */}
+        {/* Share link card when complete */}
         {isAllComplete && (
-          <div className="p-4 sm:p-5 bg-emerald-50/90 border-t border-emerald-200/90 space-y-2.5 animate-fadeIn">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-emerald-950">
-                <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
-                <span className="text-xs sm:text-sm font-black">🎉 Transfer Complete & Ready to Share!</span>
-              </div>
-              <span className="text-[11px] font-bold text-emerald-700">{totalFiles} {totalFiles === 1 ? 'file' : 'files'} ({formatBytes(totalBytes)})</span>
+          <div className="snd-ready">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="inline-flex items-center gap-2 text-sm font-semibold text-[#0d6b36]">
+                <CheckCircle2 className="w-4 h-4 shrink-0" aria-hidden="true" />
+                Transfer complete. The link is ready.
+              </span>
+              <span className="snd-mono text-xs text-[#0d6b36]">{totalFiles} {totalFiles === 1 ? 'file' : 'files'} ({formatBytes(totalBytes)})</span>
             </div>
 
-            <div className="flex items-center gap-2">
-              <div className="relative flex-1">
+            <div className="snd-link">
+              <div className="snd-link-field">
                 <input
                   type="text"
                   readOnly
                   value={effectiveShareUrl}
-                  className="w-full pl-3.5 pr-24 py-2.5 bg-white border border-emerald-300 rounded-xl text-xs font-mono font-bold text-slate-900 focus:outline-none"
+                  aria-label="Download link"
+                  className="ds-input bg-white"
                 />
+              </div>
+              <div className="flex gap-2">
                 <button
+                  type="button"
                   onClick={() => {
                     navigator.clipboard.writeText(effectiveShareUrl);
                     if (onCopyLink) onCopyLink();
                   }}
-                  className="absolute right-1.5 top-1.5 px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center gap-1 transition-colors shadow-2xs cursor-pointer"
+                  className={`ds-btn ds-btn-dark snd-copy flex-1${copied ? ' is-copied' : ''}`}
                 >
-                  {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                  <span>{copied ? 'Copied!' : 'Copy Link'}</span>
+                  {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                  <span>{copied ? 'Copied' : 'Copy link'}</span>
                 </button>
+                <a
+                  href={effectiveShareUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="ds-btn ds-btn-ghost min-h-12"
+                  title="Open Download Page"
+                  aria-label="Open download page"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                </a>
               </div>
-
-              <a
-                href={effectiveShareUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="p-2.5 bg-white hover:bg-emerald-100 border border-emerald-300 text-emerald-700 rounded-xl text-xs font-bold flex items-center justify-center transition-colors shadow-2xs shrink-0 cursor-pointer"
-                title="Open Download Page"
-              >
-                <ExternalLink className="w-4 h-4" />
-              </a>
             </div>
           </div>
         )}
 
         {/* Footer Actions */}
-        <div className="p-4 sm:p-5 border-t border-slate-200 bg-white flex flex-col sm:flex-row items-center justify-between gap-3">
-          
+        <div className="snd-manager-foot">
+
           {/* Add More Files Button (Available during or after upload) */}
           <div>
             <input
@@ -346,43 +346,47 @@ export default function PersistentTransferManager({
               className="hidden"
             />
             <button
+              type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="w-full sm:w-auto px-4 py-2.5 rounded-xl border border-dashed border-slate-300 hover:border-indigo-500 bg-slate-50 hover:bg-indigo-50/40 text-slate-700 hover:text-indigo-700 text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer"
+              className="ds-btn ds-btn-ghost border-dashed"
             >
-              <Plus className="w-4 h-4" />
-              <span>Add More Files</span>
+              <Plus className="w-4 h-4" aria-hidden="true" />
+              <span>Add more files</span>
             </button>
           </div>
 
           {/* Action Buttons */}
-          <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+          <div>
             {isAllComplete ? (
               <button
+                type="button"
                 onClick={onClose}
-                className="w-full sm:w-auto theme-btn-primary px-6 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-md cursor-pointer"
+                className="ds-btn ds-btn-dark"
               >
-                <CheckCircle2 className="w-4 h-4" />
-                <span>Done & View Transfer</span>
+                <CheckCircle2 className="w-4 h-4" aria-hidden="true" />
+                <span>Done, view the transfer</span>
               </button>
             ) : (
               <>
                 {onCancelAndEdit && (
                   <button
+                    type="button"
                     onClick={() => {
                       manager.cancelAll();
                       onCancelAndEdit();
                     }}
-                    className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                    className="ds-btn ds-btn-danger"
                   >
-                    <X className="w-4 h-4 text-rose-600" />
-                    <span>Cancel & Edit Files</span>
+                    <X className="w-4 h-4" aria-hidden="true" />
+                    <span>Cancel and edit files</span>
                   </button>
                 )}
                 <button
+                  type="button"
                   onClick={onClose}
-                  className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-colors cursor-pointer"
+                  className="ds-btn ds-btn-ghost"
                 >
-                  Run in Background
+                  Run in background
                 </button>
               </>
             )}

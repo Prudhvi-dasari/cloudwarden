@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import { supabase, applyTheme } from './supabase';
 import { clearUserSession, getStoredUser, syncAccount } from './authSession';
+import { identifyMinilytics } from './minilytics';
 
 const AccountContext = createContext(null);
 
@@ -22,11 +23,14 @@ export function AccountProvider({ children }) {
         const synced = await syncAccount(sessionUser);
         if (!alive) return;
         setUser(synced);
+        identifyMinilytics(synced);
         applyTheme(synced?.user_metadata?.theme || 'indigo');
       } catch (e) {
         console.warn('Account session:', e.message);
       }
     }
+
+    identifyMinilytics(getStoredUser());
 
     supabase.auth.getSession().then(({ data }) => {
       if (!alive) return;

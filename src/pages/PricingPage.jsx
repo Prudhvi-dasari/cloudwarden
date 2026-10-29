@@ -1,117 +1,234 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import PageFrame from '../components/PageFrame';
+import { ArrowRight, Check, Minus } from 'lucide-react';
+import Navbar from '../components/Navbar';
+import Footer from '../components/Footer';
 import AuthModal from '../components/AuthModal';
 import ProfileModal from '../components/ProfileModal';
 import PaymentModal from '../components/PaymentModal';
+import CheckoutReturnNotice from '../components/CheckoutReturnNotice';
+import AnimatedHeadline from '../components/ds/AnimatedHeadline';
+import PlanCards, { PAID_FALLBACK } from '../components/ds/PlanCards';
+import { HomeFaq } from '../components/home/HomeSections';
 import { getStoredUser, clearUserSession, isUserPro } from '../lib/authSession';
-import { Crown, Check } from 'lucide-react';
+import { supabase } from '../lib/supabase';
+import { checkoutAccessToken } from '../lib/checkoutSession';
+
+const COMPARE = [
+  ['Size of one transfer', '6 GB', '250 GB'],
+  ['Longest link', '7 days', '180 days'],
+  ['Shortest link', '1 hour', '1 hour'],
+  ['Account to send', 'Not required', 'Required for checkout'],
+  ['Recipient account', 'Never', 'Never'],
+  ['Password on the download', true, true],
+  ['Email, link, device, request', true, true],
+  ['Ads', 'None', 'None'],
+];
+
+const NOT_FOR_SALE = ['Team billing', 'Shared storage', 'SSO', 'Custom domain'];
+
+const PRICING_FAQS = [
+  {
+    q: 'When does Pro start working?',
+    a: 'After Dodo confirms the payment to our server. The page you return to after checkout does not grant access by itself, so it can take a moment.',
+  },
+  {
+    q: 'Do I need an account to pay?',
+    a: 'Yes. Sign in first so the plan is attached to your account. Sending on the free plan never needs one.',
+  },
+  {
+    q: 'What does the yearly plan cost per month?',
+    a: 'The yearly price divided by twelve. The Dodo checkout page shows the exact amount before you pay.',
+  },
+  {
+    q: 'Can my team share one plan?',
+    a: 'Not yet. Teams is not a billed plan. There is no shared storage, SSO, custom domain, or team billing today.',
+  },
+  {
+    q: 'Can I use a discount code?',
+    a: 'If you have one, the Dodo checkout page has a field for it.',
+  },
+];
 
 export default function PricingPage() {
   const [user, setUser] = useState(() => getStoredUser());
   const [isAuthOpen, setIsAuthOpen] = useState(false);
-  const [authMode, setAuthMode] = useState('signup');
+  const [authMode, setAuthMode] = useState('login');
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isPaymentOpen, setIsPaymentOpen] = useState(false);
-  const [billingCycle, setBillingCycle] = useState('yearly');
-
+  const [offers, setOffers] = useState(null);
+  const [pendingPlan, setPendingPlan] = useState('');
+  const [busyPlan, setBusyPlan] = useState('');
+  const [note, setNote] = useState('');
+  const [notePlan, setNotePlan] = useState('');
   const userIsPro = isUserPro(user);
+  const paidPlans = offers?.plans?.length ? offers.plans : PAID_FALLBACK;
+
+  useEffect(() => {
+    let alive = true;
+    fetch('/api/payment?action=offers')
+      .then((response) => response.json())
+      .then((body) => { if (alive) setOffers(body); })
+      .catch(() => { if (alive) setOffers(null); });
+    return () => { alive = false; };
+  }, []);
+
+  async function startCheckout(plan) {
+    setBusyPlan(plan);
+    setNote('');
+    setNotePlan(plan);
+    let opened = false;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 12000);
+    try {
+      const token = await checkoutAccessToken(() => supabase.auth.getSession());
+      if (!token) {
+        setPendingPlan(plan);
+        setAuthMode('login');
+        setIsAuthOpen(true);
+        setNote('Sign in before starting checkout.');
+        return;
+      }
+      const response = await fetch('/api/payment?action=checkout', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify({ plan }),
+        signal: controller.signal,
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || !body.checkoutUrl) {
+        setNote(body.error || 'Checkout could not open.');
+        return;
+      }
+      opened = true;
+      window.location.assign(body.checkoutUrl);
+    } catch {
+      setNote(controller.signal.aborted ? 'Checkout did not respond. Try again.' : 'Checkout could not open.');
+    } finally {
+      clearTimeout(timer);
+      if (!opened) setBusyPlan('');
+    }
+  }
 
   return (
-    <>
-      <PageFrame
+    <div className="ds-page">
+      <div
+        className="absolute inset-x-0 top-0 h-[560px] pointer-events-none"
+        style={{ background: 'radial-gradient(60% 70% at 50% 0%, #e8f0ff 0%, rgba(255,255,255,0) 70%)' }}
+        aria-hidden="true"
+      />
+      <Navbar
         user={user}
-        onOpenAuth={(m) => { setAuthMode(m); setIsAuthOpen(true); }}
+        onOpenAuth={(mode) => { setAuthMode(mode); setIsAuthOpen(true); }}
         onOpenProfile={() => setIsProfileOpen(true)}
-        eyebrow="Pricing"
-        title="Simple plans for individuals and teams"
-        subtitle="6 GB free with no signup. Links last up to 7 days. Larger plans are not available yet."
-        nextLabel="Send a file"
-        nextTo="/"
-      >
-        {userIsPro && (
-          <div className="rounded-2xl border border-white/40 bg-white/10 px-5 py-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-            <div>
-              <p className="font-semibold text-white">You are on Pro</p>
-              <p className="text-sm text-white/55 mt-1">Uploads are still limited to 6 GB and 7 days until paid plans are available.</p>
+      />
+      <CheckoutReturnNotice />
+
+      <main className="relative z-10">
+        <section className="ds-wrap pt-14 sm:pt-20 pb-12 text-center">
+          <p className="ds-kicker justify-center"><b>●</b> Pricing</p>
+          <AnimatedHeadline
+            text="Send free. Pay when the file is bigger."
+            accent={2}
+            className="ds-h1 mt-4 mx-auto max-w-4xl"
+          />
+          <p className="ds-lead mt-5 mx-auto max-w-2xl">
+            Free is 6 GB for up to 7 days, with no account. Pro is 250 GB with links open for 180 days, billed monthly or yearly through Dodo.
+          </p>
+          {userIsPro && (
+            <p className="mt-4 inline-flex ds-badge ds-badge-green">This account is marked Pro. The larger limit applies once the server confirms a payment.</p>
+          )}
+          {note && !notePlan && <p className="ds-lead mt-4" role="status">{note}</p>}
+        </section>
+
+        <section className="ds-wrap pb-6" aria-label="Plans">
+          <div className="max-w-4xl mx-auto">
+            <PlanCards
+              plans={paidPlans}
+              onCheckout={startCheckout}
+              busyPlan={busyPlan}
+              note={note}
+              notePlan={notePlan}
+              freeHref="/"
+              isPro={userIsPro}
+            />
+          </div>
+        </section>
+
+        <section className="ds-section" aria-labelledby="compare-title">
+          <div className="ds-wrap">
+            <div className="ds-section-head is-center" data-reveal>
+              <p className="ds-kicker justify-center"><b>●</b> Side by side</p>
+              <h2 id="compare-title" className="ds-h2">What changes when you pay.</h2>
             </div>
-            <Link to="/" className="rounded-full bg-white text-black text-xs font-semibold px-4 py-2">Transfer now</Link>
+            <div className="mt-10 max-w-4xl mx-auto ds-card overflow-hidden" data-reveal style={{ '--d': '80ms' }}>
+              <table className="w-full text-left text-[0.9375rem]">
+                <thead>
+                  <tr className="border-b border-[#e6e8ee] bg-[#f6f7f9]">
+                    <th scope="col" className="px-5 py-4 font-semibold text-[#6b7486]">Limit</th>
+                    <th scope="col" className="px-5 py-4 font-semibold text-[#060a12]">Free</th>
+                    <th scope="col" className="px-5 py-4 font-semibold text-[#060a12]">Pro</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {COMPARE.map(([label, free, pro]) => (
+                    <tr key={label} className="border-b border-[#e6e8ee] last:border-0">
+                      <th scope="row" className="px-5 py-4 font-medium text-[#1b2230]">{label}</th>
+                      {[free, pro].map((value, i) => (
+                        <td key={i} className="px-5 py-4 text-[#060a12]">
+                          {value === true ? (
+                            <Check className="w-4 h-4 text-[#12a150]" aria-label="Included" />
+                          ) : value === false ? (
+                            <Minus className="w-4 h-4 text-[#9aa1af]" aria-label="Not included" />
+                          ) : (
+                            <span className={i === 1 ? 'font-semibold' : ''}>{value}</span>
+                          )}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
-        )}
+        </section>
 
-        <div className="flex justify-start">
-          <div className="inline-flex items-center p-1 rounded-full border border-white/10 bg-white/5 gap-1">
-            <button
-              type="button"
-              onClick={() => setBillingCycle('monthly')}
-              className={`px-4 py-2 rounded-full text-sm font-semibold transition-colors ${billingCycle === 'monthly' ? 'bg-white text-black' : 'text-white/60 hover:text-white'}`}
-            >
-              Monthly
-            </button>
-            <button
-              type="button"
-              onClick={() => setBillingCycle('yearly')}
-              className={`px-4 py-2 rounded-full text-sm font-semibold transition-colors flex items-center gap-2 ${billingCycle === 'yearly' ? 'bg-white text-black' : 'text-white/60 hover:text-white'}`}
-            >
-              Yearly
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white text-black">Save 33%</span>
-            </button>
+        <section className="ds-wrap" aria-labelledby="teams-title">
+          <div className="ds-card-soft p-6 sm:p-8 flex flex-col md:flex-row md:items-center md:justify-between gap-6" data-reveal>
+            <div>
+              <p className="ds-kicker"><b>●</b> Not for sale</p>
+              <h2 id="teams-title" className="ds-h3 mt-2 text-[1.35rem]">Teams is not a billed plan yet.</h2>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {NOT_FOR_SALE.map((item) => (
+                  <span key={item} className="ds-chip text-[#6b7486]"><Minus className="w-3.5 h-3.5" aria-hidden="true" />{item}</span>
+                ))}
+              </div>
+            </div>
+            <Link to="/teams" className="ds-link shrink-0">How a team sends today<ArrowRight className="w-4 h-4" /></Link>
           </div>
-        </div>
+        </section>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-stretch">
-          <div className="custom-card p-6 sm:p-7 flex flex-col">
-            <p className="text-[11px] uppercase tracking-[0.16em] text-white/40 font-semibold">Free</p>
-            <p className="mt-3 text-4xl font-semibold tracking-tight">$0</p>
-            <p className="text-sm text-white/50 mt-1">No signup required</p>
-            <ul className="mt-6 space-y-3 text-sm text-white/70 flex-1">
-              {['6 GB per transfer', 'Device transfer on your network', 'Up to 7 days', 'Password protection', 'No ads'].map((f) => (
-                <li key={f} className="flex gap-2"><Check className="w-4 h-4 text-white shrink-0 mt-0.5" />{f}</li>
-              ))}
-            </ul>
-            <Link to="/" className="mt-6 w-full py-3 rounded-full border border-white/15 text-sm font-semibold text-center hover:bg-white/5">Start free</Link>
-          </div>
+        <HomeFaq
+          faqs={PRICING_FAQS}
+          title="Billing questions, answered."
+          lead="How checkout works, when Pro switches on, and what is not for sale."
+        />
+      </main>
 
-          <div className="custom-card p-6 sm:p-7 flex flex-col border-white/35 relative">
-            <span className="absolute top-4 right-4 text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full bg-white text-black">Popular</span>
-            <p className="text-[11px] uppercase tracking-[0.16em] text-white font-semibold flex items-center gap-1.5">
-              <Crown className="w-3.5 h-3.5" /> Pro
-            </p>
-            <p className="mt-3 text-4xl font-semibold tracking-tight">
-              {billingCycle === 'yearly' ? '$6.66' : '$9.99'}
-            </p>
-            <p className="text-sm text-white/50 mt-1">/ month · or ₹799</p>
-            <ul className="mt-6 space-y-3 text-sm text-white/80 flex-1">
-              {['Not available yet', 'No larger transfer size yet', 'No longer retention yet', 'No paid storage quota yet', 'Same 6 GB limit as Free'].map((f) => (
-                <li key={f} className="flex gap-2"><Check className="w-4 h-4 text-white shrink-0 mt-0.5" />{f}</li>
-              ))}
-            </ul>
-            {userIsPro ? (
-              <div className="mt-6 py-3 rounded-full bg-white/10 text-center text-sm font-semibold">Your active plan</div>
-            ) : (
-              <button type="button" disabled className="mt-6 w-full py-3 rounded-full bg-white/15 text-white/70 text-sm font-semibold cursor-not-allowed">
-                Not available yet
-              </button>
-            )}
-          </div>
+      <Footer />
 
-          <div className="custom-card p-6 sm:p-7 flex flex-col">
-            <p className="text-[11px] uppercase tracking-[0.16em] text-white/40 font-semibold">Teams</p>
-            <p className="mt-3 text-4xl font-semibold tracking-tight">
-              {billingCycle === 'yearly' ? '$15.99' : '$19.99'}
-            </p>
-            <p className="text-sm text-white/50 mt-1">/ user / month</p>
-            <ul className="mt-6 space-y-3 text-sm text-white/70 flex-1">
-              {['Not available yet', 'No team storage quota yet', 'No shared workspace yet', 'No team billing yet', 'Same 6 GB limit as Free'].map((f) => (
-                <li key={f} className="flex gap-2"><Check className="w-4 h-4 text-white shrink-0 mt-0.5" />{f}</li>
-              ))}
-            </ul>
-            <Link to="/teams" className="mt-6 w-full py-3 rounded-full border border-white/15 text-sm font-semibold text-center hover:bg-white/5">Learn about Teams</Link>
-          </div>
-        </div>
-      </PageFrame>
-
-      <AuthModal isOpen={isAuthOpen} onClose={() => setIsAuthOpen(false)} initialMode={authMode} onAuthSuccess={(u) => setUser(u)} />
+      <AuthModal
+        isOpen={isAuthOpen}
+        onClose={() => { setIsAuthOpen(false); setPendingPlan(''); }}
+        initialMode={authMode}
+        onAuthSuccess={(u) => {
+          setUser(u);
+          const plan = pendingPlan;
+          setPendingPlan('');
+          if (plan) startCheckout(plan);
+        }}
+      />
       <ProfileModal
         isOpen={isProfileOpen}
         onClose={() => setIsProfileOpen(false)}
@@ -119,7 +236,7 @@ export default function PricingPage() {
         onSignOut={() => { clearUserSession(); setUser(null); }}
         onOpenUpgrade={() => setIsPaymentOpen(true)}
       />
-      <PaymentModal isOpen={isPaymentOpen} onClose={() => setIsPaymentOpen(false)} user={user} onUpgradeSuccess={(u) => setUser(u)} />
-    </>
+      <PaymentModal isOpen={isPaymentOpen} onClose={() => setIsPaymentOpen(false)} />
+    </div>
   );
 }

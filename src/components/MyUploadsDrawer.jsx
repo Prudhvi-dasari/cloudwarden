@@ -1,14 +1,14 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
-  X, Eye, Download, Copy, Trash2, Check, ExternalLink, HardDrive,
-  Clock, ShieldCheck, QrCode, Share2, Sparkles, FolderDown, File,
-  Image as ImageIcon, Film, Music, FileText, ArrowRight, RefreshCw,
-  PlusCircle, Lock, User, UserCheck, LogIn, Edit3
+  X, Eye, Copy, Trash2, Check, ExternalLink, QrCode,
+  File, Image as ImageIcon, Film, Music, FileText, RefreshCw,
+  Plus, Lock, LogIn, Pencil, Inbox, AlertCircle,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useToast } from './Toast';
 import FilePreviewModal from './FilePreviewModal';
 import { deleteOwnedTransfer, loadOwnedTransfers, renameOwnedTransfer } from '../lib/guestSession';
+import { fileDownloadSummary, transferFilesExhausted } from '../lib/downloadLimit';
 import Portal from './Portal';
 
 function formatBytes(bytes) {
@@ -17,6 +17,54 @@ function formatBytes(bytes) {
   const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+function fileMeta(file) {
+  const summary = fileDownloadSummary(file);
+  const size = formatBytes(file.size);
+  return summary ? `${size} · ${summary}` : size;
+}
+
+function formatWhen(iso) {
+  if (!iso) return null;
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return null;
+  return new Intl.DateTimeFormat(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  }).format(date);
+}
+
+function publicMessage(value) {
+  const message = typeof value === 'string' ? value.trim() : '';
+  if (!message || message.length > 160 || /password_hash|secret|token|LOCAL_/i.test(message)) return '';
+  return message;
+}
+
+async function copyText(value) {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(value);
+      return true;
+    }
+  } catch {
+    /* fall through */
+  }
+  try {
+    const field = document.createElement('textarea');
+    field.value = value;
+    field.setAttribute('readonly', '');
+    field.style.position = 'fixed';
+    field.style.left = '-9999px';
+    document.body.appendChild(field);
+    field.select();
+    const ok = document.execCommand('copy');
+    field.remove();
+    return ok;
+  } catch {
+    return false;
+  }
 }
 
 function getFileIcon(type, name) {
@@ -28,364 +76,392 @@ function getFileIcon(type, name) {
   return File;
 }
 
+function timingLabel(transfer) {
+  if (transfer?.status === 'expired') return 'Expired';
+  if (!transfer?.expiresAt) return null;
+  const when = formatWhen(transfer.expiresAt);
+  if (!when) return null;
+  if (new Date(transfer.expiresAt).getTime() <= Date.now()) return 'Expired';
+  if (transferFilesExhausted(transfer)) return 'Link limit reached';
+  return `Open until ${when}`;
+}
+
+function statusBadgeClass(label) {
+  if (label === 'Expired') return 'ds-badge acct-badge-danger';
+  if (label === 'Link limit reached') return 'ds-badge acct-badge-warn';
+  return 'ds-badge ds-badge-green';
+}
+
 export default function MyUploadsDrawer({ isOpen, onClose, user, onOpenAuth, onStartNewTransfer }) {
   const { addToast } = useToast();
   const [transfers, setTransfers] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState('');
   const [copiedId, setCopiedId] = useState(null);
   const [activeQrId, setActiveQrId] = useState(null);
   const [previewingFile, setPreviewingFile] = useState(null);
+  const [renamingId, setRenamingId] = useState(null);
+  const [draftName, setDraftName] = useState('');
+  const [savingName, setSavingName] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState(null);
+  const [deleting, setDeleting] = useState(false);
+  const closeRef = useRef(null);
 
   useEffect(() => {
-    if (isOpen) {
-      loadUserTransfers();
-    }
+    if (isOpen) loadUserTransfers();
   }, [isOpen, user]);
 
-  const loadUserTransfers = async () => {
+  useEffect(() => {
+    if (!isOpen) return undefined;
+    function onKey(event) {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      if (pendingDelete && !deleting) {
+        setPendingDelete(null);
+        return;
+      }
+      onClose?.();
+    }
+    document.addEventListener('keydown', onKey);
+    closeRef.current?.focus();
+    return () => document.removeEventListener('keydown', onKey);
+  }, [isOpen, onClose, pendingDelete, deleting]);
+
+  async function loadUserTransfers() {
     if (!user) {
       setTransfers([]);
       setLoading(false);
+      setLoaded(true);
+      setLoadError('');
       return;
     }
-
     setLoading(true);
+    setLoadError('');
     try {
       const { data: sessionWrap } = await supabase.auth.getSession();
-      const accessToken = sessionWrap?.session?.access_token;
-      const rows = await loadOwnedTransfers(accessToken);
-      setTransfers(rows);
+      const rows = await loadOwnedTransfers(sessionWrap?.session?.access_token);
+      setTransfers(Array.isArray(rows) ? rows : []);
     } catch (err) {
-      console.warn('Failed to load user uploads:', err);
-      setTransfers([]);
+      setLoadError(publicMessage(err?.message) || 'Your transfers could not be loaded.');
     } finally {
       setLoading(false);
+      setLoaded(true);
     }
-  };
+  }
 
-  const handleCopyLink = (shareId) => {
-    const url = `${window.location.origin}/download/${shareId}`;
-    navigator.clipboard.writeText(url);
+  async function handleCopyLink(shareId) {
+    const ok = await copyText(`${window.location.origin}/download/${shareId}`);
+    if (!ok) {
+      addToast('Could not copy the link.', 'error');
+      return;
+    }
     setCopiedId(shareId);
-    addToast('Download link copied! 📋', 'success');
-    setTimeout(() => setCopiedId(null), 2000);
-  };
+    addToast('Link copied.', 'success');
+    window.setTimeout(() => setCopiedId((current) => (current === shareId ? null : current)), 2000);
+  }
 
-  const handleRenameTransfer = async (shareId, currentName) => {
-    const newName = prompt('Enter new transfer name:', currentName || '');
-    if (!newName || !newName.trim() || newName.trim() === currentName) return;
+  async function handleRenameTransfer(event, transfer) {
+    event.preventDefault();
+    const next = draftName.trim();
+    if (!next || next === (transfer.subject || '') || savingName) return;
+    setSavingName(true);
     try {
       const { data: sessionWrap } = await supabase.auth.getSession();
       await renameOwnedTransfer({
-        shareId,
-        subject: newName.trim(),
+        shareId: transfer.shareId,
+        subject: next,
         accessToken: sessionWrap?.session?.access_token,
       });
-      setTransfers(prev => prev.map(t => t.shareId === shareId ? { ...t, subject: newName.trim() } : t));
-      addToast('Transfer renamed successfully ✏️', 'success');
-    } catch (e) {
-      addToast('Failed to rename transfer', 'error');
+      setTransfers((current) => current.map((item) => (
+        item.shareId === transfer.shareId ? { ...item, subject: next } : item
+      )));
+      setRenamingId(null);
+      addToast('Name saved.', 'success');
+    } catch (err) {
+      addToast(publicMessage(err?.message) || 'The name could not be saved.', 'error');
+    } finally {
+      setSavingName(false);
     }
-  };
+  }
 
-  const handleDeleteTransfer = async (t) => {
-    if (!confirm(`Permanently delete this transfer (${t.files.length} files)?`)) return;
+  async function confirmDelete() {
+    if (!pendingDelete || deleting) return;
+    setDeleting(true);
     try {
       const { data: sessionWrap } = await supabase.auth.getSession();
       await deleteOwnedTransfer({
-        shareId: t.shareId,
+        shareId: pendingDelete.shareId,
         accessToken: sessionWrap?.session?.access_token,
       });
-      setTransfers(prev => prev.filter(item => item.shareId !== t.shareId));
-      addToast('Transfer permanently deleted 🗑️', 'info');
+      setTransfers((current) => current.filter((item) => item.shareId !== pendingDelete.shareId));
+      setPendingDelete(null);
+      addToast('Transfer deleted.', 'info');
     } catch (err) {
-      addToast(err.message || 'Delete failed.', 'error');
+      addToast(publicMessage(err?.message) || 'This transfer could not be deleted.', 'error');
+    } finally {
+      setDeleting(false);
     }
-  };
+  }
 
   if (!isOpen) return null;
 
   return (
     <Portal>
-    <div className="fixed inset-0 z-[10000] flex justify-end bg-slate-950/60 backdrop-blur-xs animate-fadeIn">
-      
-      {/* Background Click to Dismiss */}
-      <div className="fixed inset-0" onClick={onClose} />
-
-      {/* Slide-Over Drawer Container */}
-      <div className="relative w-full max-w-xl h-full bg-white shadow-2xl flex flex-col z-10 border-l border-slate-200 animate-slide-in-right overflow-hidden">
-        
-        {/* Drawer Header */}
-        <div className="p-4 sm:p-6 border-b border-slate-200/80 bg-slate-50/90 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl theme-btn-primary flex items-center justify-center text-white shadow-sm">
-              <HardDrive className="w-5 h-5" />
-            </div>
-            <div>
-              <h2 className="text-lg font-black text-slate-900 tracking-tight flex items-center gap-2">
-                My Uploads
-                {user && (
-                  <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 font-bold">
-                    {transfers.length}
-                  </span>
-                )}
-              </h2>
-              <p className="text-xs text-slate-500 font-medium">
-                {user ? `Signed in as ${user.email}` : 'Private Upload History'}
+      <div className="acct-ui acct-drawer-layer">
+        <button type="button" className="acct-drawer-backdrop" aria-label="Close My files" onClick={onClose} />
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="files-drawer-title"
+          className="ds-drawer acct-drawer"
+        >
+          <header className="ds-drawer-head">
+            <div className="min-w-0">
+              <p className="ds-kicker"><b>●</b> My files</p>
+              <h2 id="files-drawer-title" className="acct-drawer-title">Your transfers</h2>
+              <p className="acct-hint mt-1 acct-truncate" title={user?.email || undefined}>
+                {user?.email || 'Sign in to see transfers from this account.'}
               </p>
             </div>
-          </div>
-
-          <div className="flex items-center gap-1.5">
-            {user && (
-              <button
-                onClick={loadUserTransfers}
-                className="p-2 rounded-xl text-slate-500 hover:text-slate-800 hover:bg-slate-200/50 transition-colors"
-                title="Refresh list"
-              >
-                <RefreshCw className="w-4 h-4" />
-              </button>
-            )}
-            <button
-              onClick={onClose}
-              className="p-2 rounded-xl text-slate-500 hover:text-slate-800 hover:bg-slate-200/50 transition-colors"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-        </div>
-
-        {/* User Status Bar */}
-        {user && (
-          <div className="px-4 sm:px-6 py-2.5 bg-emerald-50/70 border-b border-emerald-100 flex items-center justify-between text-xs">
-            <div className="flex items-center gap-2 min-w-0">
-              <UserCheck className="w-4 h-4 text-emerald-600 shrink-0" />
-              <span className="font-bold text-emerald-950 truncate">Account Verified: {user.email}</span>
-            </div>
-            <span className="text-[11px] font-bold text-emerald-700 bg-white px-2 py-0.5 rounded-md border border-emerald-200">
-              Private Vault
-            </span>
-          </div>
-        )}
-
-        {/* Drawer Content */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
-          
-          {/* 1. NOT SIGNED IN VIEW (PRIVACY GATE) */}
-          {!user ? (
-            <div className="text-center py-12 sm:py-16 px-4 space-y-5">
-              <div className="w-16 h-16 rounded-3xl bg-indigo-50 border border-indigo-100 flex items-center justify-center mx-auto text-indigo-600 shadow-sm">
-                <Lock className="w-8 h-8" />
-              </div>
-              
-              <div className="space-y-2">
-                <h3 className="text-lg font-black text-slate-900">Sign in to View Your Uploads</h3>
-                <p className="text-xs sm:text-sm text-slate-600 max-w-sm mx-auto leading-relaxed">
-                  For your privacy and security, upload history is only accessible to authenticated accounts. Sign in or create a free account to track and manage your transfers.
-                </p>
-              </div>
-
-              <div className="pt-2 space-y-2 max-w-xs mx-auto">
-                <button
-                  onClick={() => {
-                    onClose();
-                    if (onOpenAuth) onOpenAuth('login');
-                  }}
-                  className="w-full py-3 rounded-xl theme-btn-primary text-white text-xs sm:text-sm font-bold flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition-all"
-                >
-                  <LogIn className="w-4 h-4" /> Sign In / Create Account
+            <div className="acct-head-actions">
+              {user ? (
+                <button type="button" className="ds-btn ds-btn-ghost ds-btn-sm" onClick={loadUserTransfers} disabled={loading} aria-busy={loading}>
+                  <RefreshCw className={`w-4 h-4 ${loading ? 'motion-safe:animate-spin' : ''}`} aria-hidden="true" />
+                  {loading ? 'Refreshing…' : 'Refresh'}
                 </button>
-
-                <button
-                  onClick={() => {
-                    onClose();
-                    onStartNewTransfer();
-                  }}
-                  className="w-full py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition-colors"
-                >
-                  Continue as Guest (No History)
-                </button>
-              </div>
-            </div>
-          ) : loading ? (
-            /* 2. LOADING SPINNER */
-            <div className="flex flex-col items-center justify-center py-20 gap-3 text-slate-400">
-              <RefreshCw className="w-8 h-8 animate-spin theme-text" />
-              <span className="text-sm font-semibold">Loading your transfers...</span>
-            </div>
-          ) : transfers.length === 0 ? (
-            /* 3. LOGGED IN BUT NO UPLOADS YET */
-            <div className="text-center py-16 px-4 space-y-4">
-              <div className="w-16 h-16 rounded-3xl bg-slate-100 flex items-center justify-center mx-auto text-slate-400">
-                <FolderDown className="w-8 h-8" />
-              </div>
-              <div>
-                <h4 className="text-base font-bold text-slate-800">No uploads found</h4>
-                <p className="text-xs text-slate-500 mt-1 max-w-xs mx-auto">
-                  Files you upload with this account will be securely listed here for 1-click preview and management.
-                </p>
-              </div>
-              <button
-                onClick={() => { onClose(); onStartNewTransfer(); }}
-                className="px-5 py-2.5 rounded-xl theme-btn-primary text-white text-xs font-bold inline-flex items-center gap-2 shadow-md"
-              >
-                <PlusCircle className="w-4 h-4" /> Upload Files Now
+              ) : null}
+              <button ref={closeRef} type="button" className="acct-iconbtn" aria-label="Close My files" onClick={onClose}>
+                <X aria-hidden="true" />
               </button>
             </div>
-          ) : (
-            /* 4. LIST OF CURRENT USER'S UPLOADS ONLY */
-            transfers.map((t) => {
-              const isPermanent = !t.expiresAt || new Date(t.expiresAt).getFullYear() > new Date().getFullYear() + 20;
-              const isExpired = t.expiresAt && !isPermanent && new Date() > new Date(t.expiresAt);
-              const downloadUrl = `${window.location.origin}/download/${t.shareId}`;
+          </header>
 
-              return (
-                <div
-                  key={t.shareId}
-                  className={`p-4 rounded-2xl border transition-all ${
-                    isExpired ? 'bg-slate-100/80 border-slate-200 opacity-60' : 'bg-white border-slate-200/90 shadow-xs hover:border-indigo-300'
-                  }`}
+          <div className="ds-drawer-body">
+            {!user ? (
+              <div className="acct-box ds-empty acct-empty">
+                <span className="ds-icon is-dark" aria-hidden="true"><Lock /></span>
+                <h3>Sign in to see your transfers</h3>
+                <p>History is kept for the account that sent them.</p>
+                <button
+                  type="button"
+                  className="ds-btn ds-btn-dark w-full max-w-[18rem]"
+                  onClick={() => {
+                    onClose?.();
+                    onOpenAuth?.('login');
+                  }}
                 >
-                  {/* Card Header */}
-                  <div className="flex items-start justify-between gap-3 mb-2.5">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5">
-                        <h4 className="text-sm font-bold text-slate-900 truncate">
-                          {t.subject || (t.files[0]?.name ? `${t.files[0].name}${t.files.length > 1 ? ` +${t.files.length - 1} more` : ''}` : 'Untitled Transfer')}
-                        </h4>
+                  <LogIn className="w-4 h-4" aria-hidden="true" />
+                  Sign in
+                </button>
+                <button
+                  type="button"
+                  className="ds-btn ds-btn-light w-full max-w-[18rem] !mt-0"
+                  onClick={() => {
+                    onClose?.();
+                    onStartNewTransfer?.();
+                  }}
+                >
+                  Continue without an account
+                </button>
+              </div>
+            ) : (!loaded || loading) && transfers.length === 0 && !loadError ? (
+              <div className="acct-cards" aria-busy="true">
+                <h3 className="acct-hint flex items-center gap-2">
+                  <span className="ds-spinner !w-3.5 !h-3.5" aria-hidden="true" />
+                  Loading transfers…
+                </h3>
+                {[0, 1, 2].map((key) => (
+                  <div key={key} className="acct-tcard" aria-hidden="true">
+                    <div className="acct-tcard-top">
+                      <span className="ds-skeleton w-9 h-9 shrink-0" />
+                      <div className="flex-1 grid gap-2">
+                        <span className="ds-skeleton h-3.5 w-2/3" />
+                        <span className="ds-skeleton h-3 w-1/3" />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : loadError && transfers.length === 0 ? (
+              <div className="acct-box ds-empty acct-empty" role="alert">
+                <span className="ds-icon acct-icon-danger" aria-hidden="true"><AlertCircle /></span>
+                <h3>Transfers could not be loaded</h3>
+                <p>{loadError}</p>
+                <button type="button" className="ds-btn ds-btn-ghost" onClick={loadUserTransfers}>
+                  <RefreshCw className="w-4 h-4" aria-hidden="true" />
+                  Try again
+                </button>
+              </div>
+            ) : transfers.length === 0 ? (
+              <div className="acct-box is-dashed ds-empty acct-empty">
+                <span className="ds-icon is-blue" aria-hidden="true"><Inbox /></span>
+                <h3>No transfers yet</h3>
+                <p>Transfers you send while signed in are listed here.</p>
+                <button type="button" className="ds-btn ds-btn-dark" onClick={() => { onClose?.(); onStartNewTransfer?.(); }}>
+                  <Plus className="w-4 h-4" aria-hidden="true" />
+                  New transfer
+                </button>
+              </div>
+            ) : (
+              <ul className="acct-cards">
+                {loadError ? (
+                  <li className="ds-alert is-danger" role="alert">
+                    <AlertCircle aria-hidden="true" />
+                    <span>{loadError}</span>
+                  </li>
+                ) : null}
+                {transfers.map((transfer) => {
+                  const created = formatWhen(transfer.createdAt);
+                  const status = timingLabel(transfer);
+                  const downloadUrl = `${window.location.origin}/download/${transfer.shareId}`;
+                  const firstFile = transfer.files?.[0];
+                  const LeadIcon = getFileIcon(firstFile?.type, firstFile?.name);
+                  const title = transfer.subject || firstFile?.name || 'Untitled transfer';
+                  return (
+                    <li key={transfer.shareId} className="acct-tcard">
+                      <div className="acct-tcard-top">
+                        <span className="ds-file-icon" aria-hidden="true"><LeadIcon className="w-4 h-4" /></span>
+                        <div className="flex-1 min-w-0">
+                          <h3 className="acct-tcard-title acct-truncate" title={title}>{title}</h3>
+                          <p className="acct-meta">
+                            {transfer.files?.length || 0} files · {formatBytes(transfer.totalSize)}
+                            {created ? ` · ${created}` : ''}
+                          </p>
+                          {status ? <p className="mt-2"><span className={statusBadgeClass(status)}>{status}</span></p> : null}
+                        </div>
+                      </div>
+
+                      {renamingId === transfer.shareId ? (
+                        <form className="acct-inline acct-rename !mt-3" onSubmit={(event) => handleRenameTransfer(event, transfer)}>
+                          <label htmlFor={`rename-${transfer.shareId}`} className="ds-label">Name</label>
+                          <input
+                            id={`rename-${transfer.shareId}`}
+                            className="ds-input"
+                            value={draftName}
+                            onChange={(event) => setDraftName(event.target.value)}
+                          />
+                          <div className="acct-actions !mt-1">
+                            <button type="submit" className="ds-btn ds-btn-dark ds-btn-sm" disabled={savingName} aria-busy={savingName}>
+                              {savingName ? 'Saving…' : 'Save name'}
+                            </button>
+                            <button type="button" className="ds-btn ds-btn-light ds-btn-sm" onClick={() => setRenamingId(null)}>Cancel</button>
+                          </div>
+                        </form>
+                      ) : null}
+
+                      <ul className="acct-files">
+                        {(transfer.files || []).map((file, index) => {
+                          const Icon = getFileIcon(file.type, file.name);
+                          return (
+                            <li key={file.id || `${file.name}-${index}`} className="acct-file">
+                              <span className="ds-file-icon" aria-hidden="true"><Icon /></span>
+                              <span className="acct-file-body">
+                                <span className="acct-file-name acct-truncate" title={file.name}>{file.name}</span>
+                                <span className="acct-meta block !mt-0.5">{fileMeta(file)}</span>
+                              </span>
+                              <button
+                                type="button"
+                                className="ds-btn ds-btn-light ds-btn-sm"
+                                onClick={() => setPreviewingFile({
+                                  id: file.id,
+                                  file_name: file.name,
+                                  file_size: file.size,
+                                  content_type: file.type,
+                                  share_id: transfer.shareId,
+                                })}
+                              >
+                                <Eye className="w-4 h-4" aria-hidden="true" />
+                                Preview
+                              </button>
+                            </li>
+                          );
+                        })}
+                      </ul>
+
+                      <div className="acct-actions">
+                        <button type="button" className="ds-btn ds-btn-dark ds-btn-sm" onClick={() => handleCopyLink(transfer.shareId)}>
+                          {copiedId === transfer.shareId ? <Check className="w-4 h-4" aria-hidden="true" /> : <Copy className="w-4 h-4" aria-hidden="true" />}
+                          {copiedId === transfer.shareId ? 'Copied' : 'Copy link'}
+                        </button>
+                        <a className="ds-btn ds-btn-ghost ds-btn-sm" href={downloadUrl} target="_blank" rel="noreferrer">
+                          <ExternalLink className="w-4 h-4" aria-hidden="true" />
+                          Open
+                        </a>
                         <button
-                          onClick={() => handleRenameTransfer(t.shareId, t.subject)}
-                          className="p-1 text-slate-400 hover:text-indigo-600 rounded-lg hover:bg-slate-100 transition-colors"
-                          title="Rename transfer"
+                          type="button"
+                          className="ds-btn ds-btn-ghost ds-btn-sm"
+                          aria-expanded={activeQrId === transfer.shareId}
+                          onClick={() => setActiveQrId((current) => (current === transfer.shareId ? null : transfer.shareId))}
                         >
-                          <Edit3 className="w-3.5 h-3.5" />
+                          <QrCode className="w-4 h-4" aria-hidden="true" />
+                          QR
+                        </button>
+                        <button
+                          type="button"
+                          className="ds-btn ds-btn-ghost ds-btn-sm"
+                          onClick={() => {
+                            setRenamingId(transfer.shareId);
+                            setDraftName(transfer.subject || '');
+                          }}
+                        >
+                          <Pencil className="w-4 h-4" aria-hidden="true" />
+                          Rename
+                        </button>
+                        <button type="button" className="ds-btn ds-btn-danger ds-btn-sm" onClick={() => setPendingDelete(transfer)}>
+                          <Trash2 className="w-4 h-4" aria-hidden="true" />
+                          Delete
                         </button>
                       </div>
-                      <p className="text-xs text-slate-500 font-medium mt-0.5 flex items-center gap-1.5 flex-wrap">
-                        <span>{t.files.length} file{t.files.length !== 1 ? 's' : ''} ({formatBytes(t.totalSize)})</span>
-                        <span>•</span>
-                        <span>{new Date(t.createdAt).toLocaleDateString()}</span>
-                      </p>
-                    </div>
 
-                    <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full shrink-0 flex items-center gap-1 ${
-                      isPermanent ? 'bg-indigo-100 text-indigo-800' : isExpired ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-800'
-                    }`}>
-                      <Clock className="w-3 h-3" />
-                      {isPermanent ? 'Permanent' : isExpired ? 'Expired' : `${Math.max(1, Math.ceil((new Date(t.expiresAt) - new Date()) / (1000 * 60 * 60 * 24)))}d left`}
-                    </span>
-                  </div>
-
-                  {/* Individual Files inside this Transfer */}
-                  <div className="space-y-1.5 mb-3">
-                    {t.files.map((file, fIdx) => {
-                      const IconComp = getFileIcon(file.type, file.name);
-                      return (
-                        <div
-                          key={fIdx}
-                          className="flex items-center justify-between p-2 rounded-xl bg-slate-50 border border-slate-100 text-xs hover:bg-slate-100/70 transition-colors"
-                        >
-                          <div className="flex items-center gap-2 min-w-0 pr-2">
-                            <IconComp className="w-4 h-4 text-slate-500 shrink-0" />
-                            <span className="font-medium text-slate-800 truncate">{file.name}</span>
-                            <span className="text-[10px] text-slate-400 font-mono shrink-0">({formatBytes(file.size)})</span>
-                          </div>
-
-                          {/* Quick Preview Button */}
-                          <button
-                            onClick={() => setPreviewingFile({
-                              id: file.id,
-                              file_name: file.name,
-                              file_size: file.size,
-                              content_type: file.type,
-                              share_id: t.shareId,
-                            })}
-                            className="px-2 py-1 rounded-lg bg-white border border-slate-200 hover:border-indigo-400 text-slate-700 font-bold text-[11px] flex items-center gap-1 shrink-0 shadow-2xs"
-                            title="Preview file"
-                          >
-                            <Eye className="w-3.5 h-3.5 theme-text" /> Preview
-                          </button>
+                      {activeQrId === transfer.shareId ? (
+                        <div className="acct-inline acct-qr">
+                          <img
+                            src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(downloadUrl)}`}
+                            alt=""
+                            width="140"
+                            height="140"
+                          />
+                          <p className="acct-lead text-sm">Scan to open this transfer.</p>
                         </div>
-                      );
-                    })}
-                  </div>
+                      ) : null}
 
-                  {/* Actions Bar */}
-                  <div className="flex items-center justify-between pt-2 border-t border-slate-100 gap-2">
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        onClick={() => handleCopyLink(t.shareId)}
-                        className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-xs font-bold text-slate-700 flex items-center gap-1.5 transition-all shadow-2xs"
-                      >
-                        {copiedId === t.shareId ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                        {copiedId === t.shareId ? 'Copied' : 'Copy Link'}
-                      </button>
+                      {pendingDelete?.shareId === transfer.shareId ? (
+                        <div className="acct-inline is-danger" role="alertdialog" aria-labelledby={`delete-${transfer.shareId}`}>
+                          <p id={`delete-${transfer.shareId}`}>Delete this transfer? The files will be removed.</p>
+                          <div className="acct-actions">
+                            <button type="button" className="ds-btn ds-btn-ghost ds-btn-sm" onClick={() => setPendingDelete(null)} disabled={deleting}>Keep it</button>
+                            <button type="button" className="ds-btn ds-btn-danger ds-btn-sm" onClick={confirmDelete} disabled={deleting} aria-busy={deleting}>
+                              {deleting ? 'Deleting…' : 'Delete'}
+                            </button>
+                          </div>
+                        </div>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
 
-                      <a
-                        href={downloadUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 transition-colors"
-                        title="Open download page"
-                      >
-                        <ExternalLink className="w-3.5 h-3.5" />
-                      </a>
-
-                      <button
-                        onClick={() => setActiveQrId(activeQrId === t.shareId ? null : t.shareId)}
-                        className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 transition-colors"
-                        title="Scan QR code"
-                      >
-                        <QrCode className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-
-                    <button
-                      onClick={() => handleDeleteTransfer(t)}
-                      className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
-                      title="Delete permanently"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-
-                  {/* QR Code expansion */}
-                  {activeQrId === t.shareId && (
-                    <div className="mt-3 p-3 bg-slate-50 border border-slate-200 rounded-xl text-center animate-scale-in">
-                      <p className="text-xs font-bold text-slate-700 mb-2">Scan with Phone Camera:</p>
-                      <img
-                        src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(downloadUrl)}`}
-                        alt="QR Code"
-                        className="w-28 h-28 mx-auto rounded-lg shadow-sm border border-slate-200 bg-white p-1.5"
-                      />
-                    </div>
-                  )}
-                </div>
-              );
-            })
-          )}
-        </div>
-
-        {/* Drawer Footer CTA */}
-        <div className="p-4 border-t border-slate-200 bg-slate-50 flex items-center justify-between gap-3">
-          <button
-            onClick={() => { onClose(); onStartNewTransfer(); }}
-            className="w-full py-3 rounded-xl theme-btn-primary text-white text-xs sm:text-sm font-bold flex items-center justify-center gap-2 shadow-md"
-          >
-            <PlusCircle className="w-4 h-4" /> Upload New Files
-          </button>
+          {user ? (
+            <footer className="acct-drawer-foot">
+              <button type="button" className="ds-btn ds-btn-dark w-full" onClick={() => { onClose?.(); onStartNewTransfer?.(); }}>
+                <Plus className="w-4 h-4" aria-hidden="true" />
+                New transfer
+              </button>
+            </footer>
+          ) : null}
         </div>
       </div>
 
-      {/* In-App Media Preview Modal */}
-      {previewingFile && (
+      {previewingFile ? (
         <FilePreviewModal
           file={previewingFile}
           shareId={previewingFile.share_id}
           onClose={() => setPreviewingFile(null)}
         />
-      )}
-    </div>
+      ) : null}
     </Portal>
   );
 }

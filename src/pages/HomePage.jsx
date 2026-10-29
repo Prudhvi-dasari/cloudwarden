@@ -1,6 +1,7 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, lazy, Suspense } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
-import { applyTheme } from '../lib/supabase';
+import { applyTheme, supabase } from '../lib/supabase';
+import CheckoutReturnNotice from '../components/CheckoutReturnNotice';
 import Navbar from '../components/Navbar';
 import AuthModal from '../components/AuthModal';
 import ProfileModal from '../components/ProfileModal';
@@ -10,10 +11,11 @@ import DropZone from '../components/DropZone';
 import FileList from '../components/FileList';
 import UploadProgress from '../components/UploadProgress';
 import ShareLink from '../components/ShareLink';
-import DashboardView from '../components/DashboardView';
-import P2PTransferView from '../components/P2PTransferView';
 import MyUploadsDrawer from '../components/MyUploadsDrawer';
 import FloatingUploadDock from '../components/FloatingUploadDock';
+
+const DashboardView = lazy(() => import('../components/DashboardView'));
+const P2PTransferView = lazy(() => import('../components/P2PTransferView'));
 import { clearUserSession, isAdmin } from '../lib/authSession';
 import { useAccount } from '../lib/AccountContext';
 import { playSuccessChime } from '../lib/sound';
@@ -23,40 +25,53 @@ import { getOrCreateGuestId, saveTransferSecrets, trackGuestTransfer } from '../
 import { TransferManager } from '../lib/transferManager';
 import PersistentTransferManager from '../components/PersistentTransferManager';
 import TransferSuccessModal from '../components/TransferSuccessModal';
-import FlagBearer from '../components/FlagBearer';
-import SkyScene from '../components/SkyScene';
-import StoryLane from '../components/StoryLane';
 import Footer from '../components/Footer';
+import HeroSky from '../components/ds/HeroSky';
+import AnimatedHeadline from '../components/ds/AnimatedHeadline';
+import RotatingLead from '../components/ds/RotatingLead';
+import PlanCards from '../components/ds/PlanCards';
+import { JourneyStrip, PrivacyNotes, FactsBand, Chapters, HomeFaq } from '../components/home/HomeSections';
 import { useToast } from '../components/Toast';
+import { emailTransportFailure, interpretSendEmailResponse } from '../lib/emailStatus';
 import {
-  Mail, Link2, Lock, Send, ShieldCheck, Zap, Sparkles,
+  Mail, Link2, Send, ShieldCheck, Zap, Sparkles,
   CheckCircle2, Wifi, ArrowRight, Laptop, Smartphone,
   RefreshCw, Eye, EyeOff, HardDrive, Inbox, FolderPlus,
   HelpCircle, ChevronDown, Check, Globe, Layers, BarChart2,
-  Code, Key, Clock, Star, Users, ArrowUpRight, Copy, CheckCircle,
+  Code, Key, Star, Users, ArrowUpRight, Copy, CheckCircle,
   FileCheck, Server, AlertCircle
 } from 'lucide-react';
 
 const SEND_STORY = {
   link: {
     title: 'Send a file. They get a link.',
-    line: '6 GB free. No signup. A password can gate the download.',
-    bubble: 'Drop a file here. You get a link in seconds.',
-    steps: ['You drop it', 'A link leaves', 'They open it'],
+    accent: 2,
+    line: '6 GB free, no signup on either side. Drop it, copy the link, and a password can gate the download.',
   },
   email: {
     title: 'Too big for the inbox.',
-    line: 'The mail carries the link. The file stays on it, up to 6 GB.',
-    bubble: 'Drop the file, add their email, and we send the link.',
-    steps: ['You drop it', 'We mail the link', 'They download it'],
+    accent: 1,
+    line: 'Add their address and we mail a download button. The file stays on the link, up to 6 GB.',
   },
   device: {
     title: 'Phone to laptop. Nothing stored.',
-    line: 'Both screens stay on this page. The file goes straight across.',
-    bubble: 'Open iTransfer on both devices and pair with a short code.',
-    steps: ['Open both screens', 'Pair a code', 'Nothing is stored'],
+    accent: 2,
+    line: 'Open this page on both screens, pair with a short code, and the file goes straight across.',
   },
 };
+
+const LINK_FACTS = [
+  '6 GB free',
+  'No signup on either side',
+  'Drop it, copy the link',
+  'A password can gate the download',
+];
+
+const MODE_TABS = [
+  { id: 'link', label: 'Link', icon: Link2 },
+  { id: 'email', label: 'Email', icon: Mail },
+  { id: 'device', label: 'Device', icon: Wifi },
+];
 
 function formatBytes(bytes) {
   if (!bytes || bytes === 0) return '0 Bytes';
@@ -68,28 +83,28 @@ function formatBytes(bytes) {
 
 const FAQS = [
   {
-    q: 'How does iTransfer work?',
-    a: 'Simply select your files or an entire folder, configure your transfer settings (optional password, expiration time, or recipient email), and click Transfer. Your files stream directly to Cloudflare R2 object storage at gigabit edge speed, generating an instant shareable link.',
+    q: 'How does SendToAnyone work?',
+    a: 'Select files or a folder, choose how long the link stays open, and add a password or an email if you want one. The files upload to Cloudflare R2 and you get a download link.',
   },
   {
-    q: 'Is iTransfer completely free to use?',
-    a: 'Yes. You can send up to 6 GB per transfer with no account. Links last up to 7 days. Larger transfers and longer retention are not available yet.',
+    q: 'Is SendToAnyone completely free to use?',
+    a: 'Yes. You can send up to 6 GB per transfer with no account. Links last up to 7 days. A paid plan on the pricing page is 250 GB and 180 days after the server confirms the payment.',
   },
   {
     q: 'How are my files protected from hackers and eavesdropping?',
-    a: 'Files travel over TLS 1.3 and are stored with AES-256 at rest on Cloudflare R2. Optional password protection gates downloads (hashed on our servers — not zero-knowledge E2EE). Dangerous executables are blocked on upload.',
+    a: 'An optional password gates the download. The server stores a SHA-256 hash of it, and the notification email does not include the password. The password does not encrypt the file. Executable names are blocked on upload. That is not a malware scan.',
   },
   {
     q: 'How long do transfer download links remain active?',
-    a: 'A free transfer stays available for the time you choose, up to 7 days. After that the link stops working. Longer retention is not available yet.',
+    a: 'A free transfer stays available for the time you choose, up to 7 days. A confirmed paid plan can keep the link for 180 days.',
   },
   {
     q: 'Can I upload entire folders with nested subdirectories?',
-    a: 'Yes. Click "Select Folder" or drag an entire folder into the transfer zone. iTransfer preserves your directory structure so recipients receive the exact layout you sent.',
+    a: 'Select Folder adds the files in that folder. The transfer stores each file by its name. It does not promise that the nested folder layout is rebuilt for the recipient. A free transfer stays within 6 GB. A confirmed paid plan can reach 250 GB.',
   },
   {
     q: 'How does Direct Device P2P work?',
-    a: 'Device P2P transfers files directly between your devices (e.g., iPhone to Windows PC or Mac to Android) over your local network using WebRTC. Files never touch any cloud server, providing infinite transfer speeds with zero storage limits.',
+    a: 'Device transfer sends the file directly between two screens on the same network, using WebRTC. The file is not stored here. Both devices stay on this page and pair with a code.',
   },
 ];
 
@@ -100,13 +115,11 @@ async function sha256Hex(text) {
 }
 
 const EXPIRY_PRESETS = [
-  { hours: 1, label: '1 Hour', subtitle: 'Flash access' },
+  { hours: 1, label: '1 Hour', subtitle: 'Quick share' },
   { hours: 24, label: '24 Hours', subtitle: '1 Day access' },
-  { hours: 72, label: '3 Days', subtitle: 'Quick team' },
-  { hours: 168, label: '7 Days', subtitle: 'Standard Free' },
-  { hours: 336, label: '14 Days', subtitle: 'Extended', trial: true },
-  { hours: 720, label: '30 Days', subtitle: '1 Month', pro: true },
-  { hours: 0, label: 'Permanent', subtitle: 'Never expire', pro: true },
+  { hours: 72, label: '3 Days', subtitle: '72 Hours' },
+  { hours: 168, label: '7 Days', subtitle: 'Free Max' },
+  { hours: 180 * 24, label: '6 Months', subtitle: '180 days' },
 ];
 
 export default function HomePage() {
@@ -129,11 +142,6 @@ export default function HomePage() {
 
   // Geolocation
   const [clientGeo, setClientGeo] = useState(() => guessVisitorPlace());
-  const [scrollY, setScrollY] = useState(0);
-  const [storyChapter, setStoryChapter] = useState('hero');
-  const [chapterProgress, setChapterProgress] = useState(0);
-  // React-owned visibility — classList is-in is wiped on re-render
-  const [revealed, setRevealed] = useState(() => new Set(['hero']));
   const pageRef = useRef(null);
   const uploadLock = useRef(false);
 
@@ -151,6 +159,7 @@ export default function HomePage() {
   const [showPassword, setShowPassword] = useState(false);
   const [enablePassword, setEnablePassword] = useState(false);
   const [expiryHours, setExpiryHours] = useState(168); // 7 days default
+  const [allowance, setAllowance] = useState({ bytes: 6_000_000_000, hours: 168, paid: false });
   const [maxDownloads, setMaxDownloads] = useState(0);
 
   // Transfer Manager Overlay State
@@ -168,7 +177,6 @@ export default function HomePage() {
   const [uploadStatus, setUploadStatus] = useState('idle');
   const [telemetry, setTelemetry] = useState(null);
   const [shareData, setShareData] = useState(null);
-  const [openFaq, setOpenFaq] = useState(0);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
   const { addToast } = useToast();
@@ -191,11 +199,11 @@ export default function HomePage() {
   useEffect(() => {
     if (view === 'progress' || (activeBackgroundUploads.length > 0 && activeBackgroundUploads[0]?.status === 'uploading')) {
       const activeProg = view === 'progress' ? progress : (activeBackgroundUploads[0]?.progress || 0);
-      document.title = `(${Math.round(activeProg)}%) iTransfer — Uploading...`;
+      document.title = `(${Math.round(activeProg)}%) SendToAnyone — Uploading...`;
     } else if (view === 'complete') {
-      document.title = `✅ Transfer Ready! • iTransfer`;
+      document.title = `✅ Transfer Ready! • SendToAnyone`;
     } else {
-      document.title = `iTransfer — Send Large Files Free (6 GB)`;
+      document.title = 'Send large files free, up to 6 GB — SendToAnyone';
     }
   }, [view, progress, activeBackgroundUploads]);
 
@@ -214,60 +222,49 @@ export default function HomePage() {
     detectClientGeo().then((g) => { if (g) setClientGeo(g); });
   }, []);
 
-  useEffect(() => {
-    let ticking = false;
-    const onScroll = () => {
-      if (ticking) return;
-      ticking = true;
-      window.requestAnimationFrame(() => {
-        const y = window.scrollY || 0;
-        setScrollY(y);
-        const nodes = pageRef.current?.querySelectorAll('[data-chapter]');
-        if (nodes?.length) {
-          const mid = window.innerHeight * 0.42;
-          let best = 'hero';
-          let bestScore = Infinity;
-          let prog = 0;
-          const nextRevealed = new Set();
-          nodes.forEach((node) => {
-            const id = node.getAttribute('data-chapter') || 'hero';
-            const rect = node.getBoundingClientRect();
-            const center = rect.top + rect.height * 0.35;
-            const score = Math.abs(center - mid);
-            if (score < bestScore) {
-              bestScore = score;
-              best = id;
-              prog = Math.min(1, Math.max(0, (window.innerHeight - rect.top) / (window.innerHeight + rect.height * 0.5)));
-            }
-            if (rect.top < window.innerHeight * 0.88 && rect.bottom > 60) {
-              nextRevealed.add(id);
-            }
-          });
-          nextRevealed.add('hero');
-          setStoryChapter(best);
-          setChapterProgress(prog);
-          setRevealed((prev) => {
-            if (prev.size === nextRevealed.size && [...nextRevealed].every((k) => prev.has(k))) return prev;
-            return nextRevealed;
-          });
-        }
-        ticking = false;
-      });
-    };
-    onScroll();
-    window.addEventListener('scroll', onScroll, { passive: true });
-    window.addEventListener('resize', onScroll, { passive: true });
-    return () => {
-      window.removeEventListener('scroll', onScroll);
-      window.removeEventListener('resize', onScroll);
-    };
+  const pickMode = useCallback((mode) => {
+    setActiveNavTab('transfer');
+    setMainMode(mode);
+    if (mode !== 'device') setView('form');
+    document.getElementById('transfer')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, []);
 
-  const chapterClass = (id, extra = '') =>
-    `chapter-reveal ${revealed.has(id) ? 'is-in' : ''} ${extra}`.trim();
-
   const isMasterAdmin = isAdmin(user);
-  const maxSizeBytes = 6_000_000_000;
+  const maxSizeBytes = allowance.bytes;
+  const maxSizeLabel = allowance.paid ? '250 GB' : '6 GB';
+  const expiryChoices = EXPIRY_PRESETS.filter((preset) => preset.hours <= allowance.hours);
+
+  useEffect(() => {
+    let alive = true;
+    async function loadAllowance() {
+      if (!user) {
+        if (alive) setAllowance({ bytes: 6_000_000_000, hours: 168, paid: false });
+        return;
+      }
+      try {
+        const { data } = await supabase.auth.getSession();
+        const token = data.session?.access_token;
+        const response = await fetch('/api/r2?action=tier-limits', {
+          headers: token ? { authorization: `Bearer ${token}` } : {},
+        });
+        const body = await response.json();
+        if (!alive || !response.ok || !body.maxFileSizeBytes) return;
+        setAllowance({
+          bytes: Number(body.maxFileSizeBytes),
+          hours: Number(body.maxRetentionHours) || 168,
+          paid: body.paid === true,
+        });
+      } catch {
+        if (alive) setAllowance({ bytes: 6_000_000_000, hours: 168, paid: false });
+      }
+    }
+    loadAllowance();
+    return () => { alive = false; };
+  }, [user]);
+
+  useEffect(() => {
+    if (expiryHours > allowance.hours) setExpiryHours(allowance.hours);
+  }, [allowance.hours, expiryHours]);
 
   const handleFilesSelected = useCallback((newFiles) => {
     setFiles(prev => [...prev, ...newFiles]);
@@ -339,7 +336,7 @@ export default function HomePage() {
 
     const totalSize = files.reduce((acc, f) => acc + f.size, 0);
     if (totalSize > maxSizeBytes) {
-      addToast(`This transfer is larger than the 6 GB free limit (${formatBytes(totalSize)}).`, 'error');
+      addToast(`This transfer is larger than the ${maxSizeLabel} limit (${formatBytes(totalSize)}).`, 'error');
       return;
     }
 
@@ -351,7 +348,7 @@ export default function HomePage() {
     const finalTransferName = subject.trim() || `Transfer-${generatedSlug.slice(0, 6).toUpperCase()}`;
 
     // 2. Instantiate Persistent TransferManager
-    const safeExpiry = expiryHours > 0 && expiryHours <= 168 ? expiryHours : 168;
+    const safeExpiry = expiryHours > 0 && expiryHours <= allowance.hours ? expiryHours : allowance.hours;
     const manager = new TransferManager({
       shareId: generatedSlug,
       transferName: finalTransferName,
@@ -433,12 +430,13 @@ export default function HomePage() {
               fileCount: completedFiles.length,
               totalSize: snap.totalBytes,
               expiresAt,
+              expiryHours: safeExpiry,
               isPasswordProtected: !!pwdHash,
             }),
           });
-          emailResult = await emailRes.json();
-        } catch (e) {
-          console.warn('Email send warning:', e);
+          emailResult = interpretSendEmailResponse(emailRes.ok, await emailRes.json().catch(() => null));
+        } catch {
+          emailResult = emailTransportFailure();
         }
       }
 
@@ -513,17 +511,11 @@ export default function HomePage() {
   };
 
   return (
-    <div ref={pageRef} className="min-h-screen flex flex-col bg-transparent text-white relative">
+    <div ref={pageRef} className="ds-page">
       {activeNavTab !== 'dashboard' && (
-        <>
-          <SkyScene scrollY={scrollY} chapter={storyChapter} timeZone={clientGeo.timeZone} />
-          <StoryLane
-            chapter={view === 'form' ? storyChapter : 'hero'}
-            progress={chapterProgress}
-            journey={view === 'form' ? null : (uploadStatus === 'complete' ? 1 : (progress || 0) / 100)}
-            phase={view === 'form' ? 'idle' : uploadStatus}
-          />
-        </>
+        <div className="absolute inset-x-0 top-0 h-[min(980px,118svh)] pointer-events-none overflow-hidden">
+          <HeroSky timeZone={clientGeo.timeZone} />
+        </div>
       )}
 
       <Navbar
@@ -534,156 +526,162 @@ export default function HomePage() {
         setActiveTab={setActiveNavTab}
         onOpenMyUploads={() => setIsMyUploadsOpen(true)}
       />
+      <CheckoutReturnNotice />
 
       {activeNavTab === 'dashboard' ? (
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full flex-1 relative z-10">
-          <DashboardView user={user} onStartTransfer={() => setActiveNavTab('transfer')} />
+        <div className="ds-wrap py-8 flex-1 relative z-10">
+          <div className="mb-6">
+            <p className="ds-kicker"><b>●</b> Your account</p>
+            <h1 className="ds-h2 mt-2">My files</h1>
+          </div>
+          <div className="ds-frame">
+            <div className="ds-frame-screen">
+              <Suspense fallback={
+                <div className="py-20 flex flex-col items-center justify-center gap-3 text-center text-[var(--ds-muted)]">
+                  <span className="ds-spinner" aria-hidden="true" />
+                  <p className="text-xs">Loading dashboard…</p>
+                </div>
+              }>
+                <DashboardView
+                  user={user}
+                  onOpenAuth={handleOpenAuth}
+                  onStartTransfer={() => setActiveNavTab('transfer')}
+                />
+              </Suspense>
+            </div>
+          </div>
         </div>
       ) : (
         <>
           <section
-            data-chapter="hero"
-            className={chapterClass(
-              'hero',
-              `relative -mt-16 min-h-[100svh] w-full px-4 sm:px-6 pt-36 pb-16 z-10 overflow-hidden text-white${view === 'progress' ? ' hero-sending' : ''}`,
-            )}
+            id="transfer"
+            className={`ds-hero relative z-10 scroll-mt-16${view === 'progress' ? ' hero-sending' : ''}`}
           >
-            <div className="hidden lg:block absolute right-0 xl:right-[1%] bottom-0 z-[2] w-[420px] xl:w-[500px]">
-              <FlagBearer countryCode={clientGeo.countryCode} countryName={clientGeo.countryName} />
-            </div>
-            <div className="relative z-10 mx-auto w-full max-w-lg text-center">
-              <div className="mb-5">
+            <div className="ds-wrap ds-hero-grid">
+              <div className="ds-hero-copy" aria-live="polite">
                 {(() => {
                   const story = SEND_STORY[mainMode] || SEND_STORY.link;
                   let title = story.title;
                   let line = story.line;
+                  let accent = story.accent;
                   if (view === 'progress') {
                     title = 'Your file is leaving.';
-                    line = 'Stay on this page until the link is ready.';
+                    line = 'Stay on this page until the link is ready. You can keep it running in the background.';
+                    accent = 1;
                   } else if (view === 'complete') {
                     title = 'The link is ready.';
-                    line = 'Send it. It closes when the time you chose runs out.';
+                    line = 'Send it anywhere. It closes when the time you chose runs out.';
+                    accent = 1;
                   } else if (files.length > 0 && mainMode === 'email') {
                     title = 'Add who should get it.';
                     line = 'We mail the link. The file never sits in their inbox.';
+                    accent = 2;
                   } else if (files.length > 0 && mainMode === 'link') {
                     title = 'One step from a link.';
                     line = 'Name it if you want. A password can gate the download.';
+                    accent = 1;
                   }
+                  const cycleFacts = view === 'form' && files.length === 0 && mainMode === 'link';
                   return (
                     <>
-                      <p className="text-[11px] uppercase tracking-[0.22em] text-white/80 mb-3">
-                        {clientGeo.detected && clientGeo.countryName
-                          ? `${clientGeo.flag} You're in ${clientGeo.countryName}`
-                          : 'Your location isn’t shown'}
-                      </p>
-                      <h1 className="text-4xl sm:text-5xl font-semibold tracking-tight text-white leading-[1.05] mb-3">
-                        {title}
-                      </h1>
-                      <p className="text-sm sm:text-base text-white/85 mb-4 max-w-md mx-auto">
-                        {line}
-                      </p>
-                      {files.length === 0 && view === 'form' && (
-                        <ol className="story-steps">
-                          {story.steps.map((step, index) => (
-                            <li key={step} className="story-step">
-                              <i>{index + 1}</i>
-                              {step}
-                            </li>
-                          ))}
-                        </ol>
+                      <Link to="/pricing" className="ds-announce">
+                        <span className="ds-announce-tag">Pro</span>
+                        250 GB transfers, links open 180 days
+                        <ArrowRight className="w-3.5 h-3.5" />
+                      </Link>
+                      <AnimatedHeadline text={title} accent={accent} />
+                      {cycleFacts ? (
+                        <RotatingLead phrases={LINK_FACTS} label={SEND_STORY.link.line} />
+                      ) : (
+                        <p className="ds-lead">{line}</p>
                       )}
                     </>
                   );
                 })()}
-
-                <div className="noir-segment inline-flex gap-1 mb-5">
-                  {[
-                    { id: 'link', label: 'Link', icon: Link2 },
-                    { id: 'email', label: 'Email', icon: Mail },
-                    { id: 'device', label: 'Device', icon: Wifi },
-                  ].map((m) => {
-                    const Icon = m.icon;
-                    return (
-                      <button
-                        key={m.id}
-                        type="button"
-                        onClick={() => {
-                          setMainMode(m.id);
-                          if (m.id !== 'device') setView('form');
-                        }}
-                        className={`noir-segment-item px-3.5 sm:px-4 py-2 flex items-center gap-1.5 cursor-pointer ${
-                          mainMode === m.id ? 'active' : ''
-                        }`}
-                      >
-                        <Icon className="w-3.5 h-3.5" />
-                        {m.label}
-                      </button>
-                    );
-                  })}
-                  <Link
-                    to="/receive"
-                    className="noir-segment-item px-3.5 sm:px-4 py-2 flex items-center gap-1.5 hover:text-white"
-                  >
-                    <Inbox className="w-3.5 h-3.5" />
-                    Request
-                  </Link>
-                </div>
+                <PrivacyNotes />
               </div>
 
-              {files.length === 0 && view === 'form' && (
-                <p className="story-bubble">
-                  {(SEND_STORY[mainMode] || SEND_STORY.link).bubble}
-                </p>
-              )}
-              {files.length > 0 && view === 'form' && mainMode !== 'device' && (
-                <p className="story-bubble">
-                  {mainMode === 'email'
-                    ? 'Add their email. We send the link, not the file.'
-                    : 'Name it if you want, then create the link.'}
-                </p>
-              )}
+              <div className="ds-frame" data-reveal style={{ '--d': '200ms' }}>
+                <div className="ds-frame-chrome">
+                  <span className="ds-frame-dots" aria-hidden="true"><i /><i /><i /></span>
+                  <div className="ds-tabs" role="group" aria-label="How to send">
+                    {MODE_TABS.map((m) => {
+                      const Icon = m.icon;
+                      return (
+                        <button
+                          key={m.id}
+                          type="button"
+                          onClick={() => {
+                            setMainMode(m.id);
+                            if (m.id !== 'device') setView('form');
+                          }}
+                          className="ds-tab"
+                          aria-pressed={mainMode === m.id}
+                        >
+                          <Icon className="w-3.5 h-3.5" />
+                          {m.label}
+                        </button>
+                      );
+                    })}
+                    <Link to="/receive" className="ds-tab">
+                      <Inbox className="w-3.5 h-3.5" />
+                      Request
+                    </Link>
+                  </div>
+                </div>
 
-              <div className="w-full">
+              <div className="ds-frame-screen home-hero-stage">
                 {mainMode === 'device' ? (
-                  <div className="custom-card p-5 sm:p-7 w-full max-w-lg">
-                    <P2PTransferView initialRoom={searchParams.get('room') || undefined} />
+                  <div className="snd-shell">
+                    <Suspense fallback={
+                      <div className="py-12 flex flex-col items-center justify-center gap-3 text-center text-[var(--ds-muted)]">
+                        <span className="ds-spinner" aria-hidden="true" />
+                        <p className="text-sm">Opening the device transfer…</p>
+                      </div>
+                    }>
+                      <P2PTransferView initialRoom={searchParams.get('room') || undefined} />
+                    </Suspense>
                   </div>
                 ) : (
                   <>
                     {view === 'form' && files.length === 0 && (
-                      <DropZone onFilesSelected={handleFilesSelected} variant="card" />
+                      <DropZone onFilesSelected={handleFilesSelected} windowDrop />
                     )}
 
                     {view === 'form' && files.length > 0 && (
-                      <div className="custom-card p-5 sm:p-7 w-full max-w-lg animate-scale-in">
+                      <div className="snd-sheet">
                         {mainMode === 'email' && (
-                          <div className="mb-4 p-3.5 bg-white/5 border border-white/10 rounded-2xl space-y-2.5">
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                              <div>
-                                <label className="block text-[11px] font-semibold text-white/55 uppercase tracking-wider mb-1">
-                                  Recipient <span className="text-[#c47a7a]">*</span>
-                                </label>
+                          <div className="snd-email">
+                            <p className="snd-note">
+                              <Mail aria-hidden="true" />
+                              <span>The email contains the download link. The file is not attached.</span>
+                            </p>
+                            <div className="snd-fields is-pair">
+                              <label htmlFor="send-recipient" className="ds-field">
+                                <span className="ds-label">Recipient</span>
                                 <input
+                                  id="send-recipient"
                                   type="email"
                                   value={recipientEmails}
                                   onChange={(e) => setRecipientEmails(e.target.value)}
                                   placeholder="colleague@company.com"
-                                  className="noir-input w-full px-3 py-2 text-xs font-medium"
+                                  autoComplete="email"
+                                  className="ds-input"
+                                  required
                                 />
-                              </div>
-                              <div>
-                                <label className="block text-[11px] font-semibold text-white/55 uppercase tracking-wider mb-1">
-                                  Your email
-                                </label>
+                              </label>
+                              <label htmlFor="send-sender" className="ds-field">
+                                <span className="ds-label">Your email</span>
                                 <input
+                                  id="send-sender"
                                   type="email"
                                   value={senderEmail}
                                   onChange={(e) => setSenderEmail(e.target.value)}
                                   placeholder="you@company.com"
-                                  className="noir-input w-full px-3 py-2 text-xs font-medium"
+                                  autoComplete="email"
+                                  className="ds-input"
                                 />
-                              </div>
+                              </label>
                             </div>
                           </div>
                         )}
@@ -693,136 +691,149 @@ export default function HomePage() {
                           onRemoveFile={handleRemoveFile}
                           onAddMore={handleFilesSelected}
                           maxSizeBytes={maxSizeBytes}
-                          maxSizeLabel="6 GB"
+                          maxSizeLabel={maxSizeLabel}
                         />
 
-                        <div className="space-y-1.5 pt-3">
-                          <label className="text-[11px] font-semibold text-white/55 uppercase tracking-wider">
-                            Title
-                          </label>
-                          <input
-                            type="text"
-                            value={subject}
-                            onChange={(e) => setSubject(e.target.value)}
-                            placeholder="e.g. Brand assets"
-                            className="noir-input w-full px-3.5 py-2.5 text-xs font-medium"
-                          />
-                          <div className="flex items-center gap-1.5 px-3 py-1.5 bg-white/8 border border-white/15 rounded-xl text-[11px] font-medium text-white">
-                            <Link2 className="w-3.5 h-3.5 shrink-0" />
-                            <span className="font-mono truncate">/d/{formatLiveSlugPreview(subject)}</span>
+                        <fieldset className="snd-expiry snd-sep">
+                          <legend className="snd-label-row">
+                            <span>Link stays open</span>
+                            <small>{allowance.paid ? 'Pro · up to 180 days' : 'Free · up to 7 days'}</small>
+                          </legend>
+                          <div className="snd-choices">
+                            {expiryChoices.map((preset) => {
+                              const isSelected = expiryHours === preset.hours;
+                              return (
+                                <button
+                                  key={preset.hours}
+                                  type="button"
+                                  onClick={() => setExpiryHours(preset.hours)}
+                                  aria-pressed={isSelected}
+                                  className="snd-choice"
+                                >
+                                  <strong>{preset.label}</strong>
+                                  <span>{preset.subtitle}</span>
+                                </button>
+                              );
+                            })}
                           </div>
+                        </fieldset>
+
+                        <div className="snd-toggle snd-sep">
+                          <label className="snd-toggle-row" htmlFor="send-password-toggle">
+                            <span className="ds-icon is-sm" aria-hidden="true">
+                              <Key />
+                            </span>
+                            <span className="snd-toggle-text">
+                              <strong>Password</strong>
+                              <span>Gates the download. Optional.</span>
+                            </span>
+                            <input
+                              id="send-password-toggle"
+                              type="checkbox"
+                              className="snd-switch"
+                              checked={enablePassword}
+                              onChange={(e) => setEnablePassword(e.target.checked)}
+                            />
+                          </label>
+                          {enablePassword && (
+                            <>
+                              <div className="snd-secret">
+                                <input
+                                  type={showPassword ? 'text' : 'password'}
+                                  value={password}
+                                  onChange={(e) => setPassword(e.target.value)}
+                                  placeholder="Password for the download"
+                                  autoComplete="new-password"
+                                  className="ds-input"
+                                  aria-label="Download password"
+                                />
+                                <button
+                                  type="button"
+                                  className="snd-icon-btn"
+                                  onClick={() => setShowPassword(!showPassword)}
+                                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                                >
+                                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                                </button>
+                              </div>
+                              <p className="ds-hint">The recipient types it before the download starts. It does not encrypt the file.</p>
+                            </>
+                          )}
                         </div>
 
-                        <button
-                          type="button"
-                          onClick={() => setShowAdvancedOptions((v) => !v)}
-                          className="mt-4 w-full flex items-center justify-between px-3 py-2.5 rounded-xl border border-white/10 text-xs font-semibold text-white/55 hover:text-white hover:bg-white/5 cursor-pointer"
-                        >
-                          <span className="flex items-center gap-2">
-                            <Lock className="w-3.5 h-3.5 text-white" />
-                            Options · password, expiry, message
-                          </span>
-                          <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showAdvancedOptions ? 'rotate-180' : ''}`} />
-                        </button>
+                        <div className="snd-sep">
+                          <button
+                            type="button"
+                            onClick={() => setShowAdvancedOptions((v) => !v)}
+                            aria-expanded={showAdvancedOptions}
+                            aria-controls="transfer-options"
+                            className="snd-disclosure"
+                          >
+                            <span>Title and message</span>
+                            <span>
+                              <span className="snd-tag">Optional</span>
+                              <ChevronDown className={showAdvancedOptions ? 'is-open' : ''} aria-hidden="true" />
+                            </span>
+                          </button>
 
-                        {showAdvancedOptions && (
-                          <div className="mt-3 space-y-3 animate-fadeIn">
-                            <div className="space-y-2">
-                              <label className="text-[11px] font-semibold text-white/55 uppercase tracking-wider flex items-center gap-1.5">
-                                <Clock className="w-3.5 h-3.5 text-white" />
-                                Expiration
-                              </label>
-                              <div className="grid grid-cols-2 gap-2">
-                                {EXPIRY_PRESETS.map((preset) => {
-                                  const unavailable = preset.hours === 0 || preset.hours > 168;
-                                  const isSelected = expiryHours === preset.hours;
-                                  return (
-                                    <button
-                                      key={preset.hours}
-                                      type="button"
-                                      disabled={unavailable}
-                                      onClick={() => {
-                                        if (unavailable) return;
-                                        setExpiryHours(preset.hours);
-                                      }}
-                                      className={`p-2.5 rounded-xl border text-left ${
-                                        unavailable
-                                          ? 'bg-white/5 border-white/10 text-white/30 cursor-not-allowed'
-                                          : isSelected
-                                            ? 'bg-white text-black border-white cursor-pointer'
-                                            : 'bg-white/5 border-white/10 text-white/70 hover:border-white/40 cursor-pointer'
-                                      }`}
-                                    >
-                                      <span className="text-xs font-semibold block">{preset.label}</span>
-                                      <span className="text-[10px] opacity-80">{unavailable ? 'Not available yet' : preset.subtitle}</span>
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            </div>
-
-                            <div className="p-3.5 bg-white/5 rounded-2xl border border-white/10">
-                              <label className="flex items-center justify-between cursor-pointer">
-                                <div className="flex items-center gap-2.5">
-                                  <Lock className="w-4 h-4 text-white" />
-                                  <div>
-                                    <p className="text-xs font-semibold text-white">Password protection</p>
-                                    <p className="text-[10px] text-white/40">Free on every transfer</p>
-                                  </div>
-                                </div>
+                          {showAdvancedOptions && (
+                            <div id="transfer-options" className="snd-details">
+                              <label htmlFor="send-title" className="ds-field">
+                                <span className="ds-label">Title</span>
                                 <input
-                                  type="checkbox"
-                                  checked={enablePassword}
-                                  onChange={(e) => setEnablePassword(e.target.checked)}
-                                  className="w-4 h-4 rounded accent-[#c4a574] cursor-pointer"
+                                  id="send-title"
+                                  type="text"
+                                  value={subject}
+                                  onChange={(e) => setSubject(e.target.value)}
+                                  placeholder="Brand assets"
+                                  className="ds-input"
                                 />
                               </label>
-                              {enablePassword && (
-                                <div className="mt-3 relative">
-                                  <input
-                                    type={showPassword ? 'text' : 'password'}
-                                    value={password}
-                                    onChange={(e) => setPassword(e.target.value)}
-                                    placeholder="Unlock passphrase"
-                                    className="noir-input w-full pl-3 pr-9 py-2 text-xs font-medium"
-                                  />
-                                  <button
-                                    type="button"
-                                    onClick={() => setShowPassword(!showPassword)}
-                                    className="absolute right-3 top-2 text-white/40 cursor-pointer"
-                                  >
-                                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                                  </button>
-                                </div>
-                              )}
+                              <p className="snd-slug">
+                                <Link2 className="w-3.5 h-3.5" aria-hidden="true" />
+                                <span>/d/{formatLiveSlugPreview(subject)}</span>
+                              </p>
+                              <label htmlFor="send-message" className="ds-field">
+                                <span className="ds-label">Message</span>
+                                <textarea
+                                  id="send-message"
+                                  value={message}
+                                  onChange={(e) => setMessage(e.target.value)}
+                                  placeholder="Optional note for the recipient"
+                                  rows={2}
+                                  className="ds-textarea"
+                                />
+                              </label>
                             </div>
+                          )}
+                        </div>
 
-                            <textarea
-                              value={message}
-                              onChange={(e) => setMessage(e.target.value)}
-                              placeholder="Optional message for recipients"
-                              rows={2}
-                              className="noir-input w-full px-3 py-2 text-xs font-medium resize-none"
-                            />
-                          </div>
+                        {files.reduce((sum, file) => sum + file.size, 0) > maxSizeBytes && (
+                          <p className="ds-alert is-danger" role="alert">
+                            <AlertCircle className="w-4 h-4 shrink-0" aria-hidden="true" />
+                            <span>This transfer is larger than {maxSizeLabel}. Remove a file to continue.</span>
+                          </p>
                         )}
 
                         <button
                           type="button"
                           onClick={handleUploadLinkTransfer}
-                          className="w-full mt-4 py-3.5 theme-btn-primary font-semibold text-sm rounded-full flex items-center justify-center gap-2 cursor-pointer"
+                          disabled={files.reduce((sum, file) => sum + file.size, 0) > maxSizeBytes}
+                          className="ds-btn ds-btn-dark ds-btn-lg snd-go"
                         >
-                          <span className="truncate">
-                            {mainMode === 'email' ? 'Send transfer' : 'Create download link'} · {files.length}{' '}
-                            {files.length === 1 ? 'file' : 'files'} ({formatBytes(files.reduce((a, f) => a + f.size, 0))})
+                          <span>
+                            {mainMode === 'email' ? 'Send the link' : 'Create download link'}
                           </span>
-                          <ArrowRight className="w-4 h-4 shrink-0" />
+                          <ArrowRight className="w-4 h-4 shrink-0 ds-btn-arrow" aria-hidden="true" />
                         </button>
+                        <p className="snd-fine">
+                          Up to {maxSizeLabel} per transfer. The files are deleted after the link closes.
+                        </p>
                       </div>
                     )}
 
                     {view === 'progress' && (
-                      <div className="w-full max-w-lg send-shell">
+                      <div className="snd-shell">
                         <UploadProgress
                           progress={progress}
                           fileName={currentFileName}
@@ -840,7 +851,7 @@ export default function HomePage() {
                     )}
 
                     {view === 'complete' && shareData && (
-                      <div className="custom-card p-5 sm:p-7 w-full max-w-lg">
+                      <div className="snd-shell">
                         <ShareLink
                           shareId={shareData.shareId}
                           fileCount={shareData.fileCount}
@@ -862,135 +873,39 @@ export default function HomePage() {
                   </>
                 )}
               </div>
-              <div className="lg:hidden mt-8 flex justify-center">
-                <div className="w-[280px]">
-                  <FlagBearer countryCode={clientGeo.countryCode} countryName={clientGeo.countryName} />
-                </div>
+              </div>
+            </div>
+
+            <div className="ds-wrap relative z-10 mt-8 sm:mt-12">
+              <JourneyStrip
+                countryCode={clientGeo.countryCode}
+                countryName={clientGeo.countryName}
+              />
+            </div>
+          </section>
+
+          <FactsBand />
+
+          <Chapters onPickMode={pickMode} />
+
+          <section id="plans" className="ds-section" aria-labelledby="plans-title">
+            <div className="ds-wrap">
+              <div className="ds-section-head is-center" data-reveal>
+                <p className="ds-kicker"><b>●</b> Pricing</p>
+                <h2 id="plans-title" className="ds-h2">Free up to 6 GB. Pro when the file is bigger.</h2>
+                <p className="ds-lead">No trial clock, no card to send. Pro opens a Dodo checkout and applies once the payment is confirmed.</p>
+              </div>
+              <div className="mt-12 max-w-4xl mx-auto">
+                <PlanCards freeHref="#transfer" isPro={allowance.paid} />
               </div>
             </div>
           </section>
 
-          <section data-chapter="ways" className="move-stage relative z-10 text-white">
-            <div className={chapterClass('ways', 'max-w-6xl mx-auto px-4 sm:px-6 py-16 sm:py-24')}>
-              <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-10">
-                <div>
-                  <p className="text-[11px] uppercase tracking-[0.22em] text-white/45 mb-3">How it moves</p>
-                  <h2 className="text-4xl sm:text-6xl font-semibold tracking-tight leading-[0.95] max-w-xl">Four ways. One link when you need it.</h2>
-                </div>
-                <p className="text-sm text-white/50 max-w-xs">Pick a path. The file leaves your screen and arrives as a link, a mail, or a direct handoff.</p>
-              </div>
-
-              <div className="move-rail">
-                <span className="move-beam" aria-hidden="true" />
-                {[
-                  { n: '01', title: 'Link', body: 'A download link in seconds. Copy it, send it on WhatsApp, or show a QR.', href: '/', Icon: Link2 },
-                  { n: '02', title: 'Email', body: 'Past the 25 MB inbox limit. The file stays on the link, not in the mail.', href: '/send-files-by-email', Icon: Mail },
-                  { n: '03', title: 'Device', body: 'Phone to laptop on the same network. Nothing is stored.', href: '/?mode=device', Icon: Wifi },
-                  { n: '04', title: 'Request', body: 'A portal so a client can send files back to you.', href: '/receive', Icon: Inbox },
-                ].map((item, i) => (
-                  <Link key={item.n} to={item.href} className="move-card" style={{ animationDelay: `${i * 90}ms` }}>
-                    <span className="move-index">{item.n}</span>
-                    <span className="move-icon" style={{ animationDelay: `${i * 0.35}s` }}>
-                      <item.Icon className="w-5 h-5" />
-                    </span>
-                    <span className="move-title">{item.title}</span>
-                    <span className="move-body">{item.body}</span>
-                    <span className="move-go">Open <ArrowRight className="w-3.5 h-3.5" /></span>
-                  </Link>
-                ))}
-              </div>
-            </div>
-          </section>
-
-          <section data-chapter="security" className="close-band relative z-10 text-white">
-            <div className="max-w-6xl mx-auto px-4 sm:px-6 py-16 sm:py-20">
-              <div className={chapterClass('security', 'mb-14')}>
-                <p className="text-[11px] uppercase tracking-[0.22em] text-white/40 mb-4">Security</p>
-                <h2 className="text-4xl sm:text-6xl font-semibold tracking-tight leading-[0.95] max-w-2xl">Locked on the way. Gone when you say.</h2>
-                <p className="mt-5 text-sm sm:text-base text-white/55 max-w-xl leading-relaxed">
-                  Three things that matter. A password only gates the download — it is not zero-knowledge encryption.
-                </p>
-                <div className="mt-8 grid sm:grid-cols-3 gap-3">
-                  {[
-                    ['In transit', 'TLS 1.3 on the way up. AES-256 at rest on Cloudflare R2.'],
-                    ['Password gate', 'Optional. Hashed on our side. Blocks the download page until it matches.'],
-                    ['Gone on expiry', 'When the link dies, the files are deleted. Executables never upload.'],
-                  ].map(([t, d]) => (
-                    <div key={t} className="rounded-2xl border border-white/10 bg-[#17192e] px-5 py-5">
-                      <p className="text-lg font-semibold tracking-tight">{t}</p>
-                      <p className="mt-2 text-[15px] text-white/75 leading-relaxed">{d}</p>
-                    </div>
-                  ))}
-                </div>
-                <Link to="/security" className="inline-flex items-center gap-2 mt-6 text-sm font-semibold rounded-full bg-white text-black px-5 py-2.5 hover:bg-white/90">
-                  Security details <ArrowRight className="w-4 h-4" />
-                </Link>
-              </div>
-
-              <div data-chapter="arrive" className={chapterClass('arrive')}>
-                <div className="flex items-end justify-between gap-4 mb-6">
-                  <div>
-                    <p className="text-[11px] uppercase tracking-[0.22em] text-white/40 mb-3">Compare</p>
-                    <h2 className="text-3xl sm:text-5xl font-semibold tracking-tight">Against the usual options.</h2>
-                  </div>
-                  <Link to="/compare" className="hidden sm:inline-flex text-sm font-semibold underline underline-offset-4">Full comparison</Link>
-                </div>
-
-                <div className="compare-board hidden sm:block">
-                  <div className="compare-head">
-                    <span />
-                    <span className="compare-us">iTransfer</span>
-                    <span>WeTransfer</span>
-                    <span>SendGB</span>
-                  </div>
-                  {[
-                    ['Free size', '6 GB + device', '2 GB', '5 GB'],
-                    ['Password', 'Free', 'Paid', 'Included'],
-                    ['Phone to laptop', 'Yes', 'No', 'No'],
-                    ['Ads', 'None', 'Full screen', 'Banners'],
-                  ].map((row) => (
-                    <div key={row[0]} className="compare-row">
-                      <span>{row[0]}</span>
-                      <span className="compare-us">{row[1]}</span>
-                      <span>{row[2]}</span>
-                      <span>{row[3]}</span>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="sm:hidden space-y-3">
-                  {[
-                    ['Free size', '6 GB + device', 'WeTransfer 2 GB · SendGB 5 GB'],
-                    ['Password', 'Free', 'WeTransfer paid · SendGB included'],
-                    ['Phone to laptop', 'Yes', 'WeTransfer no · SendGB no'],
-                    ['Ads', 'None', 'WeTransfer full screen · SendGB banners'],
-                  ].map(([label, us, them]) => (
-                    <div key={label} className="rounded-2xl border border-white/10 bg-[#17192e] px-4 py-4">
-                      <p className="text-[11px] uppercase tracking-[0.14em] text-white/40 mb-2">{label}</p>
-                      <p className="text-base font-semibold text-white">iTransfer · {us}</p>
-                      <p className="mt-1 text-sm text-white/45">{them}</p>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="mt-6 flex flex-wrap items-center gap-3">
-                  <Link to="/pricing" className="inline-flex rounded-full bg-white text-black text-sm font-semibold px-5 py-3 hover:bg-white/90 transition-colors">
-                    See pricing
-                  </Link>
-                  <Link to="/compare" className="sm:hidden text-sm font-semibold underline underline-offset-4">
-                    Full comparison
-                  </Link>
-                </div>
-              </div>
-            </div>
-          </section>
-
+          <HomeFaq faqs={FAQS} />
         </>
       )}
 
-      <div className={chapterClass('arrive', 'relative z-10')}>
-        <Footer />
-      </div>
+      <Footer />
 
       <FloatingUploadDock
         activeUploads={activeBackgroundUploads}

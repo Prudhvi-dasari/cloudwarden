@@ -6,6 +6,7 @@ export default function Confetti({ duration = 6000 }) {
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
 
     const ctx = canvas.getContext('2d');
     
@@ -18,14 +19,14 @@ export default function Confetti({ duration = 6000 }) {
     ctx.scale(dpr, dpr);
 
     const colors = [
-      '#c4a574', // Champagne gold
-      '#d4b88a',
-      '#f5f0e8', // Ivory
-      '#e8dfd0',
-      '#b08d5a',
-      '#8fbc8f', // Soft success
-      '#a39e94',
-      '#f0e6d4',
+      '#1769F5', // Primary blue
+      '#38bdf8', // Sky blue
+      '#818cf8', // Indigo
+      '#60a5fa', // Blue 400
+      '#93c5fd', // Light blue
+      '#10b981', // Soft emerald
+      '#cbd5e1', // Slate
+      '#f1f5f9', // Pale slate
     ];
 
     const particles = [];
@@ -141,7 +142,6 @@ export default function Confetti({ duration = 6000 }) {
     <canvas
       ref={canvasRef}
       className="fixed inset-0 pointer-events-none z-50 w-full h-full"
-      style={{ width: '100vw', height: '100vh' }}
     />
   );
 }

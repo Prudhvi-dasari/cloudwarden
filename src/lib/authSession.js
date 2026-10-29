@@ -170,7 +170,7 @@ export function getUserPlanLimits(user) {
 
   if (isPurchasedPro) {
     return {
-      tierName: isMaster ? 'Master Admin (Lifetime Pro)' : 'iTransfer Pro',
+      tierName: isMaster ? 'Master Admin (Lifetime Pro)' : 'SendToAnyone Pro',
       plan: 'pro',
       maxFileSizeBytes: 6_000_000_000,
       maxFileSizeLabel: '6 GB',

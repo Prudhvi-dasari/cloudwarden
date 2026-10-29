@@ -1,209 +1,192 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import Navbar from '../components/Navbar';
-import Footer from '../components/Footer';
+import PageFrame from '../components/PageFrame';
 import AuthModal from '../components/AuthModal';
 import ProfileModal from '../components/ProfileModal';
-import { getStoredUser } from '../lib/authSession';
-import {
-  FileText, ShieldCheck, Scale, Lock, Clock, HardDrive,
-  CheckCircle2, AlertTriangle, ArrowRight, Mail, Globe, Zap
-} from 'lucide-react';
+import { getStoredUser, clearUserSession } from '../lib/authSession';
+import { Clock, Mail, ShieldCheck } from 'lucide-react';
+
+const SECTIONS = [
+  { id: 'acceptance', title: 'Acceptance of Terms' },
+  { id: 'service', title: 'Service Description & Storage Limits' },
+  { id: 'expiration', title: 'Automated File Expiration & Permanent Purge Policy' },
+  { id: 'ownership', title: 'Zero Data Ownership & No AI Training Guarantee' },
+  { id: 'prohibited', title: 'Prohibited Uses & Content Guidelines' },
+  { id: 'billing', title: 'Subscriptions & Billing Policy' },
+  { id: 'liability', title: 'Limitation of Liability' },
+  { id: 'contact', title: 'Contact & Inquiries' },
+];
+
+const SHORT = {
+  acceptance: 'Acceptance',
+  service: 'Service and limits',
+  expiration: 'Expiration',
+  ownership: 'Ownership',
+  prohibited: 'Prohibited uses',
+  billing: 'Billing',
+  liability: 'Liability',
+  contact: 'Contact',
+};
+
+function Clause({ index, children }) {
+  const { id, title } = SECTIONS[index];
+  return (
+    <section id={id} className="pgb-doc-section">
+      <h2><span className="pgb-num">{String(index + 1).padStart(2, '0')}</span>{title}</h2>
+      {children}
+    </section>
+  );
+}
 
 export default function TermsPage() {
   const [user, setUser] = useState(() => getStoredUser());
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [authMode, setAuthMode] = useState('login');
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [active, setActive] = useState(SECTIONS[0].id);
+  const articleRef = useRef(null);
+
+  useEffect(() => {
+    if (!('IntersectionObserver' in window) || !articleRef.current) return undefined;
+    const io = new IntersectionObserver((entries) => {
+      const visible = entries
+        .filter((e) => e.isIntersecting)
+        .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+      if (visible[0]) setActive(visible[0].target.id);
+    }, { rootMargin: '-20% 0px -65% 0px' });
+    articleRef.current.querySelectorAll('section[id]').forEach((el) => io.observe(el));
+    return () => io.disconnect();
+  }, []);
 
   return (
-    <div className="min-h-screen flex flex-col text-white relative overflow-hidden bg-[#07080d]">
-      <div className="page-sky" aria-hidden="true" />
-      
-      <Navbar
+    <>
+      <PageFrame
         user={user}
         onOpenAuth={(mode) => { setAuthMode(mode); setIsAuthOpen(true); }}
         onOpenProfile={() => setIsProfileOpen(true)}
+        eyebrow="Legal terms and service agreement"
+        title="Terms & Conditions"
+        accent={1}
+        subtitle="Last Updated: October 2026 • Please read these terms carefully before using SendToAnyone."
+      >
+        <div className="ds-chapters">
+          <nav className="ds-toc" aria-label="Sections">
+            <p>Sections</p>
+            <ol>
+              {SECTIONS.map((s, i) => (
+                <li key={s.id}>
+                  <a href={`#${s.id}`} className={active === s.id ? 'is-active' : ''}>
+                    <span>{String(i + 1).padStart(2, '0')}</span>
+                    {SHORT[s.id]}
+                  </a>
+                </li>
+              ))}
+            </ol>
+          </nav>
+
+          <article ref={articleRef} className="ds-prose">
+            <Clause index={0}>
+              <p>
+                By accessing, browsing, or using the SendToAnyone platform (accessible at <a href="https://sendtoanyone.com">https://sendtoanyone.com</a>), mobile apps, web widgets, or APIs, you agree to be bound by these Terms and Conditions and our Privacy Policy. If you do not agree, you must immediately discontinue using the service.
+              </p>
+            </Clause>
+
+            <Clause index={1}>
+              <p>SendToAnyone provides high-speed, encrypted digital file transfer services through:</p>
+              <ul>
+                <li><strong>Free transfers:</strong> Up to 6 GB per transfer, kept for at most 7 days. No account is required.</li>
+                <li><strong>Larger plans:</strong> Not available yet. Paying does not raise the 6 GB limit or the 7-day expiry.</li>
+                <li><strong>Device P2P:</strong> Direct browser-to-browser WebRTC streaming with zero server retention for infinite transfer sizes.</li>
+              </ul>
+            </Clause>
+
+            <Clause index={2}>
+              <p>
+                Stored files follow the expiry the sender chose, from 1 hour up to 7 days. Longer retention is not available yet.
+              </p>
+              <div className="ds-callout is-warn">
+                <Clock className="w-5 h-5 shrink-0 mt-0.5 text-[#8a5300]" aria-hidden="true" />
+                <div>
+                  <p className="font-semibold text-[#060a12]">Permanent Deletion Notice</p>
+                  <p className="mt-1">
+                    Once a transfer link reaches its expiration timestamp or its maximum number of issued links, the files are permanently and irreversibly purged from our servers. SendToAnyone cannot recover expired files.
+                  </p>
+                </div>
+              </div>
+            </Clause>
+
+            <Clause index={3}>
+              <p>
+                You retain 100% full ownership, intellectual property rights, and copyright to all files, media, archives, and documents transferred through SendToAnyone.
+              </p>
+              <ul>
+                <li>SendToAnyone will <strong>never</strong> claim ownership of your uploaded files.</li>
+                <li>We will <strong>never</strong> use your files to train, fine-tune, or evaluate artificial intelligence or machine learning models.</li>
+                <li>A download password, when set, gates access to the file. It does not encrypt the file. These terms do not name a cipher for transit or storage.</li>
+              </ul>
+            </Clause>
+
+            <Clause index={4}>
+              <p>You agree not to use SendToAnyone to upload, store, or distribute:</p>
+              <ul>
+                <li>Malware, viruses, trojans, ransomware, or malicious software.</li>
+                <li>Child sexual abuse material (CSAM) or non-consensual exploitative imagery.</li>
+                <li>Copyright-infringing content without authorization from the copyright holder.</li>
+                <li>Phishing materials, automated spam bots, or illegal contraband.</li>
+              </ul>
+              <p className="text-[0.9375rem] text-[#6b7486]">
+                Violation of these rules will result in immediate termination of the transfer, account suspension, and reporting to law enforcement authorities where legally mandated.
+              </p>
+            </Clause>
+
+            <Clause index={5}>
+              <p>
+                Paid subscription tiers (such as Pro and Teams) are currently in development and not yet available for purchase. When paid tiers are introduced, terms and pricing will be clearly disclosed prior to checkout. Free transfers remain 100% free with no recurring fees.
+              </p>
+            </Clause>
+
+            <Clause index={6}>
+              <p>
+                SendToAnyone is provided on an &ldquo;AS IS&rdquo; and &ldquo;AS AVAILABLE&rdquo; basis. SendToAnyone shall not be liable for any indirect, incidental, or consequential damages resulting from data loss, transmission interruptions, or expired transfers.
+              </p>
+            </Clause>
+
+            <Clause index={7}>
+              <p>
+                If you have any questions or legal inquiries regarding these Terms and Conditions, please contact us at:
+              </p>
+            </Clause>
+          </article>
+
+          <div className="lg:col-start-2 -mt-8 lg:-mt-12 flex flex-wrap gap-3">
+            <Link to="/help" className="ds-btn ds-btn-dark">
+              <Mail className="w-4 h-4" aria-hidden="true" />
+              Contact Legal Support
+            </Link>
+            <Link to="/privacy" className="ds-btn ds-btn-ghost">
+              <ShieldCheck className="w-4 h-4" aria-hidden="true" />
+              View Privacy Policy
+            </Link>
+          </div>
+        </div>
+      </PageFrame>
+
+      <AuthModal
+        isOpen={isAuthOpen}
+        onClose={() => setIsAuthOpen(false)}
+        initialMode={authMode}
+        onAuthSuccess={(u) => setUser(u)}
       />
 
-      <main className="flex-1 max-w-4xl w-full mx-auto px-4 sm:px-6 py-12 sm:py-16">
-        
-        {/* Header */}
-        <div className="text-center max-w-2xl mx-auto mb-12 animate-fadeIn">
-          <div className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold bg-[#c4a574]/12 text-[#c4a574] mb-4 border border-[#c4a574]/25 shadow-2xs">
-            <Scale className="w-3.5 h-3.5" /> Legal Terms & Service Agreement
-          </div>
-          <h1 className="text-3xl sm:text-5xl font-semibold text-white tracking-tight mb-3">
-            Terms & Conditions
-          </h1>
-          <p className="text-sm sm:text-base text-white/55 font-medium">
-            Last Updated: August 2026 • Please read these terms carefully before using iTransfer.
-          </p>
-        </div>
-
-        {/* Content Sections */}
-        <div className="space-y-8 bg-[#17192e] rounded-3xl p-6 sm:p-10 border border-white/10/80 shadow-sm leading-relaxed text-sm sm:text-base text-white/55">
-          
-          {/* Section 1 */}
-          <section className="space-y-3">
-            <h2 className="text-lg sm:text-xl font-semibold text-white flex items-center gap-2">
-              <span className="w-7 h-7 rounded-xl bg-[#c4a574]/12 text-[#c4a574] flex items-center justify-center text-xs font-semibold">1</span>
-              Acceptance of Terms
-            </h2>
-            <p>
-              By accessing, browsing, or using the iTransfer platform (accessible at <a href="https://itransfer.iprudhvi.in" className="text-[#c4a574] font-bold underline">https://itransfer.iprudhvi.in</a>), mobile apps, web widgets, or APIs, you agree to be bound by these Terms and Conditions and our Privacy Policy. If you do not agree, you must immediately discontinue using the service.
-            </p>
-          </section>
-
-          {/* Section 2 */}
-          <section className="space-y-3">
-            <h2 className="text-lg sm:text-xl font-semibold text-white flex items-center gap-2">
-              <span className="w-7 h-7 rounded-xl bg-[#c4a574]/12 text-[#c4a574] flex items-center justify-center text-xs font-semibold">2</span>
-              Service Description & Storage Limits
-            </h2>
-            <p>
-              iTransfer provides high-speed, encrypted digital file transfer services through:
-            </p>
-            <ul className="list-disc list-inside space-y-1.5 pl-2 text-white/55">
-              <li><strong>Free transfers:</strong> Up to 6 GB per transfer, kept for at most 7 days. No account is required.</li>
-              <li><strong>Larger plans:</strong> Not available yet. Paying does not raise the 6 GB limit or the 7-day expiry.</li>
-              <li><strong>Device P2P:</strong> Direct browser-to-browser WebRTC streaming with zero server retention for infinite transfer sizes.</li>
-            </ul>
-          </section>
-
-          {/* Section 3 */}
-          <section className="space-y-3">
-            <h2 className="text-lg sm:text-xl font-semibold text-white flex items-center gap-2">
-              <span className="w-7 h-7 rounded-xl bg-[#c4a574]/12 text-[#c4a574] flex items-center justify-center text-xs font-semibold">3</span>
-              Automated File Expiration & Permanent Purge Policy
-            </h2>
-            <p>
-              Stored files follow the expiry the sender chose, from 1 hour up to 7 days. Longer retention is not available yet.
-            </p>
-            <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200/80 text-amber-900 text-xs sm:text-sm flex items-start gap-3">
-              <Clock className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-              <div>
-                <p className="font-bold">Permanent Deletion Notice</p>
-                <p className="mt-0.5 text-amber-800">
-                  Once a transfer link reaches its expiration timestamp or max download limit, the files are permanently and irreversibly purged from our servers. iTransfer cannot recover expired files.
-                </p>
-              </div>
-            </div>
-          </section>
-
-          {/* Section 4 */}
-          <section className="space-y-3">
-            <h2 className="text-lg sm:text-xl font-semibold text-white flex items-center gap-2">
-              <span className="w-7 h-7 rounded-xl bg-[#c4a574]/12 text-[#c4a574] flex items-center justify-center text-xs font-semibold">4</span>
-              Zero Data Ownership & No AI Training Guarantee
-            </h2>
-            <p>
-              You retain 100% full ownership, intellectual property rights, and copyright to all files, media, archives, and documents transferred through iTransfer. 
-            </p>
-            <ul className="list-disc list-inside space-y-1.5 pl-2 text-white/55">
-              <li>iTransfer will <strong>never</strong> claim ownership of your uploaded files.</li>
-              <li>We will <strong>never</strong> use your files to train, fine-tune, or evaluate artificial intelligence or machine learning models.</li>
-              <li>Files are encrypted in transit via TLS 1.3 and at rest with AES-256 standards.</li>
-            </ul>
-          </section>
-
-          {/* Section 5 */}
-          <section className="space-y-3">
-            <h2 className="text-lg sm:text-xl font-semibold text-white flex items-center gap-2">
-              <span className="w-7 h-7 rounded-xl bg-[#c4a574]/12 text-[#c4a574] flex items-center justify-center text-xs font-semibold">5</span>
-              Prohibited Uses & Content Guidelines
-            </h2>
-            <p>You agree not to use iTransfer to upload, store, or distribute:</p>
-            <ul className="list-disc list-inside space-y-1.5 pl-2 text-white/55">
-              <li>Malware, viruses, trojans, ransomware, or malicious software.</li>
-              <li>Child sexual abuse material (CSAM) or non-consensual exploitative imagery.</li>
-              <li>Copyright-infringing content without authorization from the copyright holder.</li>
-              <li>Phishing materials, automated spam bots, or illegal contraband.</li>
-            </ul>
-            <p className="text-xs text-white/45">
-              Violation of these rules will result in immediate termination of the transfer, account suspension, and reporting to law enforcement authorities where legally mandated.
-            </p>
-          </section>
-
-          {/* Section 6 */}
-          <section className="space-y-3">
-            <h2 className="text-lg sm:text-xl font-semibold text-white flex items-center gap-2">
-              <span className="w-7 h-7 rounded-xl bg-[#c4a574]/12 text-[#c4a574] flex items-center justify-center text-xs font-semibold">6</span>
-              Pro Subscriptions & Billing Policy
-            </h2>
-            <p>
-              iTransfer PRO memberships are billed on a recurring monthly or annual basis as selected during checkout. Payments are processed securely via verified payment gateways (Stripe, UPI, or Credit/Debit Cards). You may cancel your subscription at any time via your Account Settings.
-            </p>
-          </section>
-
-          {/* Section 7 */}
-          <section className="space-y-3">
-            <h2 className="text-lg sm:text-xl font-semibold text-white flex items-center gap-2">
-              <span className="w-7 h-7 rounded-xl bg-[#c4a574]/12 text-[#c4a574] flex items-center justify-center text-xs font-semibold">7</span>
-              Limitation of Liability
-            </h2>
-            <p>
-              iTransfer is provided on an "AS IS" and "AS AVAILABLE" basis. While we maintain a 99.99% uptime target and enterprise server redundancy, iTransfer shall not be liable for any indirect, incidental, or consequential damages resulting from data loss, transmission interruptions, or expired transfers.
-            </p>
-          </section>
-
-          {/* Section 8 */}
-          <section className="space-y-3 pt-4 border-t border-white/10">
-            <h2 className="text-lg sm:text-xl font-semibold text-white flex items-center gap-2">
-              <span className="w-7 h-7 rounded-xl bg-[#c4a574]/12 text-[#c4a574] flex items-center justify-center text-xs font-semibold">8</span>
-              Contact & Inquiries
-            </h2>
-            <p>
-              If you have any questions or legal inquiries regarding these Terms and Conditions, please contact us at:
-            </p>
-            <div className="flex flex-wrap items-center gap-3 pt-2">
-              <Link
-                to="/contact"
-                className="px-4 py-2 rounded-xl bg-[#c4a574]/12 hover:bg-indigo-100 text-[#c4a574] font-bold text-xs flex items-center gap-2 transition-colors"
-              >
-                <Mail className="w-4 h-4" />
-                <span>Contact Legal Support</span>
-              </Link>
-              <Link
-                to="/privacy"
-                className="px-4 py-2 rounded-xl bg-white/5 hover:bg-slate-200 text-white/55 font-bold text-xs flex items-center gap-2 transition-colors"
-              >
-                <ShieldCheck className="w-4 h-4" />
-                <span>View Privacy Policy</span>
-              </Link>
-            </div>
-          </section>
-
-        </div>
-
-      </main>
-
-      {isAuthOpen && (
-        <AuthModal
-          mode={authMode}
-          onClose={() => setIsAuthOpen(false)}
-          onSuccess={() => { setIsAuthOpen(false); setUser(getStoredUser()); }}
-        />
-      )}
-
-      {isProfileOpen && (
-        <ProfileModal
-          user={user}
-          onClose={() => setIsProfileOpen(false)}
-        />
-      )}
-
-      
-      <div className="relative z-10 max-w-6xl mx-auto px-4 sm:px-6 pb-12">
-        <div className="pt-8 border-t border-white/10">
-          <Link to="/" className="inline-flex items-center gap-2 rounded-full bg-white text-black text-sm font-semibold px-5 py-3 hover:bg-white/90">
-            Send a file
-          </Link>
-        </div>
-      </div>
-
-      <Footer />
-
-    </div>
+      <ProfileModal
+        isOpen={isProfileOpen}
+        onClose={() => setIsProfileOpen(false)}
+        user={user}
+        onSignOut={async () => {
+          await clearUserSession();
+          setUser(null);
+        }}
+      />
+    </>
   );
 }

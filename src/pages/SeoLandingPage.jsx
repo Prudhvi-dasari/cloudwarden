@@ -1,294 +1,524 @@
+import { Children, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import Navbar from '../components/Navbar';
-import Footer from '../components/Footer';
-import SeoHead from '../components/SeoHead';
-import { Send, Shield, Zap, CheckCircle2, ArrowRight, Sparkles } from 'lucide-react';
+import PageFrame from '../components/PageFrame';
+import SeoHead, { CANONICAL_ORIGIN } from '../components/SeoHead';
+import AuthModal from '../components/AuthModal';
+import ProfileModal from '../components/ProfileModal';
+import { getStoredUser, clearUserSession } from '../lib/authSession';
+import { ArrowRight, Check } from 'lucide-react';
 
 const LANDING_DATA = {
   'send-large-files': {
-    title: 'Send Large Files Online Free (Up to 6 GB) | iTransfer',
-    metaDesc: 'Transfer huge files, 4K videos, and large zip archives across any device without compression or quality loss.',
-    h1: 'Send Large Files Without Compression',
-    subtitle: 'Send up to 6 GB by link, or move a file device to device. No signup. Links last up to 7 days.',
-    feature1: 'Chunked TUS upload handles multi-GB files smoothly',
-    feature2: 'Auto-resumes automatically if WiFi drops mid-upload',
-    feature3: 'Original resolution & quality preserved 100%',
+    title: 'Send large files online, up to 6 GB | SendToAnyone',
+    metaDesc: 'Send up to 6 GB with no account. The link lasts from 1 hour to 7 days. Split anything larger. There is no bigger plan.',
+    h1: 'Send a large file',
+    subtitle: 'One cloud transfer holds 6 GB. No account. You pick how long the link stays open, from 1 hour up to 7 days, and then it stops.',
   },
   'send-files-by-email': {
-    title: 'Send Files by Email (Large Attachments) | iTransfer',
-    metaDesc: 'Bypass 25MB email attachment limits. Send large files directly to any recipient inbox with secure links.',
-    h1: 'Send Large Files Directly to Inboxes',
-    subtitle: 'Bypass Gmail & Outlook 25MB attachment limits. Send gigabytes of files with instant delivery.',
-    feature1: 'Supports multiple recipient email addresses with private links',
-    feature2: 'Instant inbox delivery and sender delivery receipts',
-    feature3: 'Optional password protection & expiration controls',
+    title: 'Email a download link | SendToAnyone',
+    metaDesc: 'Email mode sends the download link. The file is not attached. Cloud transfers are up to 6 GB.',
+    h1: 'Email a download link',
+    subtitle: 'The message contains the link. The file stays on the transfer until the link expires.',
+    feature1: 'Add the recipient on the Email tab',
+    feature2: 'The file is not attached',
+    feature3: 'Expiry from 1 hour to 7 days',
   },
   'create-file-sharing-link': {
-    title: 'Create Secure File Sharing Links Free | iTransfer',
-    metaDesc: 'Generate secure download links for any file or folder. Share on WhatsApp, Slack, Teams, or SMS.',
-    h1: 'Create Instant File Sharing Links',
-    subtitle: 'Upload files and get a secure, shareable link in seconds. No account needed.',
-    feature1: 'One-click copy and instant QR code for mobile downloads',
-    feature2: 'Expiry from 1 hour up to 7 days',
-    feature3: 'Self-destruct limits (purge after 1, 5, or 10 downloads)',
+    title: 'Create a download link | SendToAnyone',
+    metaDesc: 'Upload on the home page and copy a /d/ link. No account. The link expires on the timer you set, up to 7 days.',
+    h1: 'Create a download link',
+    subtitle: 'Upload, copy the link, and send it yourself. No account required.',
+    feature1: 'The link looks like /d/ and your title',
+    feature2: 'Expiry from 1 hour to 7 days',
+    feature3: 'Anyone with the link can open the download page',
   },
   'file-request': {
-    title: 'Request & Collect Files Online from Clients | iTransfer',
-    metaDesc: 'Create a secure file drop link. Collect project assets, photos, and documents from clients without signup.',
-    h1: 'Collect Files Securely from Anyone',
-    subtitle: 'Create a dedicated file request link and receive uploads directly without forcing accounts on clients.',
-    feature1: 'Clients upload directly from any browser without signing up',
-    feature2: 'Automatic tracking in your transfer dashboard',
-    feature3: 'Custom instructions, descriptions, and file categorization',
+    title: 'Request files | SendToAnyone',
+    metaDesc: 'The request form is at /receive. Title, instructions, 6 GB, and 7 days.',
+    h1: 'Request files',
+    subtitle: 'The form that creates the link is on the request page.',
+    feature1: 'Open /receive to create the link',
+    feature2: 'The person uploading does not need an account',
+    feature3: 'Up to 6 GB, open for 7 days',
   },
   'iphone-to-windows': {
-    title: 'AirDrop from iPhone to Windows PC | iTransfer',
-    metaDesc: 'Transfer photos, videos, and files directly from iPhone to Windows PC in seconds. No iTunes or iCloud required.',
-    h1: 'AirDrop from iPhone to Windows PC',
-    subtitle: 'Move photos, 4K videos, and documents from your iPhone to Windows without installing any apps.',
-    feature1: 'Scan QR code on iPhone to instantly pair with Windows',
-    feature2: 'Direct browser-to-browser P2P speed',
-    feature3: 'No cable or Bluetooth pairing required',
+    title: 'Send a file from iPhone to Windows | SendToAnyone',
+    metaDesc: 'Pair two browsers with a code. Both screens stay open. The file is not kept as a cloud link.',
+    h1: 'iPhone to a Windows browser',
+    subtitle: 'Use device transfer with both browsers open. This is not AirDrop.',
+    feature1: 'Pair with the code on the device screen',
+    feature2: 'Both screens stay open until it finishes',
+    feature3: 'A cloud link is a separate path, capped at 6 GB',
   },
   'android-to-mac': {
-    title: 'Transfer Files from Android to Mac | iTransfer',
-    metaDesc: 'Fastest way to transfer files between Android phones and Mac computers without Android File Transfer software.',
-    h1: 'Transfer Files from Android to Mac',
-    subtitle: 'Instant browser-based file sharing between Android and macOS.',
-    feature1: 'Works in Safari and Chrome without extra drivers',
-    feature2: 'Direct WebRTC high-speed file transfer',
-    feature3: 'No cloud storage needed for direct transfers',
+    title: 'Send a file from Android to Mac | SendToAnyone',
+    metaDesc: 'Pair two browsers with a code. Both screens stay open. The file is not kept as a cloud link.',
+    h1: 'Android to a Mac browser',
+    subtitle: 'Use device transfer with both browsers open.',
+    feature1: 'Pair with the code on the device screen',
+    feature2: 'Both screens stay open until it finishes',
+    feature3: 'A cloud link is a separate path, capped at 6 GB',
   },
   'phone-to-laptop': {
-    title: 'Transfer Files from Phone to Laptop | iTransfer',
-    metaDesc: 'Easily transfer photos, documents, and videos between mobile phones and laptops.',
-    h1: 'Phone to Laptop File Transfer',
-    subtitle: 'Scan a 6-character code or QR code to move files instantly between any phone and laptop.',
-    feature1: 'Supports iPhone, Android, Windows, Mac, and Linux',
-    feature2: 'Zero file compression for full quality',
-    feature3: '100% free with no account required',
+    title: 'Send a file from phone to laptop | SendToAnyone',
+    metaDesc: 'Pair the phone and laptop in the browser. Both stay open. A stored link is the cloud path, up to 6 GB.',
+    h1: 'Phone to laptop',
+    subtitle: 'Device transfer pairs two browsers. No account required for that screen.',
+    feature1: 'Both devices stay on the page',
+    feature2: 'The file is not kept as a download link',
+    feature3: 'Cloud links stop at 6 GB',
   },
   'airdrop-alternative': {
-    title: 'Universal AirDrop Alternative for All Devices | iTransfer',
-    metaDesc: 'AirDrop for everyone. Share files between Apple, Android, Windows, and Linux right from your browser.',
-    h1: 'AirDrop for Everyone',
-    subtitle: 'The universal cross-platform AirDrop alternative that works in every browser.',
-    feature1: 'Browser-to-browser WebRTC direct transfers',
-    feature2: 'Works on iOS, Android, macOS, Windows, Linux',
-    feature3: 'No app download or account creation needed',
+    title: 'Send between two devices in the browser | SendToAnyone',
+    metaDesc: 'A pairing code for two browsers. Both stay open. This product is not AirDrop.',
+    h1: 'Two devices, in the browser',
+    subtitle: 'Pair with a code. This is not AirDrop, iCloud, or a system share sheet.',
+    feature1: 'Both screens stay open',
+    feature2: 'The file is not stored as a link',
+    feature3: 'No account required for that screen',
   },
   'wetransfer-alternative': {
-    title: 'Free WeTransfer Alternative with No Compression | iTransfer',
-    metaDesc: 'Send large files without sign up. Resumable uploads, password protection, and P2P direct transfer.',
-    h1: 'The Modern WeTransfer Alternative',
-    subtitle: 'Faster transfers, direct P2P connection, and auto-resumable uploads.',
-    feature1: 'Disconnection-proof resumable uploads',
-    feature2: 'Optional password protection & self-destruct limits',
-    feature3: 'Up to 6 GB per cloud transfer, with no account',
+    title: 'Send a large file, up to 6 GB | SendToAnyone',
+    metaDesc: 'Up to 6 GB, no account, links up to 7 days. The comparison page lists fetched limits from 23 October 2026.',
+    h1: 'Send a large file',
+    subtitle: 'Up to 6 GB, no account, links up to 7 days. Limits next to other tools are on the comparison page.',
+    feature1: '6 GB per cloud transfer',
+    feature2: 'No account to send or download',
+    feature3: 'See the dated comparison',
   },
   'transfernow-alternative': {
-    title: 'TransferNow Alternative with Direct P2P & Link Sharing | iTransfer',
-    metaDesc: 'Fast, secure alternative to TransferNow. Send files via email, generate share links, or transfer direct device-to-device.',
-    h1: 'The Superior TransferNow Alternative',
-    subtitle: 'One place for every transfer: Direct P2P, email delivery, share links, and file requests.',
-    feature1: 'Direct device-to-device WebRTC transfers with zero cloud upload',
-    feature2: 'Free password protection and expiration controls',
-    feature3: 'Clean, ad-free interface designed for speed',
+    title: 'Send a file from the browser | SendToAnyone',
+    metaDesc: 'Link, email, or device transfer. Cloud transfers are up to 6 GB and 7 days.',
+    h1: 'Send a file from the browser',
+    subtitle: 'Link, email, or device transfer. Cloud transfers are up to 6 GB.',
+    feature1: '6 GB and up to 7 days on a cloud link',
+    feature2: 'Email carries the link',
+    feature3: 'See the dated comparison',
   },
   'p2p-file-transfer': {
-    title: 'Secure P2P File Transfer Browser to Browser | iTransfer',
-    metaDesc: 'Direct peer-to-peer WebRTC file transfers. Files stream directly between devices without cloud storage.',
-    h1: 'Peer-to-Peer File Transfer',
-    subtitle: 'Direct browser-to-browser streaming powered by WebRTC.',
-    feature1: 'Files travel directly through peer data channels',
-    feature2: 'No cloud storage needed for active transfers',
-    feature3: 'STUN & TURN relay fallback for firewalls',
+    title: 'Device-to-device file transfer | SendToAnyone',
+    metaDesc: 'Two browsers pair with a code and use WebRTC. Some networks fail to connect. The file is not stored as a link.',
+    h1: 'Device-to-device transfer',
+    subtitle: 'Two browsers, a pairing code, and WebRTC. Some networks never connect.',
+    feature1: 'Both people stay on the page',
+    feature2: 'The file is not stored as a link',
+    feature3: 'Keep it within the 6 GB cloud limit',
   },
   'send-large-video': {
-    title: 'Send 4K Videos Without Quality Loss | iTransfer',
-    metaDesc: 'Share 4K video files, MP4, MOV, and raw footage without compression or resolution loss.',
-    h1: 'Send High-Res Video Files',
-    subtitle: 'Transfer raw 4K videos, MP4, and MOV files with zero compression.',
-    feature1: 'Maintains 100% original video resolution',
-    feature2: 'Supports multi-GB video file sizes',
-    feature3: 'Fast streaming download for recipients',
+    title: 'Send a large video, up to 6 GB | SendToAnyone',
+    metaDesc: 'A video uses the same 6 GB cloud limit and the same expiry as any other file. The bytes are uploaded as selected.',
+    h1: 'Send a video file',
+    subtitle: 'Same 6 GB ceiling and same expiry as any other cloud transfer. The file is uploaded as you selected it.',
+    feature1: 'No separate video limit',
+    feature2: 'Up to 6 GB, then split the file',
+    feature3: 'The large-file page has the full limit',
   },
   'send-files-without-signup': {
-    title: 'Send Files Online Without Sign Up | iTransfer',
-    metaDesc: 'No account required. Upload and share files instantly without entering your email or creating a password.',
-    h1: 'Send Files Without Sign Up',
-    subtitle: 'Zero registration barrier. Select files, get a link, and share.',
-    feature1: 'No login or credit card required',
-    feature2: 'Instant link generation',
-    feature3: 'Auto-purges after expiration',
+    title: 'Send files without an account | SendToAnyone',
+    metaDesc: 'Sender and recipient need no account. The link is open to anyone who has it, unless a password is set. Email only carries the link.',
+    h1: 'Send files without an account',
+    subtitle: 'You can upload without signing up. The person who downloads does not sign up either.',
   },
   'send-files-without-compression': {
-    title: 'Send Files Without Compression or Quality Loss | iTransfer',
-    metaDesc: 'Preserve original file quality. No image resizing, video re-encoding, or quality reduction.',
-    h1: 'Send Files Without Compression',
-    subtitle: 'Your files remain byte-for-byte identical to the original source.',
-    feature1: 'Zero image or video re-encoding',
-    feature2: 'Exact file checksum & byte integrity',
-    feature3: 'Ideal for photographers and video editors',
+    title: 'Files are uploaded as selected | SendToAnyone',
+    metaDesc: 'The cloud uploader does not transcode the file. The limit is still 6 GB per transfer.',
+    h1: 'Uploaded as you selected it',
+    subtitle: 'The uploader does not transcode video or images. The size limit is still 6 GB.',
+    feature1: 'The bytes you chose are the bytes uploaded',
+    feature2: 'A video uses the same 6 GB cap',
+    feature3: 'See the large-file page for the limit',
   },
   'how-to-send-large-files': {
-    title: 'How to Send Large Files Online Free (Step-by-Step, Up to 6 GB) | iTransfer',
-    metaDesc: 'Learn how to send large files, heavy videos, and archives online for free without registration. Instant shareable link & direct P2P.',
-    h1: 'How to Send Large Files Online for Free',
-    subtitle: 'Send up to 6 GB with no signup. Links last up to 7 days.',
-    feature1: 'Drag and drop a file up to 6 GB',
-    feature2: 'Create instant link or send straight to recipient email',
-    feature3: '100% free with no account required',
+    title: 'How to send a large file | SendToAnyone',
+    metaDesc: 'Upload on the home page, pick an expiry up to 7 days, and share the link. Split files over 6 GB. Compare hashes after download.',
+    h1: 'How to send a large file',
+    subtitle: 'A procedure for the home uploader. The limit is 6 GB. The link lasts from 1 hour to 7 days.',
   },
   'file-transfer-free': {
-    title: 'Send Files Online Free (6 GB, No Sign Up) — iTransfer',
-    metaDesc: 'Send files online free up to 6 GB. No registration, optional password, and expiry up to 7 days.',
-    h1: 'Free file transfer online',
-    subtitle: 'Send up to 6 GB with no account. Links last up to 7 days.',
-    feature1: 'No email or password needed to upload',
-    feature2: 'Instant shareable links',
-    feature3: 'TLS + AES-256 at rest with auto-expiration',
+    title: 'Send a file, up to 6 GB | SendToAnyone',
+    metaDesc: '6 GB, no account, links up to 7 days. There is no paid plan that raises the cap.',
+    h1: 'The free transfer is the only plan',
+    subtitle: 'Up to 6 GB. No account. Links last up to 7 days. A larger plan is not for sale.',
+    feature1: 'No account to upload',
+    feature2: '6 GB per transfer',
+    feature3: '7 days is the longest link',
   },
   'send-files-whatsapp': {
-    title: 'Send Large Files on WhatsApp via Link | iTransfer',
-    metaDesc: 'Bypass WhatsApp size limits. Upload once, share a secure download link in any chat.',
-    h1: 'Send large files on WhatsApp',
-    subtitle: 'Create a link in seconds and paste it into WhatsApp — no compression, no app install.',
-    feature1: 'Works with WhatsApp Web and mobile',
-    feature2: 'Optional password before download',
-    feature3: 'Free up to 6 GB per transfer',
+    title: 'Paste a download link into a chat | SendToAnyone',
+    metaDesc: 'Upload here, then paste the link into WhatsApp. There is no WhatsApp integration. Cloud transfers are up to 6 GB.',
+    h1: 'Paste the link into a chat',
+    subtitle: 'There is no WhatsApp integration. You upload here and paste the download link into the chat.',
+    feature1: 'The chat receives a link',
+    feature2: 'The file is not sent through the chat app',
+    feature3: 'Cloud transfers stop at 6 GB',
   },
   'send-folder-online': {
-    title: 'Send Folders Online Free | iTransfer',
-    metaDesc: 'Upload entire folders with nested structure preserved. Share one link with recipients.',
-    h1: 'Send folders online',
-    subtitle: 'Select a folder, keep the directory tree, and share a single download link.',
-    feature1: 'Nested folder structure preserved',
-    feature2: 'ZIP-all download for recipients',
-    feature3: 'No signup required',
+    title: 'Send the files in a folder | SendToAnyone',
+    metaDesc: 'Select Folder adds those files. The total still stops at 6 GB.',
+    h1: 'Send the files in a folder',
+    subtitle: 'Select Folder adds the files inside it. The total still stops at 6 GB.',
+    feature1: 'Select Folder on the send page',
+    feature2: 'The size cap is the total of those files',
+    feature3: 'Split the set if it is over 6 GB',
   },
   'expire-file-link': {
-    title: 'Auto-Expiring File Links & Password Gates | iTransfer',
-    metaDesc: 'Create download links that expire in hours or days, with free password protection.',
-    h1: 'Expiring file links',
-    subtitle: 'Choose from 1 hour up to 7 days. Longer retention is not available yet.',
-    feature1: '1 hour to 7 day free expiry',
-    feature2: 'Free password protection',
-    feature3: 'Objects purged after expiry',
+    title: 'Choose when a download link stops | SendToAnyone',
+    metaDesc: 'Pick 1 hour, 24 hours, 3 days, or 7 days. After that, the download is refused.',
+    h1: 'When a download link stops',
+    subtitle: 'The send form offers 1 hour, 24 hours, 3 days, or 7 days.',
+    feature1: '7 days is the longest choice',
+    feature2: 'After that, the download is refused',
+    feature3: 'The how-to page walks through the form',
   },
   'best-wetransfer-alternative-india': {
-    title: 'Best WeTransfer Alternative in India | iTransfer',
-    metaDesc: 'Send up to 6 GB with no signup, plus device transfer and no ads. Larger plans are not available yet.',
-    h1: 'WeTransfer alternative for India',
-    subtitle: 'Fast edge transfers, free passwords, device P2P, and Pro with UPI — built for Indian creators and teams.',
-    feature1: 'Free 6 GB cloud transfer, plus device transfer',
-    feature2: 'UPI-ready Pro upgrades',
-    feature3: 'Mumbai edge · no signup nags',
+    title: 'Send a large file from the browser | SendToAnyone',
+    metaDesc: 'The same 6 GB limit and 7 day maximum. No separate regional plan.',
+    h1: 'Same limits, no regional plan',
+    subtitle: '6 GB per cloud transfer, up to 7 days, no account. There is no India-only plan.',
+    feature1: 'Same 6 GB cap',
+    feature2: 'No account to send',
+    feature3: 'See the dated comparison',
   },
+};
+
+function sectionId(title) {
+  return title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+}
+
+function Article({ children }) {
+  const toc = Children.toArray(children)
+    .filter((child) => child?.type === Section)
+    .map((child) => child.props.title);
+  const [active, setActive] = useState(toc[0] ? sectionId(toc[0]) : '');
+  const articleRef = useRef(null);
+
+  useEffect(() => {
+    if (!('IntersectionObserver' in window) || !articleRef.current) return undefined;
+    const io = new IntersectionObserver((entries) => {
+      const visible = entries
+        .filter((e) => e.isIntersecting)
+        .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+      if (visible[0]) setActive(visible[0].target.id);
+    }, { rootMargin: '-20% 0px -65% 0px' });
+    articleRef.current.querySelectorAll('section[id]').forEach((el) => io.observe(el));
+    return () => io.disconnect();
+  }, []);
+
+  return (
+    <div className="ds-chapters">
+      <nav className="ds-toc" aria-label="On this page">
+        <p>On this page</p>
+        <ol>
+          {toc.map((title, i) => (
+            <li key={title}>
+              <a href={`#${sectionId(title)}`} className={active === sectionId(title) ? 'is-active' : ''}>
+                <span>{String(i + 1).padStart(2, '0')}</span>
+                {title}
+              </a>
+            </li>
+          ))}
+        </ol>
+      </nav>
+      <div ref={articleRef} className="ds-prose">
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function Section({ title, children }) {
+  return (
+    <section id={sectionId(title)} className="pgb-doc-section">
+      <h2>{title}</h2>
+      {children}
+    </section>
+  );
+}
+
+function Faq({ items }) {
+  return (
+    <div className="pt-6">
+      <p className="ds-kicker"><b>●</b> Questions</p>
+      <div className="mt-4">
+        {items.map((item) => (
+          <details key={item.q} className="pgb-details">
+            <summary>
+              {item.q}
+              <span className="ds-faq-plus" aria-hidden="true" />
+            </summary>
+            <p>{item.a}</p>
+          </details>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function Go({ to, children }) {
+  return (
+    <Link to={to} className="ds-btn ds-btn-dark text-white no-underline">
+      {children}
+      <ArrowRight className="ds-btn-arrow w-4 h-4" aria-hidden="true" />
+    </Link>
+  );
+}
+
+function LargeFileArticle() {
+  return (
+    <Article>
+      <Section title="The 6 GB ceiling">
+        <p>
+          6 GB is 6,000,000,000 bytes, counted as the total of every file in that transfer. The send form adds the sizes. Past the cap, it tells you to remove a file, and Create download link stays off. The server also rejects an upload that is still over the limit.
+        </p>
+        <p>There is no larger plan. Anything over 6 GB has to be split into pieces that each sit under the cap. A link cannot be kept past 7 days.</p>
+      </Section>
+
+      <Section title="Video, source files, and folders">
+        <p>
+          A video, a design source file, and a folder of assets share this ceiling and this expiry. The uploader sends the bytes you selected. It does not transcode video or flatten a design file.
+        </p>
+        <p>
+          Select Folder on the drop area adds the files in that folder. Check the total before you send. A camera magazine or a project with its media often passes 6 GB even when a compressed delivery file does not. Split those into more than one transfer, and put the piece name in the title.
+        </p>
+      </Section>
+
+      <Section title="A link, when an attachment will not do">
+        <p>
+          Inboxes commonly reject attachments around 20–25 MB. That range is why people send a link. It is not a measurement of one mail service. On the Email tab, the message contains the download link. On the Link tab, you copy the link and paste it where you already talk, including a chat.
+        </p>
+      </Section>
+
+      <Section title="Password">
+        <p>
+          A password is an optional download gate you set on the send form, explained on the <Link to="/security#download-password">security page</Link>.
+        </p>
+      </Section>
+
+      <Faq
+        items={[
+          {
+            q: 'Will a video be recompressed?',
+            a: 'No. The upload stores the file you selected. If that file is over 6 GB, the form will not send it.',
+          },
+          {
+            q: 'What happens at exactly 6 GB?',
+            a: 'The cap is the total. One file over 6,000,000,000 bytes is refused, and so is a group of smaller files that add up past it.',
+          },
+          {
+            q: 'Can the link stay up for a month?',
+            a: 'No. The longest choice on the form is 7 days. After that, the download is refused.',
+          },
+        ]}
+      />
+
+      <p className="flex flex-wrap items-center gap-x-5 gap-y-3 pt-4">
+        <Go to="/">Open the send form</Go>
+        <Link to="/how-to-send-large-files" className="inline-flex min-h-11 items-center font-semibold">
+          Step-by-step on the home uploader
+        </Link>
+      </p>
+    </Article>
+  );
+}
+
+function NoSignupArticle() {
+  return (
+    <Article>
+      <Section title="Sender and recipient">
+        <p>
+          The home page uploads without an account. The download page opens from the link, also without an account. Link mode does not ask for your email.
+        </p>
+      </Section>
+
+      <Section title="The link is still a link">
+        <p>
+          No account does not hide the files. Anyone who has the URL can open the download page, unless you set a password on the send form. That password is a download gate. The <Link to="/security#download-password">security page</Link> explains what it checks and what it does not encrypt.
+        </p>
+        <p>Send the link only to the people who should have the files.</p>
+      </Section>
+
+      <Section title="Email only carries the link">
+        <p>
+          Email is optional. On the Email tab you enter the recipient so the message can be sent. That message contains the download link. The file is not attached. A mail provider accepting the message is not the same thing as the person opening it.
+        </p>
+      </Section>
+
+      <Section title="Checked on 23 October 2026">
+        <p>
+          WeTransfer’s free-plan article, fetched that day, says the sender needs a free WeTransfer account and the recipient does not.{' '}
+          <a
+            href="https://wetransfer.com/resources/free-file-transfer/wetransfer-free-plan"
+            rel="noopener noreferrer"
+          >
+            WeTransfer free-plan article
+          </a>
+          . On SendToAnyone, the person sending can upload without an account.
+        </p>
+      </Section>
+
+      <Faq
+        items={[
+          {
+            q: 'Does the recipient create an account?',
+            a: 'No. They open the link in a browser.',
+          },
+          {
+            q: 'Is an open link private?',
+            a: 'Only if you also set a password. Otherwise anyone with the URL can open the download page.',
+          },
+          {
+            q: 'Do I have to type my own email?',
+            a: 'Not on the Link tab. The Email tab needs the recipient’s address so the link can be mailed. Your own address on that form is optional.',
+          },
+        ]}
+      />
+
+      <p className="pt-4"><Go to="/">Send without an account</Go></p>
+    </Article>
+  );
+}
+
+function HowToArticle() {
+  return (
+    <Article>
+      <Section title="Attachment or link">
+        <p>
+          Inboxes commonly reject attachments around 20–25 MB. SwissTransfer’s homepage uses that range as the reason to send a link. It is not a measured test of Gmail. When the attachment fails, upload here and share a link.
+        </p>
+        <p>
+          On SendToAnyone, the Email tab sends the link. The file is not attached. The Link tab skips the email: you copy the link yourself.
+        </p>
+      </Section>
+
+      <Section title="On the home uploader">
+        <ol>
+          <li>Open the home page. Leave the control on Link, or switch to Email.</li>
+          <li>Drop files, or use Browse Files, or Select Folder. Select Folder adds the files in that folder. The upload uses the bytes you selected. It does not transcode them.</li>
+          <li>If the total is over 6 GB, the form tells you to remove a file. Create download link stays disabled. The cap is 6,000,000,000 bytes for the whole transfer.</li>
+          <li>Under Link stays open, pick 1 Hour, 24 Hours, 3 Days, or 7 Days. Seven days is already selected, and it is the longest.</li>
+          <li>Optional: turn on Password. Give that password to the recipient on another channel. The email, if you send one, does not include it. The security page explains the gate.</li>
+          <li>Optional: open Title and message. The title shapes the /d/ link.</li>
+          <li>On Email, enter the recipient. Your own email on that form is optional.</li>
+          <li>Press Create download link, or Send the link if Email is selected. Stay on the page until the link is shown, then copy it.</li>
+        </ol>
+        <p>
+          The password check is documented on the <Link to="/security#download-password">security page</Link>.
+        </p>
+      </Section>
+
+      <Section title="Over 6 GB">
+        <p>
+          Split the project into pieces under 6 GB. Name each piece in the title. There is no upgrade that raises the cap, and there is no way to keep one link past 7 days.
+        </p>
+      </Section>
+
+      <Section title="When the file should not be stored">
+        <p>
+          If both people can stay online, use <Link to="/qr-transfer">device transfer</Link>. The file is not kept as a download link. Both screens stay open until it finishes. Keep the file within 6 GB. That path does not raise the cloud cap. The cloud form is the screen that refuses a transfer over 6 GB.
+        </p>
+      </Section>
+
+      <Section title="After the download">
+        <p>
+          Compare hashes at the <Link to="/checksum">checksum tool</Link>. It runs in the browser on the file you have. Share the hash yourself if the other person should compare it. The transfer does not attach a hash for you.
+        </p>
+      </Section>
+
+      <Faq
+        items={[
+          {
+            q: 'Which button sends the file?',
+            a: 'Create download link on the Link tab. Send the link on the Email tab.',
+          },
+          {
+            q: 'What expiry is selected at the start?',
+            a: '7 Days. You can switch to 1 Hour, 24 Hours, or 3 Days before you send.',
+          },
+          {
+            q: 'Where does the password go?',
+            a: 'You give it to the recipient yourself. It is not written into the notification email.',
+          },
+        ]}
+      />
+
+      <p className="pt-4"><Go to="/">Open the uploader</Go></p>
+    </Article>
+  );
+}
+
+const DEEP = {
+  'send-large-files': LargeFileArticle,
+  'send-files-without-signup': NoSignupArticle,
+  'how-to-send-large-files': HowToArticle,
 };
 
 export default function SeoLandingPage({ pageKey }) {
   const data = LANDING_DATA[pageKey] || LANDING_DATA['airdrop-alternative'];
+  const Deep = DEEP[pageKey];
+  const canonical = pageKey === 'file-request'
+    ? `${CANONICAL_ORIGIN}/receive`
+    : `${CANONICAL_ORIGIN}/${pageKey}`;
+  const [user, setUser] = useState(() => getStoredUser());
+  const [isAuthOpen, setIsAuthOpen] = useState(false);
+  const [authMode, setAuthMode] = useState('login');
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
 
   return (
-    <div className="min-h-screen flex flex-col text-white relative overflow-hidden bg-[#07080d]">
-      <div className="page-sky" aria-hidden="true" />
+    <>
       <SeoHead
         customTitle={data.title}
         customDescription={data.metaDesc}
-        customCanonical={`https://itransfer.iprudhvi.in/${pageKey}`}
+        customCanonical={canonical}
       />
-<header className="sticky top-0 z-40 bg-transparent border-b border-white/10 relative">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <Link to="/" className="flex items-center gap-2">
-            <div className="w-10 h-10 rounded-xl theme-btn-primary flex items-center justify-center shadow-md">
-              <Send className="w-5 h-5 text-[#0c0b0a]" />
-            </div>
-            <span className="text-xl font-display font-semibold tracking-tight text-white italic">iTransfer</span>
+      <PageFrame
+        user={user}
+        onOpenAuth={(mode) => { setAuthMode(mode); setIsAuthOpen(true); }}
+        onOpenProfile={() => setIsProfileOpen(true)}
+        eyebrow={Deep ? 'Guide' : 'Quick answer'}
+        title={data.h1}
+        subtitle={data.subtitle}
+        center={!Deep}
+        actions={pageKey === 'file-request' ? (
+          <Link to="/receive" className="ds-btn ds-btn-dark">
+            Open the request form
+            <ArrowRight className="ds-btn-arrow w-4 h-4" aria-hidden="true" />
           </Link>
-
-          <Link
-            to="/"
-            className="theme-btn-primary px-4 py-2 text-xs font-semibold rounded-full inline-flex items-center gap-1.5"
-          >
-            <span>Transfer Files Free</span>
-            <ArrowRight className="w-3.5 h-3.5" />
-          </Link>
-        </div>
-      </header>
-
-      <main className="flex-1 max-w-4xl w-full mx-auto px-4 sm:px-6 py-12 relative z-10">
-
-        <div className="text-center max-w-3xl mx-auto mb-10">
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold theme-bg-light theme-text mb-3 border border-[#c4a574]/25">
-            <Sparkles className="w-3.5 h-3.5" /> SEO Guide
-          </span>
-          <h1 className="text-3xl sm:text-5xl font-display font-semibold text-white tracking-tight mb-3">
-            {data.h1}
-          </h1>
-          <p className="text-sm sm:text-base text-white/55 max-w-xl mx-auto leading-relaxed">
-            {data.subtitle}
-          </p>
-        </div>
-
-        <div className="custom-card p-8 sm:p-10 text-center max-w-xl mx-auto mb-12 border-[#c4a574]/30 relative overflow-hidden">
-          <div className="w-16 h-16 rounded-2xl theme-btn-primary flex items-center justify-center mx-auto mb-4 shadow-md">
-            <Send className="w-8 h-8 text-[#0c0b0a]" />
-          </div>
-
-          <h3 className="text-xl font-display font-semibold text-white mb-2">Ready to Transfer?</h3>
-          <p className="text-xs text-white/55 mb-6 max-w-sm mx-auto">
-            Choose between direct device streaming, email delivery, or an instant download link.
-          </p>
-
-          <Link
-            to="/"
-            className="theme-btn-primary w-full py-4 text-sm font-semibold rounded-full inline-flex items-center justify-center gap-2"
-          >
-            <span>Start Transferring on iTransfer</span>
-            <ArrowRight className="w-4 h-4" />
-          </Link>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-12">
-          <div className="custom-card p-6 space-y-2">
-            <div className="w-10 h-10 rounded-xl bg-[#8fbc8f]/15 text-[#8fbc8f] flex items-center justify-center">
-              <CheckCircle2 className="w-5 h-5" />
+        ) : null}
+      >
+        {Deep ? (
+          <Deep />
+        ) : (
+          <>
+            <div className="ds-grid cols-3 max-w-5xl mx-auto w-full">
+              {[data.feature1, data.feature2, data.feature3].filter(Boolean).map((feature, i) => (
+                <div key={feature} className="ds-feature" data-reveal style={{ '--d': `${i * 70}ms` }}>
+                  <span className="ds-icon is-blue is-sm"><Check strokeWidth={3} aria-hidden="true" /></span>
+                  <h2 className="font-display text-[1.125rem] font-semibold leading-snug tracking-[-0.015em] text-[#060a12]">{feature}</h2>
+                </div>
+              ))}
             </div>
-            <h3 className="font-semibold text-sm text-white">{data.feature1}</h3>
-            <p className="text-xs text-white/55 leading-relaxed">Engineered for maximum reliability across mobile and desktop devices.</p>
-          </div>
-
-          <div className="custom-card p-6 space-y-2">
-            <div className="w-10 h-10 rounded-xl theme-bg-light theme-text flex items-center justify-center">
-              <Shield className="w-5 h-5" />
+            <div className="text-center" data-reveal>
+              <Go to="/">Open the send page</Go>
             </div>
-            <h3 className="font-semibold text-sm text-white">{data.feature2}</h3>
-            <p className="text-xs text-white/55 leading-relaxed">Protected with auto-expiration and optional password encryption.</p>
-          </div>
+          </>
+        )}
+      </PageFrame>
 
-          <div className="custom-card p-6 space-y-2">
-            <div className="w-10 h-10 rounded-xl bg-[#c4a574]/15 theme-text flex items-center justify-center">
-              <Zap className="w-5 h-5" />
-            </div>
-            <h3 className="font-semibold text-sm text-white">{data.feature3}</h3>
-            <p className="text-xs text-white/55 leading-relaxed">Full original quality preserved with zero compression or downscaling.</p>
-          </div>
-        </div>
-
-      </main>
-
-      
-      <div className="relative z-10 max-w-6xl mx-auto px-4 sm:px-6 pb-12">
-        <div className="pt-8 border-t border-white/10">
-          <Link to="/" className="inline-flex items-center gap-2 rounded-full bg-white text-black text-sm font-semibold px-5 py-3 hover:bg-white/90">
-            Send a file
-          </Link>
-        </div>
-      </div>
-
-      <Footer />
-
-    </div>
+      <AuthModal
+        isOpen={isAuthOpen}
+        onClose={() => setIsAuthOpen(false)}
+        initialMode={authMode}
+        onAuthSuccess={(u) => setUser(u)}
+      />
+      <ProfileModal
+        isOpen={isProfileOpen}
+        onClose={() => setIsProfileOpen(false)}
+        user={user}
+        onSignOut={async () => {
+          await clearUserSession();
+          setUser(null);
+        }}
+      />
+    </>
   );
 }

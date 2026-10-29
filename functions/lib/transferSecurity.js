@@ -2,21 +2,26 @@ import { STORAGE_POLICY } from './storagePolicy.js';
 
 const encoder = new TextEncoder();
 
-export function retentionHours(expiryHours) {
+export function retentionHours(expiryHours, maxHours = STORAGE_POLICY.freeRetentionHours) {
   const hours = Number(expiryHours);
-  const max = STORAGE_POLICY.freeRetentionHours;
+  const max = Number(maxHours) > 0 ? Number(maxHours) : STORAGE_POLICY.freeRetentionHours;
   if (!Number.isFinite(hours) || hours <= 0 || hours > max) return max;
   return hours;
 }
 
-export function expiresAtFromHours(expiryHours, now = Date.now()) {
-  return new Date(now + retentionHours(expiryHours) * 60 * 60 * 1000).toISOString();
+export function expiresAtFromHours(expiryHours, now = Date.now(), maxHours = STORAGE_POLICY.freeRetentionHours) {
+  return new Date(now + retentionHours(expiryHours, maxHours) * 60 * 60 * 1000).toISOString();
 }
 
-export function sizeError(fileSize) {
+export function sizeError(fileSize, maxBytes = STORAGE_POLICY.freeTransferBytes) {
   const size = Number(fileSize);
+  const max = Number(maxBytes) > 0 ? Number(maxBytes) : STORAGE_POLICY.freeTransferBytes;
   if (!Number.isFinite(size) || size <= 0) return 'A file size is required.';
-  if (size > STORAGE_POLICY.freeTransferBytes) return 'This transfer is larger than the 6 GB free limit.';
+  if (size > max) {
+    return max > STORAGE_POLICY.freeTransferBytes
+      ? 'This transfer is larger than the 250 GB limit.'
+      : 'This transfer is larger than the 6 GB free limit.';
+  }
   return null;
 }
 

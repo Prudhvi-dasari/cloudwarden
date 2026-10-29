@@ -28,3 +28,11 @@ dist-ssr
 
 # Cloudflare Wrangler local cache
 .wrangler/
+
+# Isolated transfer-test secrets. env/isolated.example is the tracked template.
+env/isolated/.env
+env/isolated/.env.*
+env/isolated/native-stack/
+
+# Nested analytics repo. The site only loads the published script.
+minilytics/

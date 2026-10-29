@@ -23,6 +23,87 @@
   Content-Type: application/manifest+json; charset=utf-8
   Cache-Control: public, max-age=86400
 
+# User Dashboard — Allowed to crawl so search engines read and enforce the noindex directive
+/transfers
+  X-Robots-Tag: noindex, nofollow, noarchive
+
+# Alias documents. Crawlable, but not a second indexable URL.
+/terms-and-conditions
+  X-Robots-Tag: noindex, nofollow, noarchive
+
+/tos
+  X-Robots-Tag: noindex, nofollow, noarchive
+
+/contact
+  X-Robots-Tag: noindex, nofollow, noarchive
+
+/vs-wetransfer
+  X-Robots-Tag: noindex, nofollow, noarchive
+
+/vs-transfernow
+  X-Robots-Tag: noindex, nofollow, noarchive
+
+/file-request
+  X-Robots-Tag: noindex, nofollow, noarchive
+
+/send-large-video
+  X-Robots-Tag: noindex, nofollow, noarchive
+
+/send-folder-online
+  X-Robots-Tag: noindex, nofollow, noarchive
+
+/send-files-whatsapp
+  X-Robots-Tag: noindex, nofollow, noarchive
+
+/send-files-without-compression
+  X-Robots-Tag: noindex, nofollow, noarchive
+
+/file-transfer-free
+  X-Robots-Tag: noindex, nofollow, noarchive
+
+/create-file-sharing-link
+  X-Robots-Tag: noindex, nofollow, noarchive
+
+/send-files-by-email
+  X-Robots-Tag: noindex, nofollow, noarchive
+
+/expire-file-link
+  X-Robots-Tag: noindex, nofollow, noarchive
+
+/iphone-to-windows
+  X-Robots-Tag: noindex, nofollow, noarchive
+
+/android-to-mac
+  X-Robots-Tag: noindex, nofollow, noarchive
+
+/phone-to-laptop
+  X-Robots-Tag: noindex, nofollow, noarchive
+
+/airdrop-alternative
+  X-Robots-Tag: noindex, nofollow, noarchive
+
+/p2p-file-transfer
+  X-Robots-Tag: noindex, nofollow, noarchive
+
+/wetransfer-alternative
+  X-Robots-Tag: noindex, nofollow, noarchive
+
+/transfernow-alternative
+  X-Robots-Tag: noindex, nofollow, noarchive
+
+/best-wetransfer-alternative-india
+  X-Robots-Tag: noindex, nofollow, noarchive
+
+# Private & Tokenized Static SPA Endpoints — Defense in depth against indexing (blocked in robots.txt)
+/d/*
+  X-Robots-Tag: noindex, nofollow, noarchive
+
+/download/*
+  X-Robots-Tag: noindex, nofollow, noarchive
+
+/request/*
+  X-Robots-Tag: noindex, nofollow, noarchive
+
 # Global Security & Performance Headers
 /*
   X-Content-Type-Options: nosniff
