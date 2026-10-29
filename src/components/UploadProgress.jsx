@@ -72,7 +72,7 @@ export default function UploadProgress({
           ? 'The files uploaded, but the link was not saved.'
           : 'This send did not finish. You can try again.')
         : isPaused
-          ? 'Paused on the bytes already sent.'
+          ? 'Paused on the bytes already sent. Resume continues from the last finished part.'
           : 'Your file is leaving. The link appears in this card.';
 
   const [liveMessage, setLiveMessage] = useState('');

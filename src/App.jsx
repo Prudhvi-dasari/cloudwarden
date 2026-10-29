@@ -6,6 +6,7 @@ import ScrollToTop from './components/ScrollToTop';
 import SeoHead from './components/SeoHead';
 import RevealObserver from './components/RevealObserver';
 import { AccountProvider } from './lib/AccountContext';
+import ActiveUploadDock from './components/ActiveUploadDock';
 
 // Core entry route — eagerly loaded for instant first render without layout shift
 import HomePage from './pages/HomePage';
@@ -83,6 +84,7 @@ export default function App() {
           <ScrollToTop />
           <SeoHead />
           <RevealObserver />
+          <ActiveUploadDock />
           <Stage>
           <Suspense fallback={<PageFallback />}>
           <Routes>

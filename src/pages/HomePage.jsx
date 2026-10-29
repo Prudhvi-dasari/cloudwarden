@@ -23,6 +23,17 @@ import { detectClientGeo, guessVisitorPlace } from '../lib/geo';
 import { generateTransferSlug, formatLiveSlugPreview } from '../lib/slug';
 import { getOrCreateGuestId, saveTransferSecrets, trackGuestTransfer } from '../lib/guestSession';
 import { TransferManager } from '../lib/transferManager';
+import { clearActiveUpload, getActiveUpload, publishActiveUpload, subscribeActiveUpload, touchActiveUpload } from '../lib/activeUpload';
+import {
+  applyResumeToFile,
+  deleteUploadSession,
+  describeResume,
+  identitiesMatch,
+  loadUploadSessions,
+  matchResumeSession,
+  sessionIsResumable,
+} from '../lib/uploadPersistence';
+import { PART_SIZE_BYTES } from '../lib/uploadPlan';
 import PersistentTransferManager from '../components/PersistentTransferManager';
 import TransferSuccessModal from '../components/TransferSuccessModal';
 import Footer from '../components/Footer';
@@ -182,7 +193,42 @@ export default function HomePage() {
   const { addToast } = useToast();
 
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
+  const [resumeOffer, setResumeOffer] = useState(null);
+  const uiToken = useRef({});
   const showOrbit = view === 'form' && files.length === 0 && mainMode !== 'device';
+
+  useEffect(() => {
+    const token = {};
+    uiToken.current = token;
+    const applyManager = (next) => {
+      if (!next || uiToken.current !== token) return;
+      setActiveTransferManager(next);
+      const snap = next.getSnapshot();
+      setTransferSnapshot(snap);
+      setProgress(snap.overallProgress || 0);
+      if (next.result) {
+        setShareData(next.result);
+        setView('complete');
+        setUploadStatus('complete');
+        return;
+      }
+      const busy = snap.overallStatus === 'uploading' || snap.overallStatus === 'paused' || snap.overallStatus === 'error'
+        || snap.uploadingFiles > 0 || snap.pausedFiles > 0 || snap.queuedFiles > 0;
+      if (busy) {
+        setView('progress');
+        setUploadStatus(snap.overallStatus === 'paused' ? 'paused' : snap.overallStatus === 'error' ? 'error' : 'uploading');
+      }
+    };
+    applyManager(getActiveUpload().manager);
+    const unsub = subscribeActiveUpload(({ manager: next }) => applyManager(next));
+    loadUploadSessions().then((sessions) => {
+      if (uiToken.current !== token || getActiveUpload().manager) return;
+      const saved = (sessions || []).filter((session) => sessionIsResumable(session))
+        .sort((a, b) => new Date(b.savedAt) - new Date(a.savedAt))[0];
+      if (saved) setResumeOffer(describeResume(saved));
+    }).catch(() => {});
+    return () => { unsub(); };
+  }, []);
 
   useEffect(() => {
     function handleOnline() { setIsOffline(false); }
@@ -342,6 +388,8 @@ export default function HomePage() {
 
     // 1. Generate Smart Slug from Title / Subject (or fallback random)
     const generatedSlug = generateTransferSlug(subject);
+    const savedSessions = await loadUploadSessions().catch(() => []);
+    const saved = matchResumeSession(savedSessions, files);
     const guestId = getOrCreateGuestId();
     const isGuest = !user;
     const userDisplayName = user ? (user.user_metadata?.fullName || user.user_metadata?.full_name || user.email?.split('@')[0]) : null;
@@ -350,7 +398,10 @@ export default function HomePage() {
     // 2. Instantiate Persistent TransferManager
     const safeExpiry = expiryHours > 0 && expiryHours <= allowance.hours ? expiryHours : allowance.hours;
     const manager = new TransferManager({
-      shareId: generatedSlug,
+      shareId: saved?.shareId || generatedSlug,
+      deleteToken: saved?.deleteToken,
+      claimToken: saved?.claimToken,
+      expiresAt: saved?.expiresAt,
       transferName: finalTransferName,
       expiryHours: safeExpiry,
       isGuest,
@@ -368,8 +419,17 @@ export default function HomePage() {
     });
 
     uploadLock.current = true;
+    manager.uiToken = uiToken.current;
     setActiveTransferManager(manager);
-    manager.addFiles(files);
+    publishActiveUpload(manager);
+    const added = manager.addFiles(files);
+    if (saved) {
+      for (const item of added) {
+        const match = saved.files.find((file) => identitiesMatch(file, item.file));
+        if (match) applyResumeToFile(item, match, PART_SIZE_BYTES);
+      }
+      setResumeOffer(null);
+    }
     setTransferSnapshot(manager.getSnapshot());
     setIsTransferManagerOpen(false);
     setShowSuccessModal(false);
@@ -378,6 +438,7 @@ export default function HomePage() {
 
     // Subscribe to state changes
     manager.on('stateChanged', (snap) => {
+      if (manager.uiToken !== uiToken.current) return;
       setTransferSnapshot(snap);
       setProgress(snap.overallProgress || 0);
       setUploadSpeed(snap.aggregateSpeed > 0 ? snap.speedStr : '');
@@ -393,7 +454,8 @@ export default function HomePage() {
     });
 
     manager.on('transferComplete', async (snap) => {
-      setTransferSnapshot(manager.getSnapshot());
+      const visible = manager.uiToken === uiToken.current;
+      if (visible) setTransferSnapshot(manager.getSnapshot());
       const completedFiles = snap.files.filter(f => f.status === 'completed');
       if (completedFiles.length === 0) return;
 
@@ -447,7 +509,7 @@ export default function HomePage() {
       try { playSuccessChime(); } catch (e) {}
 
       const formattedFiles = completedFiles.map(f => ({ name: f.name, size: f.size, type: f.type }));
-      setShareData({
+      const payload = {
         shareId: publishedShareId,
         fileCount: completedFiles.length,
         totalSize: snap.totalBytes,
@@ -462,7 +524,11 @@ export default function HomePage() {
         emailResult,
         files: formattedFiles,
         filesList: formattedFiles,
-      });
+      };
+      manager.result = payload;
+      touchActiveUpload();
+      if (!visible) return;
+      setShareData(payload);
       setUploadStatus('complete');
       setView('complete');
       setShowSuccessModal(false);
@@ -488,7 +554,10 @@ export default function HomePage() {
 
   const handleCancelUpload = () => {
     if (activeTransferManager) {
+      const shareId = activeTransferManager.shareId;
       activeTransferManager.cancelAll();
+      deleteUploadSession(shareId);
+      clearActiveUpload(shareId);
       setActiveTransferManager(null);
     }
     uploadLock.current = false;
@@ -616,7 +685,12 @@ export default function HomePage() {
                           key={m.id}
                           type="button"
                           onClick={() => {
+                            const busy = view === 'progress' || uploadStatus === 'uploading' || uploadStatus === 'paused' || uploadStatus === 'confirming';
                             setMainMode(m.id);
+                            if (busy && m.id !== 'device') {
+                              setView('progress');
+                              return;
+                            }
                             if (m.id !== 'device') setView('form');
                           }}
                           className="ds-tab"
@@ -649,7 +723,26 @@ export default function HomePage() {
                 ) : (
                   <>
                     {view === 'form' && files.length === 0 && (
-                      <DropZone onFilesSelected={handleFilesSelected} windowDrop />
+                      <>
+                        {resumeOffer && (
+                          <p className="snd-note" role="status">
+                            <span>
+                              {resumeOffer.name} stopped at {resumeOffer.percent}%. Drop that same file to continue where it left off.
+                            </span>
+                            <button
+                              type="button"
+                              className="ds-btn ds-btn-ghost ds-btn-sm"
+                              onClick={() => {
+                                deleteUploadSession(resumeOffer.shareId);
+                                setResumeOffer(null);
+                              }}
+                            >
+                              Dismiss
+                            </button>
+                          </p>
+                        )}
+                        <DropZone onFilesSelected={handleFilesSelected} windowDrop />
+                      </>
                     )}
 
                     {view === 'form' && files.length > 0 && (

@@ -6,10 +6,20 @@
  */
 
 import { sanitizeStoragePath } from './storageProvider';
-import { PART_UPLOAD_ATTEMPTS, normalizePartEtag, partUrlIsStale } from './uploadPlan';
+import {
+  PART_SIZE_BYTES,
+  PART_UPLOAD_ATTEMPTS,
+  bytesFromCompletedParts,
+  isResumeNetworkError,
+  normalizePartEtag,
+  partByteLength,
+  partUrlIsStale,
+  partsStillNeeded,
+} from './uploadPlan.js';
+import { deleteUploadSession, saveUploadSession, snapshotFromManager } from './uploadPersistence.js';
 
 const SINGLE_PUT_MAX = 8 * 1024 * 1024; // 8 MB
-const PART_SIZE = 16 * 1024 * 1024; // 16 MB parts (S3/R2 minimum is 5 MB except last)
+const PART_SIZE = PART_SIZE_BYTES; // 16 MB parts (S3/R2 minimum is 5 MB except last)
 const PARALLEL_PARTS = 5;
 const UI_THROTTLE_MS = 80;
 
@@ -98,6 +108,11 @@ export class TransferManager {
     this.transferType = options.transferType || 'link';
     this.partConcurrency = options.partConcurrency || PARALLEL_PARTS;
     this.accessToken = options.accessToken || '';
+    this.partSize = PART_SIZE;
+    this.onPersist = null;
+    if (options.deleteToken) this.deleteToken = options.deleteToken;
+    if (options.claimToken) this.claimToken = options.claimToken;
+    if (options.expiresAt) this.expiresAt = options.expiresAt;
 
     this.files = [];
     this.listeners = new Map();
@@ -106,12 +121,12 @@ export class TransferManager {
     this._uiDirty = false;
 
     this.handleOffline = () => {
-      this.pauseAll();
+      this.pauseAll({ network: true });
       this.emit('networkOffline', true);
     };
     this.handleOnline = () => {
       this.emit('networkOnline', true);
-      this.resumeAll();
+      this.resumeAll({ onlyNetwork: true });
     };
     if (typeof window !== 'undefined') {
       window.addEventListener('offline', this.handleOffline);
@@ -176,6 +191,7 @@ export class TransferManager {
       file,
       name: file.name,
       size: file.size,
+      lastModified: file.lastModified || 0,
       type: file.type || 'application/octet-stream',
       status: 'queued',
       progress: 0,
@@ -249,21 +265,25 @@ export class TransferManager {
     }
   }
 
-  pauseAll() {
+  pauseAll({ network = false } = {}) {
     this.isRunning = false;
     this.files.forEach((f) => {
       if (f.status === 'uploading' || f.status === 'queued') {
         f.status = 'paused';
+        f.pausedForNetwork = network;
         this._abortItem(f);
       }
     });
     this.flushProgress();
   }
 
-  resumeAll() {
+  resumeAll({ onlyNetwork = false } = {}) {
     this.isRunning = true;
     this.files.forEach((f) => {
-      if (f.status === 'paused') f.status = 'queued';
+      if (f.status === 'paused' && (!onlyNetwork || f.pausedForNetwork)) {
+        f.status = 'queued';
+        f.pausedForNetwork = false;
+      }
     });
     this.flushProgress();
     this.processQueue();
@@ -411,11 +431,24 @@ export class TransferManager {
     this._api('abort-upload', { s3Key, uploadId, deleteToken: this.deleteToken }).catch(() => {});
   }
 
+  async remember() {
+    const session = snapshotFromManager(this);
+    if (!session) return;
+    try {
+      await saveUploadSession(session);
+    } catch {
+      // Resume memory is best-effort. The in-page retry still has the parts.
+    }
+    if (this.onPersist) this.onPersist();
+  }
+
   async uploadSingleFile(item) {
+    const resuming = Boolean(item.uploadId || item.s3Key || item.completedPartNumbers?.length);
     item.status = 'uploading';
-    item.startTime = Date.now();
+    item.pausedForNetwork = false;
+    item.startTime = item.startTime || Date.now();
     item.abortController = new AbortController();
-    item.partBytes = null;
+    if (!resuming) item.partBytes = null;
     item.error = null;
     this.flushProgress();
 
@@ -443,9 +476,22 @@ export class TransferManager {
       if (item.status === 'paused' || item.status === 'cancelled') return;
       if (err?.message === 'aborted') return;
 
+      if (isResumeNetworkError(err) || (typeof navigator !== 'undefined' && navigator.onLine === false)) {
+        item.status = 'paused';
+        item.pausedForNetwork = true;
+        item.error = null;
+        this.flushProgress();
+        if (typeof navigator !== 'undefined' && navigator.onLine) {
+          setTimeout(() => {
+            if (item.status === 'paused' && item.pausedForNetwork) this.resumeFile(item.id);
+          }, 1200);
+        }
+        return;
+      }
+
       console.error('Upload failed:', err);
       item.status = 'error';
-      item.error = err?.message || 'Upload failed. Tap Retry.';
+      item.error = err?.message || 'Upload stopped. Retry continues from the last finished part.';
       this.emit('fileError', { item, error: err });
       this.flushProgress();
       this.processQueue();
@@ -453,17 +499,28 @@ export class TransferManager {
   }
 
   async _uploadSinglePut(item, signal) {
-    const data = await this._api('get-put-url', {
-      fileName: item.name,
-      fileSize: item.size,
-      contentType: item.type || 'application/octet-stream',
-      deleteToken: this.deleteToken,
-      shareId: this.shareId,
-      password: this.password || undefined,
-      subject: this.transferName,
-      senderEmail: this.senderEmail || null,
-      transferType: this.transferType || 'link',
-    });
+    let data;
+    if (item.s3Key && item.singlePut) {
+      data = await this._api('refresh-put-url', {
+        s3Key: item.s3Key,
+        deleteToken: this.deleteToken,
+      });
+    } else {
+      data = await this._api('get-put-url', {
+        fileName: item.name,
+        fileSize: item.size,
+        contentType: item.type || 'application/octet-stream',
+        deleteToken: this.deleteToken,
+        shareId: this.shareId,
+        password: this.password || undefined,
+        subject: this.transferName,
+        senderEmail: this.senderEmail || null,
+        transferType: this.transferType || 'link',
+      });
+      item.s3Key = data.s3Key;
+      item.singlePut = true;
+      await this.remember();
+    }
 
     if (!data.presignedUrl) throw new Error('No upload URL from Cloudflare R2');
 
@@ -474,9 +531,15 @@ export class TransferManager {
       },
     });
 
-    await this._api('finalize-upload', { s3Key: data.s3Key, deleteToken: this.deleteToken });
-    item.fileId = data.s3Key;
+    await this._api('finalize-upload', { s3Key: data.s3Key || item.s3Key, deleteToken: this.deleteToken });
+    item.fileId = data.s3Key || item.s3Key;
     item.serverRecorded = true;
+    await this.forgetIfIdle(item);
+  }
+
+  async forgetIfIdle(item) {
+    const stillOpen = this.files.some((file) => file !== item && !file.serverRecorded && file.status !== 'cancelled');
+    if (!stillOpen) await deleteUploadSession(this.shareId);
   }
 
   async _uploadMultipart(item, signal) {
@@ -493,16 +556,25 @@ export class TransferManager {
       if (!init.uploadId || !init.s3Key) throw new Error('Could not start multipart upload');
       item.uploadId = init.uploadId;
       item.s3Key = init.s3Key;
+      item.completedParts = item.completedParts || [];
+      await this.remember();
     }
 
     const { uploadId, s3Key } = item;
     const totalSize = item.size;
     const partCount = Math.ceil(totalSize / PART_SIZE) || 1;
-    if (!item.partBytes || item.partBytes.length !== partCount) {
-      item.partBytes = new Array(partCount).fill(0);
-    }
     const completedParts = new Array(partCount);
-    const done = new Set(Array.isArray(item.completedPartNumbers) ? item.completedPartNumbers : []);
+    const savedParts = Array.isArray(item.completedParts) ? item.completedParts : [];
+    for (const part of savedParts) {
+      const index = Number(part.partNumber) - 1;
+      if (index >= 0 && index < partCount) completedParts[index] = { PartNumber: part.partNumber, ETag: part.etag || '' };
+    }
+    const done = new Set(completedParts.map((part, index) => (part ? index + 1 : 0)).filter(Boolean));
+    item.completedPartNumbers = [...done];
+    item.partBytes = Array.from({ length: partCount }, (_, index) => (
+      done.has(index + 1) ? partByteLength(index + 1, totalSize, PART_SIZE) : 0
+    ));
+    item.uploadedBytes = bytesFromCompletedParts(totalSize, item.completedPartNumbers, PART_SIZE);
 
     try {
       const listed = await this._api('list-parts', { s3Key, uploadId, deleteToken: this.deleteToken });
@@ -511,8 +583,11 @@ export class TransferManager {
         if (index < 0 || index >= partCount) continue;
         completedParts[index] = { PartNumber: part.partNumber, ETag: part.etag || '' };
         done.add(part.partNumber);
-        item.partBytes[index] = PART_SIZE;
+        item.partBytes[index] = partByteLength(part.partNumber, totalSize, PART_SIZE);
       }
+      item.completedParts = [...done].map((partNumber) => completedParts[partNumber - 1]).filter(Boolean);
+      item.completedPartNumbers = [...done];
+      await this.remember();
     } catch {
       // A missing list still lets new parts upload. Complete asks R2 again.
     }
@@ -562,7 +637,7 @@ export class TransferManager {
         const partIndex = nextPart;
         nextPart += 1;
         const partNumber = partIndex + 1;
-        if (done.has(partNumber) && completedParts[partIndex]) continue;
+        if (!partsStillNeeded(partCount, [...done]).includes(partNumber)) continue;
 
         const start = partIndex * PART_SIZE;
         const end = Math.min(start + PART_SIZE, totalSize);
@@ -592,8 +667,10 @@ export class TransferManager {
             completedParts[partIndex] = { PartNumber: partNumber, ETag: normalizePartEtag(result.etag) };
             done.add(partNumber);
             item.completedPartNumbers = [...done];
+            item.completedParts = [...done].map((number) => completedParts[number - 1]).filter(Boolean);
             item.partBytes[partIndex] = end - start;
             refreshAggregate();
+            this.remember();
             break;
           } catch (err) {
             if (err?.message === 'aborted') throw err;
@@ -614,6 +691,7 @@ export class TransferManager {
     item.fileId = s3Key;
     item.serverRecorded = true;
     item.uploadId = null;
+    await this.forgetIfIdle(item);
   }
 
   getSnapshot() {

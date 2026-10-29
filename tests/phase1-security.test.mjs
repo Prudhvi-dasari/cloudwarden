@@ -158,6 +158,12 @@ function installFetch(state, { restStatus = 200 } = {}) {
       if (!auth.includes('service-test')) return new Response(JSON.stringify({ message: 'no' }), { status: 401 });
       const parsed = new URL(href);
       const tableName = parsed.pathname.split('/').pop();
+      if (tableName === 'set_platform_storage_cap' || tableName === 'release_daily_upload') {
+        return new Response('null', { status: 200 });
+      }
+      if (tableName === 'consume_daily_upload') {
+        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      }
       const table = tableName === 'transfer_claims'
         ? state.claims
         : tableName === 'file_requests'

@@ -16,7 +16,7 @@ export function expiresAtFromHours(expiryHours, now = Date.now(), maxHours = STO
 export function sizeError(fileSize, maxBytes = STORAGE_POLICY.freeTransferBytes) {
   const size = Number(fileSize);
   const max = Number(maxBytes) > 0 ? Number(maxBytes) : STORAGE_POLICY.freeTransferBytes;
-  if (!Number.isFinite(size) || size <= 0) return 'A file size is required.';
+  if (!Number.isFinite(size) || size <= 0) return 'Choose a file that is not empty.';
   if (size > max) {
     return max > STORAGE_POLICY.freeTransferBytes
       ? 'This transfer is larger than the 250 GB limit.'

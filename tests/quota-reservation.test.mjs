@@ -51,7 +51,7 @@ test('guest and account limits use decimal gigabytes', () => {
   assert.equal(STORAGE_POLICY.paidRetentionHours, 180 * 24);
   assert.equal(STORAGE_POLICY.paidFeaturesEnabled, true);
   assert.equal(STORAGE_POLICY.quotaBytes, 7_000_000_000);
-  assert.equal(STORAGE_POLICY.platformQuotaBytes, 1000000000000);
+  assert.equal(STORAGE_POLICY.platformQuotaBytes, 2000000000000);
   assert.equal(GB, 1_000_000_000);
 });
 
@@ -65,13 +65,13 @@ function reserveBody(bytes, shareId) {
   };
 }
 
-test('the whole-platform cap is 1 TB and the share cap stays 6 GB', () => {
-  assert.equal(STORAGE_POLICY.platformQuotaBytes, 1000000000000);
+test('the whole-platform cap is 2 TB and the share cap stays 6 GB', () => {
+  assert.equal(STORAGE_POLICY.platformQuotaBytes, 2000000000000);
   assert.equal(STORAGE_POLICY.quotaBytes, 7_000_000_000);
   assert.equal(STORAGE_POLICY.freeTransferBytes, 6_000_000_000);
   assert.equal(STORAGE_POLICY.guestMaxBytes, 6_000_000_000);
   assert.equal(STORAGE_POLICY.paidFeaturesEnabled, true);
-  assert.equal(PLATFORM_QUOTA_BYTES, 1000000000000);
+  assert.equal(PLATFORM_QUOTA_BYTES, 2000000000000);
   assert.equal(FREE_TRANSFER_BYTES, 6000000000);
 
   const overShare = reserveInto([], reserveBody(6000000001, 'share-over'), 'over');
@@ -81,7 +81,7 @@ test('the whole-platform cap is 1 TB and the share cap stays 6 GB', () => {
   const emptyPlatform = reserveInto([], reserveBody(6000000000, 'share-empty'), 'empty');
   assert.equal(emptyPlatform.ok, true);
 
-  const rows = [{ share_id: 'occupied', file_size: 999999999999, status: 'active' }];
+  const rows = [{ share_id: 'occupied', file_size: 1999999999999, status: 'active' }];
   const exactly = reserveInto(rows, reserveBody(1, 'share-edge'), 'edge');
   assert.equal(exactly.ok, true);
   const nextByte = reserveInto(rows, reserveBody(1, 'share-next'), 'next');
@@ -90,7 +90,7 @@ test('the whole-platform cap is 1 TB and the share cap stays 6 GB', () => {
 
   for (const status of ['rejected', 'expired', 'released']) {
     const allowed = reserveInto(
-      [{ share_id: 'full', file_size: 1000000000000, status }],
+      [{ share_id: 'full', file_size: 2000000000000, status }],
       reserveBody(1, 'share-free'),
       status,
     );
@@ -99,7 +99,7 @@ test('the whole-platform cap is 1 TB and the share cap stays 6 GB', () => {
 
   for (const status of ['pending_delete', null]) {
     const blocked = reserveInto(
-      [{ share_id: 'full', file_size: 1000000000000, status }],
+      [{ share_id: 'full', file_size: 2000000000000, status }],
       reserveBody(1, 'share-held'),
       String(status),
     );

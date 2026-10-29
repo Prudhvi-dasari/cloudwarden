@@ -3,7 +3,7 @@
  * Presigns browser uploads with Web Crypto SigV4 — no AWS SDK, no Node-only modules.
  */
 
-import { allowanceForStatus, STORAGE_POLICY } from './storagePolicy.js';
+import { allowanceForStatus, STORAGE_POLICY, guestDailyBytes, storageCapBytes } from './storagePolicy.js';
 import { SINGLE_PUT_ABANDON_GRACE_SECONDS, UNOCCUPIED_STATUSES } from './transferReservation.js';
 import {
   escapeXml,
@@ -617,27 +617,108 @@ async function transferCapFor(env, userId) {
   }
 }
 
-async function reserveTransferRow(env, row) {
-  const result = await sbFetch(env, 'rpc/reserve_transfer_file', {
-    method: 'POST',
-    body: row,
-  });
-  const payload = Array.isArray(result) ? result[0] : result;
+function reservationPayload(result) {
+  return Array.isArray(result) ? result[0] : result;
+}
+
+async function syncStorageCap(env) {
+  try {
+    await sbFetch(env, 'rpc/set_platform_storage_cap', {
+      method: 'POST',
+      body: { p_cap: storageCapBytes(env) },
+    });
+  } catch {
+    // The settings function arrives with the 2 TB migration.
+  }
+}
+
+async function dailyUploadSubject(request) {
+  const ip = trustedClientIp(request) || 'unknown';
+  const digest = await sha256Hex(String(ip));
+  return `ip:${digest.slice(0, 32)}`;
+}
+
+async function consumeDailyUpload(env, request, paid, fileSize) {
+  if (paid) return null;
+  const subject = await dailyUploadSubject(request);
+  let payload;
+  try {
+    payload = reservationPayload(await sbFetch(env, 'rpc/consume_daily_upload', {
+      method: 'POST',
+      body: {
+        p_subject: subject,
+        p_bytes: Number(fileSize) || 0,
+        p_limit: guestDailyBytes(env),
+      },
+    }));
+  } catch {
+    return null;
+  }
+  if (payload?.ok === false) {
+    return {
+      blocked: json(403, {
+        error: 'This network has sent as much as it can on the free plan today. Try again tomorrow, or use Pro.',
+        code: 'DAILY_LIMIT',
+      }),
+    };
+  }
+  return { subject, bytes: Number(fileSize) || 0 };
+}
+
+async function releaseDailyUpload(env, hold) {
+  if (!hold?.subject || !hold.bytes) return;
+  try {
+    await sbFetch(env, 'rpc/release_daily_upload', {
+      method: 'POST',
+      body: { p_subject: hold.subject, p_bytes: hold.bytes },
+    });
+  } catch {
+    // Best effort. The 24 hour window still resets the counter.
+  }
+}
+
+async function reserveTransferRow(env, row, request) {
+  await syncStorageCap(env);
+  const allowance = await transferCapFor(env, row?.p_user_id || null);
+  const daily = await consumeDailyUpload(env, request, allowance.paid, row?.p_file_size);
+  if (daily?.blocked) return daily.blocked;
+  let result;
+  try {
+    result = await sbFetch(env, 'rpc/reserve_transfer_file', {
+      method: 'POST',
+      body: row,
+    });
+  } catch (error) {
+    await releaseDailyUpload(env, daily);
+    throw error;
+  }
+  const payload = reservationPayload(result);
   if (payload?.ok === true) return null;
+  await releaseDailyUpload(env, daily);
   opsEvent({
     event: 'reservation',
     result: 'rejected',
-    category: payload?.code === 'TRANSFER_TOO_LARGE' || payload?.code === 'STORAGE_CAP' ? payload.code : 'RECORD_FAILED',
+    category: payload?.code === 'TRANSFER_TOO_LARGE' || payload?.code === 'STORAGE_CAP' || payload?.code === 'STORAGE_BUSY'
+      ? payload.code
+      : 'RECORD_FAILED',
   });
   if (payload?.code === 'TRANSFER_TOO_LARGE') {
     return json(403, {
-      error: 'This transfer is larger than the 6 GB free limit.',
+      error: allowance.paid
+        ? 'This transfer is larger than the 250 GB limit.'
+        : 'This transfer is larger than the 6 GB free limit.',
       code: 'TRANSFER_TOO_LARGE',
+    });
+  }
+  if (payload?.code === 'STORAGE_BUSY') {
+    return json(403, {
+      error: 'Free sends are paused because storage is almost full. A Pro account can still send.',
+      code: 'STORAGE_BUSY',
     });
   }
   if (payload?.code === 'STORAGE_CAP') {
     return json(403, {
-      error: 'Stored files have reached the 1 TB platform limit.',
+      error: 'SendToAnyone is full right now. Files that expire free up space, so try again a little later.',
       code: 'STORAGE_CAP',
     });
   }
@@ -868,7 +949,7 @@ export async function handleR2Request({ request, env }) {
         safeName,
         passwordHash,
         requestId: portal.requestId,
-      }));
+      }), request);
       if (reserved) return reserved;
       const presignedUrl = await presign({
         ...cfg,
@@ -885,6 +966,29 @@ export async function handleR2Request({ request, env }) {
         bucket: cfg.bucket,
         expiresAt: gate.claim.expires_at,
       });
+    }
+
+    if (action === 'refresh-put-url' && request.method === 'POST') {
+      if (uploadsPaused(env)) return uploadPauseResponse();
+      const missing = requireConfig(cfg);
+      if (missing) return missing;
+      const body = await readBody(request);
+      if (!body.s3Key?.startsWith('transfers/') || body.s3Key.includes('..')) {
+        return json(400, { error: 'Invalid storage key.' });
+      }
+      const gate = await requireDeleteClaim(env, body.deleteToken);
+      if (gate.error) return gate.error;
+      const pending = await loadTransferByPath(env, body.s3Key);
+      if (!pending || pending.share_id !== gate.claim.share_id || pending.status !== 'pending' || pending.multipart_upload_id) {
+        return json(403, { error: 'That upload session is not valid.', code: 'UPLOAD_NOT_AUTHORIZED' });
+      }
+      const presignedUrl = await presign({
+        ...cfg,
+        method: 'PUT',
+        path: `/${cfg.bucket}/${body.s3Key}`,
+        expires: STORAGE_POLICY.uploadUrlSeconds,
+      });
+      return json(200, { presignedUrl, s3Key: body.s3Key, shareId: pending.share_id });
     }
 
     if (action === 'request-meta') {
@@ -1219,7 +1323,7 @@ export async function handleR2Request({ request, env }) {
         safeName,
         passwordHash,
         requestId: portal.requestId,
-      }));
+      }), request);
       if (reserved) return reserved;
       const res = await signedFetch({
         ...cfg,
@@ -1366,6 +1470,13 @@ export async function handleR2Request({ request, env }) {
         method: 'PATCH',
         body: { status: 'rejected' },
       });
+      const allowance = await transferCapFor(env, pending.user_id);
+      if (!allowance.paid) {
+        await releaseDailyUpload(env, {
+          subject: await dailyUploadSubject(request),
+          bytes: Number(pending.file_size) || 0,
+        });
+      }
       return json(200, { ok: true, status: 'rejected' });
     }
 

@@ -118,6 +118,12 @@ async function localRest(href, options, state) {
     const purpose = url.searchParams.get('purpose')?.replace(/^eq\./, '');
     return new Response(JSON.stringify(state.claims.filter((row) => row.token_hash === hash && row.purpose === purpose)), { status: 200 });
   }
+  if (url.pathname === '/rest/v1/rpc/set_platform_storage_cap' || url.pathname === '/rest/v1/rpc/release_daily_upload') {
+    return new Response('null', { status: 200 });
+  }
+  if (url.pathname === '/rest/v1/rpc/consume_daily_upload' && options.method === 'POST') {
+    return new Response(JSON.stringify({ ok: true }), { status: 200 });
+  }
   if (url.pathname === '/rest/v1/rpc/reserve_transfer_file' && options.method === 'POST') {
     // Signing tests only. The share cap is enforced in transfer-reservation.postgres.mjs.
     const body = JSON.parse(options.body);
