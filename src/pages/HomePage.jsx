@@ -1009,7 +1009,7 @@ export default function HomePage() {
                 <h2 id="plans-title" className="ds-h2">Free up to 6 GB. Paid plans when the file is bigger.</h2>
                 <p className="ds-lead">No card to send. Creator, Pro, and Studio open a Dodo checkout and apply once the payment is confirmed.</p>
               </div>
-              <div className="mt-12 max-w-4xl mx-auto">
+              <div className="mt-12">
                 <PlanCards freeHref="#transfer" isPro={allowance.paid} />
               </div>
             </div>

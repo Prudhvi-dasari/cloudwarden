@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { entitlementAllows, productIdFor, tierForPlanCode, TIERS } from '../functions/lib/plans.js';
+import { checkoutProduct, entitlementAllows, productIdFor, productMap, tierForPlanCode, TIERS } from '../functions/lib/plans.js';
 import { sanitizeProductEvent } from '../functions/lib/productEvents.js';
 
 const GB = 1_000_000_000;
@@ -59,6 +59,29 @@ test('Dodo product ids prefer the tier env and keep the old Pro aliases', () => 
   assert.equal(productIdFor(env, 'studio_monthly'), 'pdt_studio');
   assert.equal(productIdFor(env, 'pass'), 'pdt_pass');
   assert.equal(productIdFor({ DODO_PRODUCT_PRO_MONTHLY: 'pdt_new', DODO_PRODUCT_MONTHLY: 'pdt_old' }, 'monthly'), 'pdt_new');
+  assert.equal(productIdFor({ DODO_PRODUCT_CREATOR_MONTHLY_USD: 'pdt_creator_usd' }, 'creator_monthly', 'USD'), 'pdt_creator_usd');
+  const both = checkoutProduct({
+    DODO_PRODUCT_CREATOR_MONTHLY: 'pdt_creator_inr',
+    DODO_PRODUCT_CREATOR_MONTHLY_USD: 'pdt_creator_usd',
+  }, 'creator_monthly', 'USD');
+  assert.equal(both.productId, 'pdt_creator_usd');
+  assert.equal(both.currency, 'USD');
+  assert.equal(both.fallback, false);
+  const india = checkoutProduct({
+    DODO_PRODUCT_CREATOR_MONTHLY: 'pdt_creator_inr',
+    DODO_PRODUCT_CREATOR_MONTHLY_USD: 'pdt_creator_usd',
+  }, 'creator_monthly', 'INR');
+  assert.equal(india.productId, 'pdt_creator_inr');
+  assert.equal(india.currency, 'INR');
+  const fallback = checkoutProduct({ DODO_PRODUCT_CREATOR_MONTHLY: 'pdt_creator_inr' }, 'creator_monthly', 'USD');
+  assert.equal(fallback.productId, 'pdt_creator_inr');
+  assert.equal(fallback.currency, 'INR');
+  assert.equal(fallback.fallback, true);
+  const mapped = productMap({
+    DODO_PRODUCT_CREATOR_MONTHLY: 'pdt_creator_inr',
+    DODO_PRODUCT_CREATOR_MONTHLY_USD: 'pdt_creator_usd',
+  });
+  assert.deepEqual(mapped.creator_monthly, ['pdt_creator_inr', 'pdt_creator_usd']);
 });
 
 test('product events reject secrets and keep the activation names', () => {

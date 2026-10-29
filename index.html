@@ -53,6 +53,13 @@
     <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700;12..96,800&family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
 
     <script defer data-website-id="2h055b3b510o1k2e" src="https://minilytics.iprudhvidasari.workers.dev/js/script.js"></script>
+    <script id="sta-geo">window.__STA_GEO__={"country":"","currency":"USD"};</script>
+    <script>
+      try {
+        var staPick = localStorage.getItem('sta_currency');
+        if ((staPick === 'INR' || staPick === 'USD') && window.__STA_GEO__) window.__STA_GEO__.displayCurrency = staPick;
+      } catch (e) {}
+    </script>
 
     <!-- Homepage only. SeoHead replaces this script after the route is known. -->
     <script type="application/ld+json" id="sendtoanyone-jsonld">

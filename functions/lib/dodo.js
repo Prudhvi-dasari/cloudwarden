@@ -2,7 +2,8 @@ import { CANONICAL_ORIGIN, publicOrigin } from './canonicalHost.js';
 import { previewBlockResponse } from './previewGuard.js';
 import { STORAGE_POLICY } from './storagePolicy.js';
 import { handleDodoWebhook } from './dodoWebhook.js';
-import { CHECKOUT_PLANS, entitlementAllows, isCheckoutCode, normalizeCheckoutCode, offerFor, productIdFor, productMap } from './plans.js';
+import { CHECKOUT_PLANS, checkoutProduct, entitlementAllows, isCheckoutCode, normalizeCheckoutCode, offerFor, productMap } from './plans.js';
+import { pricingGeoForRequest } from './pricingGeo.js';
 import { recordProductEvent } from './productEvents.js';
 
 const PLANS = new Set(['monthly', 'yearly', ...CHECKOUT_PLANS.map((plan) => plan.code)]);
@@ -108,27 +109,39 @@ async function authenticatedUser(request, env) {
   return { id: body.id, email };
 }
 
-function offers(env) {
+function offers(env, request) {
   const products = productMap(env);
   const open = checkoutPurchasable(env);
+  const geo = pricingGeoForRequest(request);
   const listed = CHECKOUT_PLANS.map((plan) => {
-    const offer = offerFor(env, plan);
+    const offer = offerFor(env, plan, geo.currency);
     return { ...offer, purchasable: open && offer.productConfigured };
   });
   listed.push(
     { ...listed.find((plan) => plan.code === 'pro_monthly'), code: 'monthly', hidden: true },
     { ...listed.find((plan) => plan.code === 'pro_yearly'), code: 'yearly', hidden: true },
   );
+  const fallback = listed.some((plan) => plan?.currencyFallback);
   return {
     provider: 'dodo',
     mode: envGet(env, 'DODO_ENV') === 'live' ? 'live' : 'test',
     purchasable: open,
-    currencyNote: 'Prices are shown in INR and USD. Dodo charges the price on the product you select.',
+    country: geo.country,
+    currency: geo.currency,
+    currencyFallback: fallback,
+    currencyNote: geo.currency === 'INR'
+      ? 'Prices are in rupees for an India connection. Dodo charges the rupee product.'
+      : (fallback
+        ? 'Prices are in dollars. Checkout still bills the rupee product until a USD Dodo product is configured.'
+        : 'Prices are in dollars outside India. Dodo charges the dollar product.'),
     reason: open
       ? 'Dodo charges the price on its checkout page. The plan starts after the server confirms the payment.'
       : 'Checkout is closed until each Dodo product id is configured.',
     plans: listed.filter((plan) => plan && plan.code),
-    productsConfigured: Object.fromEntries(Object.entries(products).map(([code, id]) => [code, Boolean(id)])),
+    productsConfigured: Object.fromEntries(Object.entries(products).map(([code, id]) => {
+      const ids = Array.isArray(id) ? id : [id];
+      return [code, ids.some(Boolean)];
+    })),
   };
 }
 
@@ -150,9 +163,10 @@ async function createCheckout({ request, env, plan }) {
       code: 'CHECKOUT_DISABLED',
     });
   }
-  const products = productMap(env);
   const checkoutCode = normalizeCheckoutCode(plan);
-  const productId = productIdFor(env, checkoutCode) || products[plan];
+  const geo = pricingGeoForRequest(request);
+  const choice = checkoutProduct(env, checkoutCode, geo.currency);
+  const productId = choice.productId;
   if (!productId) {
     return json(503, { error: 'This plan has no Dodo product configured.', code: 'PRODUCT_UNCONFIGURED' });
   }
@@ -173,11 +187,19 @@ async function createCheckout({ request, env, plan }) {
       body: JSON.stringify({
         product_cart: [{ product_id: productId, quantity: 1 }],
         customer: user.email ? { email: user.email } : undefined,
+        ...(geo.country ? { billing_address: { country: geo.country } } : {}),
+        billing_currency: choice.currency,
+        feature_flags: {
+          allow_currency_selection: false,
+          ...(geo.country ? { allow_customer_editing_country: false } : {}),
+        },
         return_url: `${siteOrigin(request, env)}/pricing?checkout=return`,
         metadata: {
           ...minilyticsMetadata(request),
           user_id: user.id,
           plan_code: checkoutCode,
+          currency: choice.currency,
+          country: geo.country,
           email: user.email || '',
         },
       }),
@@ -218,7 +240,7 @@ export async function handlePaymentRequest({ request, env }) {
   }
 
   if (action === 'health' || action === 'offers') {
-    return json(200, offers(env));
+    return json(200, offers(env, request));
   }
 
   if (action !== 'checkout' || request.method !== 'POST') {

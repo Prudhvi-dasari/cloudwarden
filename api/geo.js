@@ -9,8 +9,10 @@ export default function handler(req, res) {
   res.setHeader('Expires', '0');
   res.setHeader('Access-Control-Allow-Origin', '*');
 
+  const countryCode = country && country !== 'XX' && country !== 'T1' ? String(country).toUpperCase() : null;
   res.status(200).json({
-    countryCode: country && country !== 'XX' && country !== 'T1' ? String(country).toUpperCase() : null,
+    countryCode,
+    currency: countryCode === 'IN' ? 'INR' : 'USD',
     city: city ? decodeURIComponent(city) : '',
     timezone,
     ip

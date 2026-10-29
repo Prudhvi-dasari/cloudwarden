@@ -1,4 +1,5 @@
 import { redirectLocation, rewriteDocumentHtml } from './lib/canonicalHost.js';
+import { cacheControlForDocument, countryFromRequest, injectPricingGeo } from './lib/pricingGeo.js';
 
 export async function onRequest(context) {
   const target = redirectLocation(context.request.url, context.request.method);
@@ -12,10 +13,11 @@ export async function onRequest(context) {
   if (url.pathname.startsWith('/api/')) return response;
 
   const html = await response.text();
-  const rewritten = rewriteDocumentHtml(url.pathname, html);
+  const rewritten = injectPricingGeo(rewriteDocumentHtml(url.pathname, html), countryFromRequest(context.request));
   const headers = new Headers(response.headers);
   headers.delete('content-length');
-  headers.set('cache-control', 'public, max-age=300, stale-while-revalidate=86400');
+  headers.set('cache-control', cacheControlForDocument());
+  headers.set('vary', 'CF-IPCountry');
   return new Response(rewritten, {
     status: response.status,
     statusText: response.statusText,
