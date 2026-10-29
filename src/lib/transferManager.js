@@ -5,7 +5,7 @@
  * - Throttled UI progress so the bar stays smooth
  */
 
-import { sanitizeStoragePath } from './storageProvider';
+import { sanitizeStoragePath } from './storagePath.js';
 import {
   PART_SIZE_BYTES,
   PART_UPLOAD_ATTEMPTS,

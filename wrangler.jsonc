@@ -7,7 +7,16 @@
   "vars": {
     "CLOUDFLARE_R2_BUCKET": "itransfer-storage",
     "APP_URL": "https://sendtoanyone.com",
-    "SUPABASE_URL": "https://giyeepztahdbsejsozog.supabase.co"
+    "SUPABASE_URL": "https://giyeepztahdbsejsozog.supabase.co",
+    "DODO_ENV": "live",
+    "DODO_CHECKOUT_ENABLED": "true",
+    "DODO_PRODUCT_CREATOR_MONTHLY": "pdt_0NqoDtsIq58zQ2ukjCex2",
+    "DODO_PRODUCT_PRO_MONTHLY": "pdt_0NqoDtwqdyAsTQAc1eITU",
+    "DODO_PRODUCT_MONTHLY": "pdt_0NqoDtwqdyAsTQAc1eITU",
+    "DODO_PRODUCT_PRO_YEARLY": "pdt_0NqoDu28X0KNxY5J6pqo5",
+    "DODO_PRODUCT_YEARLY": "pdt_0NqoDu28X0KNxY5J6pqo5",
+    "DODO_PRODUCT_STUDIO_MONTHLY": "pdt_0NqoDu5zFTgFF7hklhXiF",
+    "DODO_PRODUCT_PASS": "pdt_0NqoDuBMOlH6i7Xqh3eYV"
   },
   "services": [
     { "binding": "RATE_LIMITER", "service": "itransfer-rate-limit" }

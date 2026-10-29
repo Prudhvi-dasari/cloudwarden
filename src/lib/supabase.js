@@ -1,4 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
+import { applyTheme } from './theme.js';
+
+export { applyTheme };
 
 const productionUrl = 'https://giyeepztahdbsejsozog.supabase.co';
 const productionPublishableKey = 'sb_publishable_XenT3T8l2M0-SWsHDJZpUg_3elJqmVU';
@@ -40,11 +43,3 @@ export const THEMES = [
   { id: 'cyan', name: 'Ocean Cyan', color: '#0891b2' },
   { id: 'amber', name: 'Warm Amber', color: '#d97706' },
 ];
-
-export function applyTheme(themeId) {
-  if (!themeId || themeId === 'indigo') {
-    document.documentElement.removeAttribute('data-theme');
-  } else {
-    document.documentElement.setAttribute('data-theme', themeId);
-  }
-}

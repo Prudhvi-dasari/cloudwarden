@@ -29,18 +29,7 @@ function putBlob(url, blob, onProgress) {
   });
 }
 
-export function sanitizeStoragePath(filePath) {
-  if (!filePath) return 'file';
-  const parts = filePath.split('/');
-  const sanitizedParts = parts.map((part) => {
-    return part
-      .normalize('NFKD')
-      .replace(/[\u2000-\u206F\u2E00-\u2E7F\u00A0\uFEFF]/g, ' ') // Replace unicode spaces
-      .replace(/[^\w\s.-]/gi, '_') // Replace invalid characters
-      .trim();
-  });
-  return sanitizedParts.join('/');
-}
+export { sanitizeStoragePath } from './storagePath.js';
 
 export class BaseStorageProvider {
   async uploadFile({ file, filePath, onProgress }) {

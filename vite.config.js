@@ -2,7 +2,34 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { dispatchLocalViteRequest, loadIsolatedEnv } from './functions/lib/localIsolation.js'
-import { resolve } from 'node:path'
+import { INDEXABLE_PATHS, rewriteDocumentHtml } from './functions/lib/canonicalHost.js'
+import { sitemapXml } from './functions/lib/seoRoutes.js'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { resolve, join } from 'node:path'
+
+function prerenderMarketing() {
+  return {
+    name: 'prerender-marketing',
+    apply: 'build',
+    closeBundle() {
+      const dist = resolve('dist')
+      const shellPath = join(dist, 'index.html')
+      const shell = readFileSync(shellPath, 'utf8')
+      for (const route of INDEXABLE_PATHS) {
+        const html = rewriteDocumentHtml(route, shell)
+        if (route === '/') {
+          writeFileSync(shellPath, html)
+          continue
+        }
+        const dir = join(dist, route.slice(1))
+        mkdirSync(dir, { recursive: true })
+        writeFileSync(join(dir, 'index.html'), html)
+      }
+      writeFileSync(join(dist, '404.html'), rewriteDocumentHtml('/missing', shell, { notFound: true }))
+      writeFileSync(join(dist, 'sitemap.xml'), sitemapXml())
+    },
+  }
+}
 
 function readBody(req) {
   return new Promise((resolveBody, reject) => {
@@ -63,6 +90,7 @@ export default defineConfig(({ command }) => {
       react(),
       tailwindcss(),
       localApi({ isolated, env }),
+      prerenderMarketing(),
     ],
     build: {
       rollupOptions: {

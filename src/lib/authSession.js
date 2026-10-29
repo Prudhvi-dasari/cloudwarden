@@ -1,4 +1,7 @@
-import { supabase } from './supabase';
+async function db() {
+  const { supabase } = await import('./supabase.js');
+  return supabase;
+}
 
 const USER_SESSION_KEY = 'itransfer_user_session';
 export const ADMIN_EMAILS = [
@@ -85,6 +88,7 @@ function applyAccountRow(cleanUser, row) {
 }
 
 async function loadAccountRow(userId) {
+  const supabase = await db();
   const { data, error } = await supabase
     .from('itransfer_accounts')
     .select('plan, theme, display_name, trial_started_at, trial_expires_at, plan_expires_at, email')
@@ -98,6 +102,7 @@ async function loadAccountRow(userId) {
  * Create the account row if needed, then read plan, theme, and name from the database.
  */
 export async function syncAccount(authUser) {
+  const supabase = await db();
   const cleanUser = buildStoredUser(authUser);
   if (!isAuthUuid(authUser?.id)) {
     writeStoredUser(cleanUser);
@@ -138,6 +143,7 @@ export async function syncAccount(authUser) {
  * Activate 7-Day Free Pro Trial for User (Zero Credit Card Required)
  */
 export async function startProTrial(user) {
+  const supabase = await db();
   if (!user) return null;
   const { data, error } = await supabase.rpc('start_itransfer_trial');
   if (error) throw error;
@@ -147,6 +153,7 @@ export async function startProTrial(user) {
 }
 
 export async function saveBrandLogo(user, logoUrl) {
+  const supabase = await db();
   if (!user || !isAuthUuid(user.id)) return user;
   const value = String(logoUrl || '').trim();
   let stored = '';
@@ -167,6 +174,7 @@ export async function saveBrandLogo(user, logoUrl) {
 }
 
 export async function saveAccountTheme(user, themeId) {
+  const supabase = await db();
   if (!user || !isAuthUuid(user.id)) return user;
   const { error } = await supabase
     .from('itransfer_accounts')
@@ -280,6 +288,7 @@ export const GOOGLE_CLIENT_ID = '981546493798-u1sb43686ppkckor354cvandakhk3pe4.a
  * Initiate Google Sign-In with OAuth
  */
 export async function signInWithGoogle() {
+  const supabase = await db();
   const origin = window.location.origin;
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
@@ -295,6 +304,7 @@ export async function signInWithGoogle() {
  * Send password reset email
  */
 export async function resetPasswordForEmail(email) {
+  const supabase = await db();
   const origin = window.location.origin;
   const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
     redirectTo: `${origin}/?action=reset-password`,
@@ -307,6 +317,7 @@ export async function resetPasswordForEmail(email) {
  * Upgrade a user to Pro plan with payment details
  */
 export async function upgradeUserToPro(user, paymentDetails = {}) {
+  const supabase = await db();
   if (!user) return null;
 
   const upgradedMetadata = {
@@ -344,6 +355,7 @@ export async function upgradeUserToPro(user, paymentDetails = {}) {
  * Clear user session on logout cleanly without crashing or hanging
  */
 export async function clearUserSession() {
+  const supabase = await db();
   try {
     localStorage.removeItem(USER_SESSION_KEY);
   } catch (e) {}

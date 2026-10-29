@@ -1,17 +1,17 @@
 import { useState, useCallback, useEffect, useRef, lazy, Suspense } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
-import { applyTheme, supabase } from '../lib/supabase';
+import { applyTheme } from '../lib/theme';
 import CheckoutReturnNotice from '../components/CheckoutReturnNotice';
 import Navbar from '../components/Navbar';
-import AuthModal from '../components/AuthModal';
-import ProfileModal from '../components/ProfileModal';
-import PaymentModal from '../components/PaymentModal';
-import AdminPanelModal from '../components/AdminPanelModal';
+const AuthModal = lazy(() => import('../components/AuthModal'));
+const ProfileModal = lazy(() => import('../components/ProfileModal'));
+const PaymentModal = lazy(() => import('../components/PaymentModal'));
+const AdminPanelModal = lazy(() => import('../components/AdminPanelModal'));
+const MyUploadsDrawer = lazy(() => import('../components/MyUploadsDrawer'));
 import DropZone from '../components/DropZone';
 import FileList from '../components/FileList';
 import UploadProgress from '../components/UploadProgress';
 import ShareLink from '../components/ShareLink';
-import MyUploadsDrawer from '../components/MyUploadsDrawer';
 import FloatingUploadDock from '../components/FloatingUploadDock';
 
 const DashboardView = lazy(() => import('../components/DashboardView'));
@@ -299,6 +299,7 @@ export default function HomePage() {
         return;
       }
       try {
+        const { supabase } = await import('../lib/supabase.js');
         const { data } = await supabase.auth.getSession();
         const token = data.session?.access_token;
         const response = await fetch('/api/r2?action=tier-limits', {
@@ -425,6 +426,7 @@ export default function HomePage() {
       senderEmail: user?.email || `guest:${guestId}`,
       transferType: mainMode,
       accessToken: async () => {
+        const { supabase } = await import('../lib/supabase.js');
         const { data } = await supabase.auth.getSession();
         return data?.session?.access_token || '';
       },
@@ -1027,6 +1029,8 @@ export default function HomePage() {
         onDismissUpload={(id) => setActiveBackgroundUploads((prev) => prev.filter((q) => q.id !== id))}
       />
 
+      <Suspense fallback={null}>
+      {isMyUploadsOpen && (
       <MyUploadsDrawer
         isOpen={isMyUploadsOpen}
         onClose={() => setIsMyUploadsOpen(false)}
@@ -1037,6 +1041,7 @@ export default function HomePage() {
           setFiles([]);
         }}
       />
+      )}
 
       <TransferSuccessModal
         open={showSuccessModal && !!shareData}
@@ -1053,13 +1058,16 @@ export default function HomePage() {
         }}
       />
 
+      {isAuthOpen && (
       <AuthModal
         isOpen={isAuthOpen}
         onClose={() => setIsAuthOpen(false)}
         initialMode={authMode}
         onAuthSuccess={(u) => setUser(u)}
       />
+      )}
 
+      {isProfileOpen && (
       <ProfileModal
         isOpen={isProfileOpen}
         onClose={() => setIsProfileOpen(false)}
@@ -1071,13 +1079,16 @@ export default function HomePage() {
         onOpenUpgrade={() => setIsPaymentOpen(true)}
         onOpenAdmin={() => setIsAdminPanelOpen(true)}
       />
+      )}
 
+      {isPaymentOpen && (
       <PaymentModal
         isOpen={isPaymentOpen}
         onClose={() => setIsPaymentOpen(false)}
         user={user}
         onUpgradeSuccess={(updated) => setUser(updated)}
       />
+      )}
 
       {isTransferManagerOpen && activeTransferManager && (
         <PersistentTransferManager
@@ -1092,13 +1103,14 @@ export default function HomePage() {
         />
       )}
 
-      {isMasterAdmin && (
+      {isMasterAdmin && isAdminPanelOpen && (
         <AdminPanelModal
           isOpen={isAdminPanelOpen}
           onClose={() => setIsAdminPanelOpen(false)}
           user={user}
         />
       )}
+      </Suspense>
     </div>
   );
 }

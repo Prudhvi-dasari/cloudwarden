@@ -1,9 +1,9 @@
-import { useState, useEffect, useRef } from 'react';
+import { lazy, Suspense, useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { isAdmin, isUserPro } from '../lib/authSession';
 import { useAccount } from '../lib/AccountContext';
 import { myFilesAction } from '../lib/myFilesNav';
-import MyUploadsDrawer from './MyUploadsDrawer';
+const MyUploadsDrawer = lazy(() => import('./MyUploadsDrawer'));
 import {
   Send, Crown, FolderKanban, Menu, X,
   ChevronDown, Wifi, Link2, Mail, ArrowRight, Lock, QrCode, Hash, Zap, Inbox, HelpCircle, Scale, BookOpen,
@@ -369,7 +369,8 @@ export default function Navbar({ onOpenAuth, onOpenProfile, activeTab, setActive
       {myFilesAction({
         hasDashboardToggle: typeof setActiveTab === 'function',
         hasParentDrawer: typeof onOpenMyUploads === 'function',
-      }) === 'local-drawer' && (
+      }) === 'local-drawer' && filesOpen && (
+        <Suspense fallback={null}>
         <MyUploadsDrawer
           isOpen={filesOpen}
           onClose={() => setFilesOpen(false)}
@@ -383,6 +384,7 @@ export default function Navbar({ onOpenAuth, onOpenProfile, activeTab, setActive
             if (location.pathname !== '/') navigate('/');
           }}
         />
+        </Suspense>
       )}
     </header>
   );

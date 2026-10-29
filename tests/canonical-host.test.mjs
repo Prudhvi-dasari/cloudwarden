@@ -13,12 +13,8 @@ import {
 
 const projectRoot = path.resolve(import.meta.dirname, '..');
 
-function loadSeoHead() {
-  const source = fs.readFileSync(path.join(projectRoot, 'src/components/SeoHead.jsx'), 'utf8');
-  const start = source.indexOf('export const CANONICAL_ORIGIN');
-  const end = source.indexOf('function removeMeta');
-  const slice = source.slice(start, end).replace(/^export /gm, '');
-  return new Function(`${slice}\nreturn { CANONICAL_ORIGIN, INDEXABLE_PATHS, ALIAS_TO, canonicalUrlForPath, resolveSeo };`)();
+async function loadSeoHead() {
+  return import('../functions/lib/seoRoutes.js');
 }
 
 const shell = `<!doctype html>
@@ -32,8 +28,8 @@ const shell = `<!doctype html>
 </script>
 `;
 
-test('edge canonical lists match SeoHead', () => {
-  const seo = loadSeoHead();
+test('edge canonical lists match SeoHead', async () => {
+  const seo = await loadSeoHead();
   assert.equal(CANONICAL_ORIGIN, 'https://sendtoanyone.com');
   assert.deepEqual(INDEXABLE_PATHS, seo.INDEXABLE_PATHS);
   assert.deepEqual(ALIAS_TO, seo.ALIAS_TO);
@@ -62,8 +58,8 @@ test('the HTML shell gets a self canonical on public pages and noindex on transf
   const pricing = rewriteDocumentHtml('/pricing', shell);
   assert.match(pricing, /<link rel="canonical" href="https:\/\/sendtoanyone.com\/pricing" \/>/);
   assert.match(pricing, /property="og:url" content="https:\/\/sendtoanyone.com\/pricing"/);
-  assert.equal(pricing.includes('sendtoanyone-jsonld'), false);
-  assert.equal(pricing.includes('https://sendtoanyone.com/"'), false);
+  assert.match(pricing, /"@type":"WebPage"/);
+  assert.match(pricing, /https:\/\/sendtoanyone\.com\/pricing/);
 
   const home = rewriteDocumentHtml('/', shell);
   assert.match(home, /<link rel="canonical" href="https:\/\/sendtoanyone.com\/" \/>/);
@@ -73,8 +69,16 @@ test('the HTML shell gets a self canonical on public pages and noindex on transf
   assert.equal(download.includes('rel="canonical"'), false);
   assert.match(download, /noindex, nofollow, noarchive/);
 
-  const alias = documentSeo('/contact');
-  assert.equal(alias.canonical, 'https://sendtoanyone.com/help');
+  assert.equal(
+    redirectLocation('https://sendtoanyone.com/contact', 'GET'),
+    'https://sendtoanyone.com/help',
+  );
+  assert.equal(
+    redirectLocation('https://www.sendtoanyone.com/vs-wetransfer', 'GET'),
+    'https://sendtoanyone.com/wetransfer-alternative',
+  );
+  const alias = documentSeo('/transfers');
+  assert.equal(alias.canonical, 'https://sendtoanyone.com/');
   assert.match(alias.robots, /^noindex/);
 
   for (const routePath of INDEXABLE_PATHS) {
