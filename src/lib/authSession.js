@@ -152,6 +152,32 @@ export async function startProTrial(user) {
   return updatedUser;
 }
 
+export async function saveBrandKit(user, fields = {}) {
+  if (!user || !isAuthUuid(user.id)) return user;
+  const supabase = await db();
+  const { sanitizeAccent, sanitizeHttpsUrl, sanitizeBrandMessage } = await import('../../functions/lib/brandStyle.js');
+  const accent = fields.accent ? sanitizeAccent(fields.accent) : null;
+  if (fields.accent && String(fields.accent).trim() && !accent) {
+    throw new Error('Pick a color that keeps the text readable.');
+  }
+  const background = sanitizeHttpsUrl(fields.background);
+  if (fields.background && String(fields.background).trim() && !background) {
+    throw new Error('Use an https background link.');
+  }
+  const logo = sanitizeHttpsUrl(fields.logo);
+  if (fields.logo && String(fields.logo).trim() && !logo) {
+    throw new Error('Use an https logo link.');
+  }
+  const { error } = await supabase.from('itransfer_accounts').update({
+    brand_logo_url: logo || null,
+    brand_accent: accent?.accent || null,
+    brand_background_url: background || null,
+    brand_message: sanitizeBrandMessage(fields.message) || null,
+  }).eq('user_id', user.id);
+  if (error) throw error;
+  return user;
+}
+
 export async function saveBrandLogo(user, logoUrl) {
   const supabase = await db();
   if (!user || !isAuthUuid(user.id)) return user;

@@ -169,6 +169,7 @@ export default function DashboardView({ user, onStartTransfer, onOpenAuth }) {
   const [filter, setFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedId, setSelectedId] = useState(null);
+  const [downloadHistory, setDownloadHistory] = useState([]);
   const [draftName, setDraftName] = useState('');
   const [renaming, setRenaming] = useState(false);
   const [confirmTarget, setConfirmTarget] = useState(null);
@@ -211,6 +212,27 @@ export default function DashboardView({ user, onStartTransfer, onOpenAuth }) {
   useEffect(() => {
     if (section === 'requests' && user) refreshRequests();
   }, [section, user]);
+
+  useEffect(() => {
+    if (!selectedId || !user) {
+      setDownloadHistory([]);
+      return undefined;
+    }
+    let alive = true;
+    supabase.auth.getSession().then(({ data }) => {
+      const token = data.session?.access_token;
+      if (!token) return;
+      fetch(`/api/r2?action=download-history&shareId=${encodeURIComponent(selectedId)}`, {
+        headers: { authorization: `Bearer ${token}` },
+      })
+        .then((response) => response.json())
+        .then((body) => {
+          if (alive) setDownloadHistory(Array.isArray(body.events) ? body.events : []);
+        })
+        .catch(() => { if (alive) setDownloadHistory([]); });
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, [selectedId, user]);
 
   useEffect(() => {
     if (!confirmTarget) return undefined;
@@ -645,6 +667,7 @@ export default function DashboardView({ user, onStartTransfer, onOpenAuth }) {
                     onBack={() => setSelectedId(null)}
                     onCopy={() => handleCopy(`${window.location.origin}/download/${selected.shareId}`, selected.shareId, 'Link copied.')}
                     onDelete={() => setConfirmTarget({ kind: 'transfer', transfer: selected })}
+                    history={downloadHistory}
                   />
                 ) : (
                   <div className="acct-box is-dashed ds-empty acct-empty">
@@ -1023,7 +1046,7 @@ export default function DashboardView({ user, onStartTransfer, onOpenAuth }) {
   );
 }
 
-function TransferDetail({ transfer, copied, draftName, renaming, onDraftName, onRename, onBack, onCopy, onDelete }) {
+function TransferDetail({ transfer, copied, draftName, renaming, history = [], onDraftName, onRename, onBack, onCopy, onDelete }) {
   const timing = transferTiming(transfer);
   const created = formatWhen(transfer.createdAt);
   return (
@@ -1070,6 +1093,21 @@ function TransferDetail({ transfer, copied, draftName, renaming, onDraftName, on
           </div>
         ) : null}
       </dl>
+      <div className="mt-3">
+        <p className="ds-label">Downloads</p>
+        {history.length ? (
+          <ul className="acct-received">
+            {history.map((item) => (
+              <li key={`${item.at}-${item.count}`}>
+                {item.count === 1 ? 'First download' : `Download ${item.count}`}
+                {item.at ? ` · ${formatWhen(item.at)}` : ''}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="acct-hint">No downloads yet.</p>
+        )}
+      </div>
       {transfer.message ? <p className="ds-callout !text-sm mb-4">{transfer.message}</p> : null}
       <ul className="acct-files !mt-0">
         {(transfer.files || []).map((file) => {

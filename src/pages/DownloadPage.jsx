@@ -305,6 +305,10 @@ export default function DownloadPage() {
         message: data.message,
         senderEmail: data.senderEmail,
         brandLogo: typeof data.brandLogo === 'string' && data.brandLogo.startsWith('https://') ? data.brandLogo : null,
+        brandAccent: /^#[0-9a-f]{6}$/.test(data.brandAccent || '') ? data.brandAccent : null,
+        brandInk: /^#[0-9a-f]{6}$/.test(data.brandInk || '') ? data.brandInk : null,
+        brandBackground: typeof data.brandBackground === 'string' && data.brandBackground.startsWith('https://') ? data.brandBackground : null,
+        brandMessage: typeof data.brandMessage === 'string' ? data.brandMessage.slice(0, 240) : '',
         expiresAt: data.expiresAt,
         totalSize: data.totalSize || 0,
       });
@@ -655,7 +659,14 @@ export default function DownloadPage() {
 
         {!loading && !error && !isExpired && transfer && !isLocked && (
           <>
-            <section className="dl-card" aria-labelledby="dl-ready-title">
+            <section
+              className="dl-card"
+              aria-labelledby="dl-ready-title"
+              style={transfer.brandAccent ? { borderTopColor: transfer.brandAccent, borderTopWidth: 3 } : undefined}
+            >
+              {transfer.brandBackground ? (
+                <img src={transfer.brandBackground} alt="" className="dl-brand-bg" />
+              ) : null}
               <div className="dl-head">
                 <p className="ds-kicker"><b>●</b> Shared with you</p>
                 <span className="ds-badge ds-badge-green">
@@ -666,6 +677,7 @@ export default function DownloadPage() {
               {transfer.brandLogo ? (
                 <img src={transfer.brandLogo} alt="" className="mt-3 h-8 w-auto max-w-[10rem] object-contain" />
               ) : null}
+              {transfer.brandMessage ? <p className="dl-brand-note">{transfer.brandMessage}</p> : null}
               <h1 id="dl-ready-title" className="dl-title" title={readyTitle}>{readyTitle}</h1>
               {transfer.message || readySender ? (
                 <figure className="dl-note">

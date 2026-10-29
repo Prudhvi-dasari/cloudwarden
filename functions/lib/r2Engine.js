@@ -6,6 +6,10 @@
 import { STORAGE_POLICY, guestDailyBytes, storageCapBytes } from './storagePolicy.js';
 import { entitlementAllows, TIERS } from './plans.js';
 import { allowProductEvent, recordProductEvent, sanitizeProductEvent } from './productEvents.js';
+import { publicBrand } from './brandStyle.js';
+import { alertEmail, alertToken, shouldSendDownloadAlert } from './downloadAlert.js';
+import { applicationOrigin, deliverTransferMail } from './mailService.js';
+import { buildBaseEmailHtml } from './emailTemplates.js';
 import { SINGLE_PUT_ABANDON_GRACE_SECONDS, UNOCCUPIED_STATUSES } from './transferReservation.js';
 import {
   escapeXml,
@@ -712,6 +716,63 @@ async function allowanceForUpload(env, userId, fileSize = 0, shareId = '') {
   return applyPass(base, pass);
 }
 
+async function rememberAlertMode(env, filePath, mode) {
+  if (!['off', 'first', 'each'].includes(mode) || !filePath) return;
+  await sbFetch(env, `transfers?file_path=eq.${encodeURIComponent(filePath)}`, {
+    method: 'PATCH',
+    body: { alert_mode: mode },
+  }).catch(() => {});
+}
+
+async function notifyDownload(env, { shareId, fileId, downloadCount }) {
+  await sbFetch(env, 'sta_download_events', {
+    method: 'POST',
+    body: { share_id: shareId, file_id: fileId, download_count: downloadCount },
+  }).catch(() => {});
+  let row = null;
+  try {
+    const rows = await sbFetch(
+      env,
+      `transfers?share_id=eq.${encodeURIComponent(shareId)}&select=sender_email,alert_mode,subject&limit=1`,
+    );
+    row = Array.isArray(rows) ? rows[0] : null;
+  } catch {
+    return;
+  }
+  const email = alertEmail(row?.sender_email);
+  if (!email) return;
+  const token = await alertToken(env.ALERT_UNSUBSCRIBE_SECRET, email);
+  let optedOut = false;
+  try {
+    const opted = await sbFetch(env, `sta_alert_optouts?token=eq.${token}&select=token&limit=1`);
+    optedOut = Array.isArray(opted) && opted.length > 0;
+  } catch {
+    optedOut = false;
+  }
+  if (!shouldSendDownloadAlert({ mode: row?.alert_mode || 'first', downloadCount, optedOut })) return;
+  const limited = await checkSharedLimit(env, 'email', token.slice(0, 40));
+  if (!limited.allowed) return;
+  const origin = applicationOrigin(env);
+  const link = `${origin}/d/${shareId}`;
+  const stop = `${origin}/api/r2?action=alert-optout&token=${token}`;
+  const html = buildBaseEmailHtml({
+    title: 'Your file was downloaded',
+    badgeText: 'Download',
+    heading: 'Someone opened your link',
+    leadText: 'Your transfer was downloaded.',
+    contentHtml: `<p><a href="${link}">Open the link</a></p><p><a href="${stop}">Stop these emails</a></p>`,
+    origin,
+  });
+  await deliverTransferMail(env, {
+    shareId: `${shareId}:dl:${downloadCount}`,
+    recipients: [email],
+    subject: 'Your SendToAnyone link was downloaded',
+    text: `Your transfer was downloaded.\n${link}\n\nStop these emails: ${stop}`,
+    html,
+    excludedCount: 0,
+  }).catch(() => {});
+}
+
 async function rehashPassword(env, shareId, stored, typed) {
   if (!passwordNeedsUpgrade(stored)) return;
   try {
@@ -1083,6 +1144,7 @@ export async function handleR2Request({ request, env }) {
         requestId: portal.requestId,
       }), request);
       if (reserved) return reserved;
+      await rememberAlertMode(env, key, body.alertMode);
       const presignedUrl = await presign({
         ...cfg,
         method: 'PUT',
@@ -1270,18 +1332,62 @@ export async function handleR2Request({ request, env }) {
         try {
           const accounts = await sbFetch(
             env,
-            `itransfer_accounts?user_id=eq.${encodeURIComponent(ownerId)}&select=plan,brand_logo_url&limit=1`,
+            `itransfer_accounts?user_id=eq.${encodeURIComponent(ownerId)}&select=plan,brand_logo_url,brand_accent,brand_background_url,brand_message&limit=1`,
           );
           const account = Array.isArray(accounts) ? accounts[0] : null;
-          const logo = typeof account?.brand_logo_url === 'string' ? account.brand_logo_url : '';
-          if ((account?.plan === 'pro' || account?.plan === 'studio') && /^https:\/\/[^\s]+$/i.test(logo)) {
-            meta.brandLogo = logo;
+          if (account?.plan === 'pro' || account?.plan === 'studio') {
+            const brand = publicBrand(account);
+            if (brand) Object.assign(meta, brand);
           }
         } catch {
           // Branding is optional and stays hidden if the column is not there yet.
         }
       }
       return json(200, meta);
+    }
+
+    if (action === 'alert-optout') {
+      const token = String(url.searchParams.get('token') || '');
+      if (!/^[a-f0-9]{64}$/.test(token)) {
+        return new Response('That unsubscribe link is not valid.', {
+          status: 400,
+          headers: { 'content-type': 'text/plain; charset=utf-8' },
+        });
+      }
+      await sbFetch(env, 'sta_alert_optouts', { method: 'POST', body: { token } }).catch(() => {});
+      return new Response('<!doctype html><meta charset="utf-8"><title>Unsubscribed</title><p>Download alerts for that address are off.</p>', {
+        status: 200,
+        headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' },
+      });
+    }
+
+    if (action === 'download-history') {
+      const user = await authUser(request, env);
+      if (user.invalid || !user.id) return json(401, { error: 'Sign in to see downloads.', code: 'AUTH_REQUIRED' });
+      const shareId = normalizeShareId(url.searchParams.get('shareId'));
+      if (!shareId) return json(400, { error: 'A share id is required.', code: 'SHARE_INVALID' });
+      const owned = await sbFetch(
+        env,
+        `transfers?share_id=eq.${encodeURIComponent(shareId)}&user_id=eq.${encodeURIComponent(user.id)}&select=id&limit=1`,
+      );
+      if (!Array.isArray(owned) || owned.length === 0) {
+        return json(404, { error: 'That transfer was not found.', code: 'NOT_FOUND' });
+      }
+      let events = [];
+      try {
+        events = await sbFetch(
+          env,
+          `sta_download_events?share_id=eq.${encodeURIComponent(shareId)}&select=occurred_at,download_count&order=occurred_at.desc&limit=40`,
+        );
+      } catch {
+        events = [];
+      }
+      return json(200, {
+        events: (Array.isArray(events) ? events : []).map((item) => ({
+          at: item.occurred_at,
+          count: Number(item.download_count) || 0,
+        })),
+      });
     }
 
     if (action === 'account-usage') {
@@ -1473,6 +1579,11 @@ export async function handleR2Request({ request, env }) {
       }
       logDownload('url_issued', 'SIGNED_URL', started);
       recordProductEvent(env, { event: 'download', bytes: Number(row.file_size) || 0 });
+      notifyDownload(env, {
+        shareId,
+        fileId: row.id,
+        downloadCount: Number(slot.download_count) || 0,
+      }).catch(() => {});
       return json(200, { downloadUrl, downloadCount: slot.download_count });
     }
 
@@ -1508,6 +1619,7 @@ export async function handleR2Request({ request, env }) {
         requestId: portal.requestId,
       }), request);
       if (reserved) return reserved;
+      await rememberAlertMode(env, key, body.alertMode);
       const res = await signedFetch({
         ...cfg,
         method: 'POST',

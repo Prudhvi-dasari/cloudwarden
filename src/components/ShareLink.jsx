@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { lazy, Suspense, useState, useEffect } from 'react';
 import {
   CheckCircle2, Copy, Check, Download, Clock, RotateCcw,
   QrCode, Lock, Share2, Mail, MessageSquare,
@@ -7,6 +7,19 @@ import {
 } from 'lucide-react';
 import { describeEmailResult, describeExcludedRecipients } from '../lib/emailStatus';
 import { playSuccessChime } from '../lib/sound';
+
+const LinkCheer = lazy(() => import('./LinkCheer'));
+
+function cheerOnce(shareId) {
+  const key = `sta_link_cheer_${shareId || 'ready'}`;
+  try {
+    if (sessionStorage.getItem(key) === '1') return false;
+    sessionStorage.setItem(key, '1');
+    return true;
+  } catch {
+    return true;
+  }
+}
 import { useToast } from './Toast';
 
 function formatBytes(bytes) {
@@ -61,11 +74,17 @@ export default function ShareLink({
   const [showQr, setShowQr] = useState(false);
   const [showFilesList, setShowFilesList] = useState(false);
   const downloadUrl = `${window.location.origin}/d/${shareId}`;
+  const [celebrate] = useState(() => cheerOnce(shareId));
+  const [reduceMotion, setReduceMotion] = useState(false);
 
-  // Play pleasant success chime once on mount
   useEffect(() => {
-    playSuccessChime();
+    const media = window.matchMedia('(prefers-reduced-motion: reduce)');
+    setReduceMotion(media.matches);
   }, []);
+
+  useEffect(() => {
+    if (celebrate) playSuccessChime();
+  }, [celebrate]);
 
   const copyText = async (value) => {
     try {
@@ -138,7 +157,12 @@ export default function ShareLink({
   const exclusionNote = describeExcludedRecipients(emailResult?.excludedCount);
 
   return (
-    <div className="snd-share">
+    <div className={`snd-share${celebrate ? ' is-cheer' : ''}`}>
+      {celebrate && !reduceMotion ? (
+        <Suspense fallback={null}>
+          <LinkCheer />
+        </Suspense>
+      ) : null}
       <div className="snd-head">
         <span className="snd-done" aria-hidden="true">
           <Check />

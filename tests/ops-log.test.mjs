@@ -72,7 +72,9 @@ function installFetch(state) {
     const parsed = new URL(href);
     const table = parsed.pathname.split('/').pop();
     const body = options.body ? JSON.parse(options.body) : null;
-    if (table === 'sta_product_events') return new Response('[]', { status: 201 });
+    if (table === 'sta_product_events' || table === 'sta_download_events' || table === 'sta_alert_optouts') {
+      return new Response('[]', { status: 201 });
+    }
     if (table === 'itransfer_accounts' || table === 'sta_transfer_passes' || table === 'billing_entitlements') {
       return new Response('[]', { status: 200 });
     }
