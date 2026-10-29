@@ -114,6 +114,8 @@ export class TransferManager {
     this.password = options.password || '';
     this.senderEmail = options.senderEmail || null;
     this.transferType = options.transferType || 'link';
+    this.alertMode = options.alertMode || 'first';
+    this.maxDownloads = Number(options.maxDownloads) || 0;
     this.partConcurrency = options.partConcurrency || PARALLEL_PARTS;
     this.accessToken = options.accessToken || '';
     this.partSize = PART_SIZE;
@@ -526,6 +528,8 @@ export class TransferManager {
         subject: this.transferName,
         senderEmail: this.senderEmail || null,
         transferType: this.transferType || 'link',
+        alertMode: this.alertMode,
+        maxDownloads: this.maxDownloads,
       });
       item.s3Key = data.s3Key;
       item.singlePut = true;
@@ -562,6 +566,8 @@ export class TransferManager {
         shareId: this.shareId,
         password: this.password || undefined,
         transferType: this.transferType || 'link',
+        alertMode: this.alertMode,
+        maxDownloads: this.maxDownloads,
       });
       if (!init.uploadId || !init.s3Key) throw new Error('Could not start multipart upload');
       item.uploadId = init.uploadId;

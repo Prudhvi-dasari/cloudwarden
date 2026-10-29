@@ -43,6 +43,9 @@ import RotatingLead from '../components/ds/RotatingLead';
 import PlanCards from '../components/ds/PlanCards';
 import { JourneyStrip, PrivacyNotes, FactsBand, Chapters, HomeFaq } from '../components/home/HomeSections';
 import { useToast } from '../components/Toast';
+import UpgradeFlow from '../components/UpgradeFlow';
+import { createUpgrade, reduceUpgrade } from '../lib/upgradeFlow';
+import { clearPendingSend, holdPendingSend, loadPendingSend } from '../lib/pendingSend';
 import { emailTransportFailure, interpretSendEmailResponse } from '../lib/emailStatus';
 import {
   Mail, Link2, Send, ShieldCheck, Zap, Sparkles,
@@ -174,6 +177,10 @@ export default function HomePage() {
   const [expiryHours, setExpiryHours] = useState(168); // 7 days default
   const [allowance, setAllowance] = useState({ bytes: 6_000_000_000, hours: 168, paid: false, tier: 'free' });
   const [maxDownloads, setMaxDownloads] = useState(0);
+  const [closeAfterDownload, setCloseAfterDownload] = useState(false);
+  const [alertMode, setAlertMode] = useState('first');
+  const [upgrade, setUpgrade] = useState(null);
+  const upgradeResume = useRef(false);
 
   // Transfer Manager Overlay State
   const [activeTransferManager, setActiveTransferManager] = useState(null);
@@ -394,8 +401,8 @@ export default function HomePage() {
     }
 
     const totalSize = files.reduce((acc, f) => acc + f.size, 0);
-    if (totalSize > maxSizeBytes) {
-      addToast(`This transfer is larger than the ${maxSizeLabel} limit (${formatBytes(totalSize)}).`, 'error');
+    if (totalSize > maxSizeBytes && upgrade?.step !== 'ready') {
+      setUpgrade((current) => current || createUpgrade(totalSize));
       return;
     }
 
@@ -423,7 +430,9 @@ export default function HomePage() {
       concurrency: 3,
       apiBase: '/api/r2',
       password: enablePassword ? password.trim() : '',
-      senderEmail: user?.email || `guest:${guestId}`,
+      senderEmail: (senderEmail.includes('@') ? senderEmail : '') || user?.email || `guest:${guestId}`,
+      alertMode,
+      maxDownloads: closeAfterDownload ? 1 : maxDownloads,
       transferType: mainMode,
       accessToken: async () => {
         const { supabase } = await import('../lib/supabase.js');
@@ -585,6 +594,65 @@ export default function HomePage() {
     setProgress(0);
     setUploadStatus('idle');
   };
+
+  useEffect(() => {
+    if (upgrade?.step !== 'ready' || upgradeResume.current) return;
+    const total = files.reduce((sum, file) => sum + file.size, 0);
+    if (!total || total > maxSizeBytes) return;
+    upgradeResume.current = true;
+    clearPendingSend();
+    handleUploadLinkTransfer();
+  }, [upgrade, files, maxSizeBytes]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('checkout') !== 'return') return undefined;
+    const status = (params.get('status') || '').toLowerCase();
+    let timer = 0;
+    let stopped = false;
+    loadPendingSend().then(async ({ files: pending }) => {
+      if (stopped) return;
+      if (pending?.length) setFiles(pending);
+      const total = (pending || []).reduce((sum, file) => sum + file.size, 0);
+      let next = createUpgrade(total);
+      if (status === 'failed' || status === 'failure') next = reduceUpgrade(next, { type: 'returned', status: 'failed' });
+      else if (status === 'cancelled' || status === 'canceled') next = reduceUpgrade(next, { type: 'returned', status: 'cancelled' });
+      else next = reduceUpgrade(next, { type: 'returned', status: 'pending', now: Date.now() });
+      setUpgrade(next);
+      if (next.step !== 'activating') return;
+      const started = Date.now();
+      timer = window.setInterval(async () => {
+        try {
+          const { supabase } = await import('../lib/supabase.js');
+          const { data } = await supabase.auth.getSession();
+          const token = data.session?.access_token;
+          const response = await fetch('/api/r2?action=tier-limits', {
+            headers: token ? { authorization: `Bearer ${token}` } : {},
+          });
+          const body = await response.json();
+          if (Number(body.maxFileSizeBytes) >= total && total > 0) {
+            window.clearInterval(timer);
+            setAllowance({
+              bytes: Number(body.maxFileSizeBytes),
+              hours: Number(body.maxRetentionHours) || 168,
+              paid: body.paid === true,
+              tier: body.tier || 'pro',
+            });
+            setUpgrade((current) => reduceUpgrade(current || next, { type: 'entitled' }));
+            return;
+          }
+        } catch { /* keep waiting */ }
+        if (Date.now() - started > 45000) {
+          window.clearInterval(timer);
+          setUpgrade((current) => reduceUpgrade(current || next, { type: 'tick', now: Date.now() }));
+        }
+      }, 3000);
+    });
+    return () => {
+      stopped = true;
+      if (timer) window.clearInterval(timer);
+    };
+  }, []);
 
   const handleReset = () => {
     setView('form');
@@ -851,6 +919,32 @@ export default function HomePage() {
                               onChange={(e) => setEnablePassword(e.target.checked)}
                             />
                           </label>
+                          <label className="snd-toggle-row" htmlFor="send-once">
+                            <span className="snd-toggle-text">
+                              <strong>Close after the first download</strong>
+                              <span>The link stops after one person downloads.</span>
+                            </span>
+                            <input
+                              id="send-once"
+                              type="checkbox"
+                              className="snd-switch"
+                              checked={closeAfterDownload}
+                              onChange={(event) => setCloseAfterDownload(event.target.checked)}
+                            />
+                          </label>
+                          <label className="snd-field" htmlFor="send-alerts">
+                            <span className="ds-label">Email me when it is downloaded</span>
+                            <select
+                              id="send-alerts"
+                              className="ds-input"
+                              value={alertMode}
+                              onChange={(event) => setAlertMode(event.target.value)}
+                            >
+                              <option value="first">First download only</option>
+                              <option value="each">Every download</option>
+                              <option value="off">Don’t email me</option>
+                            </select>
+                          </label>
                           {enablePassword && (
                             <>
                               <div className="snd-secret">
@@ -925,16 +1019,59 @@ export default function HomePage() {
                         </div>
 
                         {files.reduce((sum, file) => sum + file.size, 0) > maxSizeBytes && (
-                          <p className="ds-alert is-danger" role="alert">
-                            <AlertCircle className="w-4 h-4 shrink-0" aria-hidden="true" />
-                            <span>This transfer is larger than {maxSizeLabel}. Remove a file to continue.</span>
-                          </p>
+                          <UpgradeFlow
+                            totalBytes={files.reduce((sum, file) => sum + file.size, 0)}
+                            totalLabel={formatBytes(files.reduce((sum, file) => sum + file.size, 0))}
+                            step={upgrade?.step || 'explain'}
+                            plan={upgrade?.plan}
+                            signedIn={Boolean(user)}
+                            onPick={(plan, options = {}) => {
+                              const total = files.reduce((sum, file) => sum + file.size, 0);
+                              const base = upgrade || createUpgrade(total);
+                              if (options.auth && !user) {
+                                setUpgrade(reduceUpgrade(base, { type: 'pick', plan, signedIn: false }));
+                                setIsAuthOpen(true);
+                                return;
+                              }
+                              if (allowance.bytes >= total) {
+                                setUpgrade(reduceUpgrade(base, { type: 'signed_in', alreadyCovers: true }));
+                                return;
+                              }
+                              setUpgrade(reduceUpgrade(base, { type: 'pick', plan, signedIn: Boolean(user) }));
+                            }}
+                            onBack={() => setUpgrade((current) => reduceUpgrade(current || createUpgrade(0), { type: 'back' }))}
+                            onRefresh={() => setUpgrade((current) => reduceUpgrade(current || createUpgrade(0), { type: 'retry', now: Date.now() }))}
+                            onCheckout={async () => {
+                              const total = files.reduce((sum, file) => sum + file.size, 0);
+                              const planCode = upgrade?.plan?.code;
+                              if (!planCode || !user) return;
+                              await holdPendingSend(files, planCode);
+                              const { supabase } = await import('../lib/supabase.js');
+                              const { data } = await supabase.auth.getSession();
+                              const token = data.session?.access_token;
+                              const response = await fetch('/api/payment?action=checkout', {
+                                method: 'POST',
+                                headers: {
+                                  'content-type': 'application/json',
+                                  ...(token ? { authorization: `Bearer ${token}` } : {}),
+                                },
+                                body: JSON.stringify({ plan: planCode, returnPath: '/' }),
+                              });
+                              const body = await response.json().catch(() => ({}));
+                              if (!response.ok || !body.checkoutUrl) {
+                                addToast(body.error || 'Checkout could not open.', 'error');
+                                return;
+                              }
+                              setUpgrade((current) => reduceUpgrade(current, { type: 'checkout_started', now: Date.now() }));
+                              window.location.assign(body.checkoutUrl);
+                            }}
+                          />
                         )}
 
                         <button
                           type="button"
                           onClick={handleUploadLinkTransfer}
-                          disabled={files.reduce((sum, file) => sum + file.size, 0) > maxSizeBytes}
+                          disabled={files.reduce((sum, file) => sum + file.size, 0) > maxSizeBytes && upgrade?.step !== 'ready'}
                           className="ds-btn ds-btn-dark ds-btn-lg snd-go"
                         >
                           <span>
@@ -1063,7 +1200,14 @@ export default function HomePage() {
         isOpen={isAuthOpen}
         onClose={() => setIsAuthOpen(false)}
         initialMode={authMode}
-        onAuthSuccess={(u) => setUser(u)}
+        onAuthSuccess={(account) => {
+          setUser(account);
+          setUpgrade((current) => {
+            if (!current || current.step !== 'auth') return current;
+            const total = files.reduce((sum, file) => sum + file.size, 0);
+            return reduceUpgrade(current, { type: 'signed_in', alreadyCovers: allowance.bytes >= total });
+          });
+        }}
       />
       )}
 

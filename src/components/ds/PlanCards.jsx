@@ -168,10 +168,16 @@ export default function PlanCards({
           isCurrent={currentTier === 'pro' || (isPro && !currentTier)}
           noteText={notePlan === pro.code ? note : ''}
           extra={(
-            <div className="ds-switch" role="group" aria-label="Pro billing cycle">
-              <button type="button" aria-pressed={cycle === 'monthly'} onClick={() => setCycle('monthly')}>Monthly</button>
-              <button type="button" aria-pressed={cycle === 'yearly'} onClick={() => setCycle('yearly')}>Yearly</button>
-            </div>
+            <>
+              <div className="ds-switch" role="group" aria-label="Pro billing cycle">
+                <button type="button" aria-pressed={cycle === 'monthly'} onClick={() => setCycle('monthly')}>Monthly</button>
+                <button type="button" aria-pressed={cycle === 'yearly'} onClick={() => setCycle('yearly')}>Yearly</button>
+              </div>
+              {cycle === 'yearly' ? (
+                <p className="ds-plan-note">₹7,999 a year instead of ₹9,588. About 17% off.</p>
+              ) : null}
+              <p className="ds-plan-note">A 2-year Pro plan is not for sale yet.</p>
+            </>
           )}
         />
 

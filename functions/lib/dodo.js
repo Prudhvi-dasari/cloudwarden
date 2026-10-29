@@ -136,7 +136,7 @@ function siteOrigin(request, env) {
   return publicOrigin(request?.url || envGet(env, 'APP_URL') || CANONICAL_ORIGIN);
 }
 
-async function createCheckout({ request, env, plan }) {
+async function createCheckout({ request, env, plan, returnPath = '/pricing' }) {
   const user = await authenticatedUser(request, env);
   if (user?.unavailable) {
     return json(503, { error: 'Sign-in could not be verified. Try again.', code: 'AUTH_UNAVAILABLE' });
@@ -173,7 +173,7 @@ async function createCheckout({ request, env, plan }) {
       body: JSON.stringify({
         product_cart: [{ product_id: productId, quantity: 1 }],
         customer: user.email ? { email: user.email } : undefined,
-        return_url: `${siteOrigin(request, env)}/pricing?checkout=return`,
+        return_url: `${siteOrigin(request, env)}${returnPath}?checkout=return`,
         metadata: {
           ...minilyticsMetadata(request),
           user_id: user.id,
@@ -234,5 +234,6 @@ export async function handlePaymentRequest({ request, env }) {
   }
   const plan = textValue(body.plan || body.billingCycle);
   if (!isCheckoutCode(plan) && !PLANS.has(plan)) return json(400, { error: 'Unknown plan.', code: 'UNKNOWN_PLAN' });
-  return createCheckout({ request, env, plan });
+  const returnPath = body.returnPath === '/' ? '/' : '/pricing';
+  return createCheckout({ request, env, plan, returnPath });
 }

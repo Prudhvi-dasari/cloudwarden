@@ -8,11 +8,40 @@ import { ArrowRight, Check } from 'lucide-react';
 
 const RELEASES = [
   {
+    date: '30 Oct 2026',
+    dateTime: '2026-10-30',
+    span: 'Today',
+    title: 'Alerts, branding, and a finished send',
+    badge: 'Latest',
+    highlights: [
+      'The sender can get an email the first time a link is downloaded, or on every download. The email has an unsubscribe link.',
+      'My Files shows when a transfer was downloaded. It does not show who downloaded it.',
+      'Pro and Studio can set a color, a short message, and a background on the download page.',
+      'When a link is ready, the card springs in and a short burst of paper plays once. It stays quiet if you prefer reduced motion.',
+      'A send that is over the free 6 GB limit walks through a plan, sign-in, and checkout without dropping the files.',
+      'A transfer can be set to close after the first download.',
+    ],
+  },
+  {
+    date: '30 Oct 2026',
+    dateTime: '2026-10-30',
+    span: 'Today',
+    title: 'Uploads that continue, and pages search can read',
+    badge: 'Send',
+    highlights: [
+      'A large upload can resume after the network drops or the page is reloaded.',
+      'Leaving the send page for Pricing or another tab no longer cancels the upload.',
+      'Free stays 6 GB and 7 days. Creator, Pro, Studio, and a one-time Pass are on the pricing page, each with its own storage total.',
+      'Download passwords are stored as a salted hash. Older links still open.',
+      'Guides for WeTransfer, large video, WhatsApp, phone to laptop, file requests, and email are real pages. The about page names who built the site.',
+    ],
+  },
+  {
     date: 'Oct 2026',
     dateTime: '2026-10',
     span: 'Late October',
     title: 'Creator, Pro, and Studio',
-    badge: 'Latest',
+    badge: 'Plans',
     highlights: [
       'Free stays 6 GB per transfer and 7 days, with no account.',
       'Creator is ₹299 a month. Pro is ₹799 a month or ₹7,999 a year. Studio is ₹2,499 a month.',

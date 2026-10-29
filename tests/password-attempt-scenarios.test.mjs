@@ -152,8 +152,11 @@ function installFetch(state) {
       }
       return new Response('[]', { status: 200 });
     }
-    if (table === 'sta_product_events' && method === 'POST') {
+    if ((table === 'sta_product_events' || table === 'sta_download_events' || table === 'sta_alert_optouts') && method === 'POST') {
       return new Response('[]', { status: 201 });
+    }
+    if (table === 'sta_alert_optouts' && method === 'GET') {
+      return new Response('[]', { status: 200 });
     }
     if (table === 'claim_download_slot' && method === 'POST') {
       state.claims.push(body);

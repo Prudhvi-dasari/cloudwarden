@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { THEMES, applyTheme, supabase } from '../lib/supabase';
-import { isAdmin, isUserPro, isUserOnTrial, startProTrial, saveAccountTheme, saveBrandLogo } from '../lib/authSession';
+import { isAdmin, isUserPro, isUserOnTrial, startProTrial, saveAccountTheme, saveBrandKit } from '../lib/authSession';
 import { X, User, Crown, Palette, LogOut, Check, Sparkles, ShieldCheck, ArrowRight, Settings, Zap, Clock } from 'lucide-react';
 import Portal from './Portal';
 
@@ -28,6 +28,9 @@ export default function ProfileModal({
   const [localUser, setLocalUser] = useState(user);
   const [usage, setUsage] = useState(null);
   const [logoUrl, setLogoUrl] = useState('');
+  const [brandAccent, setBrandAccent] = useState('#1769f5');
+  const [brandBackground, setBrandBackground] = useState('');
+  const [brandMessage, setBrandMessage] = useState('');
   const [logoNote, setLogoNote] = useState('');
 
   useEffect(() => {
@@ -200,10 +203,15 @@ export default function ProfileModal({
                   event.preventDefault();
                   setLogoNote('');
                   try {
-                    await saveBrandLogo(currentUser, logoUrl);
-                    setLogoNote(logoUrl.trim() ? 'Logo link saved. It shows on the download page.' : 'Logo link removed.');
+                    await saveBrandKit(currentUser, {
+                      logo: logoUrl,
+                      accent: brandAccent,
+                      background: brandBackground,
+                      message: brandMessage,
+                    });
+                    setLogoNote('Download page branding saved.');
                   } catch (error) {
-                    setLogoNote(error?.message || 'Could not save that logo link.');
+                    setLogoNote(error?.message || 'Could not save that branding.');
                   }
                 }}
               >
@@ -220,6 +228,12 @@ export default function ProfileModal({
                   />
                   <button type="submit" className="ds-btn ds-btn-ghost shrink-0">Save</button>
                 </div>
+                <label htmlFor="brand-accent" className="ds-label mt-3">Accent on the download page</label>
+                <input id="brand-accent" className="ds-input mt-2" value={brandAccent} onChange={(event) => setBrandAccent(event.target.value)} placeholder="#1769f5" />
+                <label htmlFor="brand-bg" className="ds-label mt-3">Background image</label>
+                <input id="brand-bg" className="ds-input mt-2" type="url" value={brandBackground} onChange={(event) => setBrandBackground(event.target.value)} placeholder="https://…" />
+                <label htmlFor="brand-message" className="ds-label mt-3">Short message</label>
+                <input id="brand-message" className="ds-input mt-2" maxLength={240} value={brandMessage} onChange={(event) => setBrandMessage(event.target.value)} placeholder="Thanks for taking a look" />
                 {logoNote ? <p className="ds-plan-note mt-2">{logoNote}</p> : null}
               </form>
             ) : null}
