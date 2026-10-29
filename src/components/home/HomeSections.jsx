@@ -256,7 +256,7 @@ function PasswordDemo() {
         </div>
         <span className="mt-3 ds-btn ds-btn-dark ds-btn-sm">Unlock download</span>
       </div>
-      <p className="mt-3 text-[12px] text-[#6b7486]">The server keeps a SHA-256 hash. The password gates the download; it does not encrypt the file.</p>
+      <p className="mt-3 text-[12px] text-[#6b7486]">The server keeps a salted hash. The password gates the download; it does not encrypt the file.</p>
     </div>
   );
 }
@@ -333,7 +333,7 @@ const CHAPTERS = [
     nav: 'Password',
     title: 'Put a password on the download.',
     lead: 'Turn on the password and the download page waits until it matches. The notification email never includes it, so you share it separately.',
-    checks: ['Stored as a SHA-256 hash', 'Left out of every email', 'Optional on every transfer'],
+    checks: ['Stored as a salted hash', 'Left out of every email', 'Optional on every transfer'],
     mode: 'link',
     cta: 'Send with a password',
     Demo: PasswordDemo,

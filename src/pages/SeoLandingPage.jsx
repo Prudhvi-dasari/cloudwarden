@@ -10,7 +10,7 @@ import { ArrowRight, Check } from 'lucide-react';
 const LANDING_DATA = {
   'send-large-files': {
     title: 'Send large files online, up to 6 GB | SendToAnyone',
-    metaDesc: 'Send up to 6 GB with no account. The link lasts from 1 hour to 7 days. Pro on the pricing page is 250 GB and 180 days.',
+    metaDesc: 'Send up to 6 GB with no account. The link lasts from 1 hour to 7 days. Creator, Pro, and Studio raise the size and how long the link stays open.',
     h1: 'Send a large file',
     subtitle: 'One cloud transfer holds 6 GB. No account. You pick how long the link stays open, from 1 hour up to 7 days, and then it stops.',
   },
@@ -136,9 +136,9 @@ const LANDING_DATA = {
   },
   'file-transfer-free': {
     title: 'Send a file, up to 6 GB | SendToAnyone',
-    metaDesc: '6 GB free with no account, links up to 7 days. Pro is 250 GB and 180 days after checkout is confirmed.',
-    h1: 'Free is 6 GB. Pro is for the bigger file.',
-    subtitle: 'Up to 6 GB with no account. Links last up to 7 days. Pro on the pricing page is 250 GB and 180 days.',
+    metaDesc: '6 GB free with no account, links up to 7 days. Creator, Pro, and Studio raise the size and how long the link stays open.',
+    h1: 'Free is 6 GB. Larger plans are for the bigger file.',
+    subtitle: 'Up to 6 GB with no account. Links last up to 7 days. Creator, Pro, and Studio are on the pricing page.',
     feature1: 'No account to upload',
     feature2: '6 GB per transfer',
     feature3: '7 days is the longest link',
@@ -270,7 +270,7 @@ function LargeFileArticle() {
         <p>
           6 GB is 6,000,000,000 bytes, counted as the total of every file in that transfer. The send form adds the sizes. Past the cap, it tells you to remove a file, and Create download link stays off. The server also rejects an upload that is still over the limit.
         </p>
-        <p>Free stops at 6 GB and 7 days. Pro, after the server confirms payment, is 250 GB and 180 days. Anything over the limit for the account you are using has to be split.</p>
+        <p>Free stops at 6 GB and 7 days. After the server confirms payment, Creator is 50 GB and 30 days, Pro is 250 GB and 180 days, and Studio is 250 GB and 1 year. Anything over the limit for the account you are using has to be split.</p>
       </Section>
 
       <Section title="Video, source files, and folders">
@@ -408,7 +408,7 @@ function HowToArticle() {
 
       <Section title="Over 6 GB">
         <p>
-          On Free, split the project into pieces under 6 GB and keep each link within 7 days. Pro raises one transfer to 250 GB and 180 days after payment is confirmed.
+          On Free, split the project into pieces under 6 GB and keep each link within 7 days. Creator raises one transfer to 50 GB and 30 days. Pro raises it to 250 GB and 180 days. Studio keeps a link for up to 1 year. Each of those starts after payment is confirmed.
         </p>
       </Section>
 

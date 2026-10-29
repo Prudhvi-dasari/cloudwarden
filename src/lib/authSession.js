@@ -73,8 +73,9 @@ function isAuthUuid(id) {
 function applyAccountRow(cleanUser, row) {
   if (!row) return cleanUser;
   const expiredTrial = row.plan === 'trial' && row.trial_expires_at && new Date(row.trial_expires_at).getTime() <= Date.now();
-  const expiredPro = row.plan === 'pro' && row.plan_expires_at && new Date(row.plan_expires_at).getTime() <= Date.now();
-  cleanUser.user_metadata.plan = isAdmin(cleanUser) ? 'pro' : (expiredTrial || expiredPro ? 'free' : (row.plan || 'free'));
+  const recurring = row.plan === 'creator' || row.plan === 'pro' || row.plan === 'studio';
+  const expiredPaid = recurring && row.plan_expires_at && new Date(row.plan_expires_at).getTime() <= Date.now();
+  cleanUser.user_metadata.plan = isAdmin(cleanUser) ? 'pro' : (expiredTrial || expiredPaid ? 'free' : (row.plan || 'free'));
   cleanUser.user_metadata.theme = row.theme || cleanUser.user_metadata.theme;
   cleanUser.user_metadata.fullName = row.display_name || cleanUser.user_metadata.fullName;
   cleanUser.user_metadata.trial_started_at = row.trial_started_at || null;
@@ -143,6 +144,26 @@ export async function startProTrial(user) {
   const updatedUser = applyAccountRow(buildStoredUser(user), data);
   writeStoredUser(updatedUser);
   return updatedUser;
+}
+
+export async function saveBrandLogo(user, logoUrl) {
+  if (!user || !isAuthUuid(user.id)) return user;
+  const value = String(logoUrl || '').trim();
+  let stored = '';
+  if (value) {
+    let parsed;
+    try { parsed = new URL(value); } catch { throw new Error('Use an https logo link.'); }
+    if (parsed.protocol !== 'https:' || parsed.username || parsed.password) {
+      throw new Error('Use an https logo link.');
+    }
+    stored = parsed.toString().slice(0, 500);
+  }
+  const { error } = await supabase
+    .from('itransfer_accounts')
+    .update({ brand_logo_url: stored || null })
+    .eq('user_id', user.id);
+  if (error) throw error;
+  return user;
 }
 
 export async function saveAccountTheme(user, themeId) {

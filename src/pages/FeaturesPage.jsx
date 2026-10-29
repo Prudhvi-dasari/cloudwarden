@@ -30,7 +30,7 @@ const STATS = [
 const FAQS = [
   { q: 'Does the person receiving need an account?', a: 'No. They open the link in a browser and download. Sending on Free does not need an account either.' },
   { q: 'How many people can I email at once?', a: 'Up to 10 addresses per send. Each address gets its own message with the download link. The file is not attached.' },
-  { q: 'Does the password encrypt my file?', a: 'No. The server stores a SHA-256 hash of the password and checks it before the download starts. It gates the download; it does not encrypt the file.' },
+  { q: 'Does the password encrypt my file?', a: 'No. The server stores a salted hash of the password and checks it before the download starts. It gates the download; it does not encrypt the file.' },
   { q: 'What happens when the link expires?', a: 'The download page stops working and a scheduled cleanup deletes the files from storage.' },
   { q: 'Is device transfer stored anywhere?', a: 'No. The file goes from one browser to the other over WebRTC. Both screens stay open until it finishes. It works best on the same network.' },
 ];
@@ -244,7 +244,7 @@ export default function FeaturesPage() {
               <h2 id="controls-title" className="ds-h2 mt-3">Decide who opens it, and for how long.</h2>
               <p className="ds-lead mt-4">Every send has the same few switches. Set them once, then copy the link.</p>
               <ul className="ds-checks mt-6">
-                <li><Check strokeWidth={3} aria-hidden="true" />Password stored as a SHA-256 hash</li>
+                <li><Check strokeWidth={3} aria-hidden="true" />Password stored as a salted hash</li>
                 <li><Check strokeWidth={3} aria-hidden="true" />Expiry from 1 hour up to 7 days free</li>
                 <li><Check strokeWidth={3} aria-hidden="true" />Up to 180 days with Pro</li>
                 <li><Check strokeWidth={3} aria-hidden="true" />Files deleted after the link closes</li>

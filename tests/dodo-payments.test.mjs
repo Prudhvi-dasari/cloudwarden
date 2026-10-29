@@ -137,7 +137,7 @@ test('authenticated checkout uses the server product and test mode', async () =>
     const payload = JSON.parse(dodoCall.options.body);
     assert.deepEqual(payload.product_cart, [{ product_id: 'pdt_month', quantity: 1 }]);
     assert.equal(payload.metadata.user_id, USER_A);
-    assert.equal(payload.metadata.plan_code, 'monthly');
+    assert.equal(payload.metadata.plan_code, 'pro_monthly');
     assert.equal(payload.metadata.ml_visitor_id, 'visitor-1');
     assert.equal(payload.metadata.ml_session_id, 'session-1');
     assert.equal(payload.metadata.email, 'payer@example.com');
@@ -202,7 +202,8 @@ test('checkout rejects missing auth, unknown plans, client product ids, and miss
     const offerBody = await offers.json();
     assert.equal(offerBody.purchasable, true);
     assert.equal(offerBody.plans.find((plan) => plan.code === 'monthly').purchasable, true);
-    assert.equal(offerBody.plans.find((plan) => plan.code === 'yearly').priceLabel, '₹5,999');
+    assert.equal(offerBody.plans.find((plan) => plan.code === 'yearly').priceLabel, '₹7,999');
+    assert.equal(offerBody.plans.find((plan) => plan.code === 'yearly').usdLabel, '$150');
     assert.equal(offerBody.mode, 'test');
     assert.equal(JSON.stringify(offerBody).includes('pdt_month'), false);
     assert.equal(offerBody.checkoutUrl, undefined);

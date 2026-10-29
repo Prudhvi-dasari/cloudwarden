@@ -14,13 +14,13 @@ const STEPS = [
   {
     number: 1,
     title: 'Drop files and pick how they leave',
-    desc: 'Drag in files or a folder, up to 6 GB free or 250 GB on Pro. Choose a link, an email, or a device transfer.',
+    desc: 'Drag in files or a folder, up to 6 GB free, 50 GB on Creator, or 250 GB on Pro and Studio. Choose a link, an email, or a device transfer.',
     detail: 'Nothing to install. It runs in the browser tab.',
   },
   {
     number: 2,
     title: 'Set the expiry and a password',
-    desc: 'Pick 1 hour, 24 hours, 3 days, or 7 days. Pro adds up to 180 days. A password is optional.',
+    desc: 'Pick 1 hour, 24 hours, 3 days, or 7 days. Creator adds 30 days, Pro adds 180 days, and Studio adds 1 year. A password is optional.',
     detail: 'The password gates the download. The file is uploaded as you selected it.',
   },
   {
@@ -37,7 +37,7 @@ const MODES = [
     tone: 'is-blue',
     title: 'Shareable link',
     body: 'For Slack, WhatsApp, or a client message. Upload once and paste the link anywhere.',
-    checks: ['Up to 6 GB free, 250 GB on Pro', 'QR code for the download link', 'Optional password'],
+    checks: ['Up to 6 GB free, more on Creator, Pro, and Studio', 'QR code for the download link', 'Optional password'],
   },
   {
     icon: Zap,
@@ -110,7 +110,7 @@ function StepTwoMock() {
           </div>
         </div>
       </div>
-      <p className="mt-4 pa-spec">Stored as a SHA-256 hash · not in the email</p>
+      <p className="mt-4 pa-spec">Stored as a salted hash · not in the email</p>
     </>
   );
 }

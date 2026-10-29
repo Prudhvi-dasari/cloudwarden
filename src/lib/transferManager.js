@@ -18,6 +18,14 @@ import {
 } from './uploadPlan.js';
 import { deleteUploadSession, saveUploadSession, snapshotFromManager } from './uploadPersistence.js';
 
+function reportProductEvent(event) {
+  fetch('/api/r2?action=event', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ event }),
+  }).catch(() => {});
+}
+
 const SINGLE_PUT_MAX = 8 * 1024 * 1024; // 8 MB
 const PART_SIZE = PART_SIZE_BYTES; // 16 MB parts (S3/R2 minimum is 5 MB except last)
 const PARALLEL_PARTS = 5;
@@ -328,6 +336,7 @@ export class TransferManager {
           file.error = err?.message || 'Could not start this transfer.';
         }
       });
+      reportProductEvent('upload_failed');
       this.flushProgress();
     }
   }
@@ -492,6 +501,7 @@ export class TransferManager {
       console.error('Upload failed:', err);
       item.status = 'error';
       item.error = err?.message || 'Upload stopped. Retry continues from the last finished part.';
+      reportProductEvent('upload_failed');
       this.emit('fileError', { item, error: err });
       this.flushProgress();
       this.processQueue();

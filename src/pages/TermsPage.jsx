@@ -95,14 +95,17 @@ export default function TermsPage() {
               <p>SendToAnyone provides high-speed, encrypted digital file transfer services through:</p>
               <ul>
                 <li><strong>Free transfers:</strong> Up to 6 GB per transfer, kept for at most 7 days. No account is required.</li>
-                <li><strong>Pro:</strong> 250 GB per transfer and links up to 180 days, after the server confirms a Dodo payment. Free stays 6 GB and 7 days until then.</li>
+                <li><strong>Creator:</strong> 50 GB per transfer, 200 GB stored, links up to 30 days.</li>
+                <li><strong>Pro:</strong> 250 GB per transfer, 1 TB stored, links up to 180 days, and a logo on the download page.</li>
+                <li><strong>Studio:</strong> 250 GB per transfer, 3 TB stored, links up to 1 year. A team workspace is not included yet.</li>
+                <li><strong>Pass:</strong> One transfer up to 100 GB, kept 30 days. It does not change the account plan.</li>
                 <li><strong>Device P2P:</strong> Direct browser-to-browser WebRTC streaming with zero server retention for infinite transfer sizes.</li>
               </ul>
             </Clause>
 
             <Clause index={2}>
               <p>
-                Free files follow the expiry the sender chose, from 1 hour up to 7 days. Pro can keep a link open for up to 180 days. There is no permanent storage.
+                Free files follow the expiry the sender chose, from 1 hour up to 7 days. Creator can keep a link for 30 days, Pro for 180 days, and Studio for 1 year. There is no permanent storage.
               </p>
               <div className="ds-callout is-warn">
                 <Clock className="w-5 h-5 shrink-0 mt-0.5 text-[#8a5300]" aria-hidden="true" />
@@ -141,7 +144,7 @@ export default function TermsPage() {
 
             <Clause index={5}>
               <p>
-                Paid subscription tiers (such as Pro and Teams) are currently in development and not yet available for purchase. When paid tiers are introduced, terms and pricing will be clearly disclosed prior to checkout. Free transfers remain 100% free with no recurring fees.
+                Creator (₹299 per month), Pro (₹799 per month or ₹7,999 per year), and Studio (₹2,499 per month) are billed through Dodo Payments at the prices shown before checkout. A Pass, when offered, is ₹149 for one transfer and does not change the account plan. The plan starts after the server confirms the payment. An existing Pro subscription keeps the price already billed. Free transfers stay free, with no recurring fee. Studio does not include a shared team workspace yet.
               </p>
             </Clause>
 

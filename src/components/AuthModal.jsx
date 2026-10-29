@@ -184,6 +184,11 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
         if (err) throw err;
         identifyMinilytics(data.user);
         trackMinilyticsGoal('signup_completed');
+        fetch('/api/r2?action=event', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ event: 'signup' }),
+        }).catch(() => {});
         if (!data?.session) {
           setSuccessMsg('Account created. Open the confirmation email, then sign in here.');
           setMode('login');

@@ -1,4 +1,6 @@
 import { timingSafeEqual } from './transferSecurity.js';
+import { isPlanCode, productMap, tierForPlanCode } from './plans.js';
+import { recordProductEvent } from './productEvents.js';
 
 const encoder = new TextEncoder();
 const TOLERANCE_MS = 5 * 60 * 1000;
@@ -16,12 +18,7 @@ function envGet(env, key) {
   return '';
 }
 
-export function productMap(env) {
-  return {
-    monthly: envGet(env, 'DODO_PRODUCT_MONTHLY'),
-    yearly: envGet(env, 'DODO_PRODUCT_YEARLY'),
-  };
-}
+export { productMap };
 
 function bytesToBase64(bytes) {
   let text = '';
@@ -123,7 +120,7 @@ export function decideBillingEvent(event, products, overrides = {}) {
   const userId = USER_ID.test(overrideUser) ? overrideUser : metadataUser;
   const productId = eventProductId(data) || (typeof metadata.product_id === 'string' ? metadata.product_id : '');
   const configuredPlan = Object.entries(products || {}).find(([, id]) => id && id === productId)?.[0] || '';
-  const metaPlan = metadata.plan_code === 'monthly' || metadata.plan_code === 'yearly' ? metadata.plan_code : '';
+  const metaPlan = isPlanCode(metadata.plan_code) ? metadata.plan_code : '';
   const plan = metaPlan || configuredPlan;
   const productMatches = productId
     ? Boolean(plan && products?.[plan] && productId === products[plan])
@@ -237,12 +234,46 @@ export function supabaseBillingStore(env) {
           p_subscription_id: decision.subscriptionId || null,
         },
       });
-      if (rpc.ok) return;
+      if (rpc.ok) {
+        const applied = await rpc.json().catch(() => ({}));
+        if (applied && applied.ok === false) {
+          const error = new Error('Entitlement was not recorded.');
+          error.code = applied.code || 'ENTITLEMENT_FAILED';
+          throw error;
+        }
+        if (decision.status === 'active') {
+          const tier = tierForPlanCode(decision.planCode);
+          recordProductEvent(env, { event: 'payment_succeeded', tier: tier === 'free' ? null : tier });
+        }
+        return;
+      }
       const detail = await rpc.text().catch(() => '');
       if (rpc.status !== 404 && !detail.includes('PGRST202')) {
         const error = new Error('Entitlement was not recorded.');
         error.code = 'ENTITLEMENT_FAILED';
         throw error;
+      }
+      if (decision.planCode === 'pass') {
+        if (decision.status === 'active') {
+          const inserted = await billingFetch(env, 'sta_transfer_passes', {
+            method: 'POST',
+            prefer: 'return=minimal',
+            body: {
+              user_id: decision.userId,
+              bytes_limit: 100000000000,
+              retention_hours: 720,
+              status: 'unused',
+              payment_id: decision.paymentId || null,
+            },
+          });
+          if (!inserted.ok && inserted.status !== 409) {
+            const error = new Error('Pass was not recorded.');
+            error.code = 'ENTITLEMENT_FAILED';
+            throw error;
+          }
+          recordProductEvent(env, { event: 'payment_succeeded', tier: 'pass' });
+        }
+        return;
       }
       const response = await billingFetch(env, 'billing_entitlements?on_conflict=user_id', {
         method: 'POST',

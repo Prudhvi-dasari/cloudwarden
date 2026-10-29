@@ -304,6 +304,7 @@ export default function DownloadPage() {
         subject: data.subject,
         message: data.message,
         senderEmail: data.senderEmail,
+        brandLogo: typeof data.brandLogo === 'string' && data.brandLogo.startsWith('https://') ? data.brandLogo : null,
         expiresAt: data.expiresAt,
         totalSize: data.totalSize || 0,
       });
@@ -662,6 +663,9 @@ export default function DownloadPage() {
                   Link open
                 </span>
               </div>
+              {transfer.brandLogo ? (
+                <img src={transfer.brandLogo} alt="" className="mt-3 h-8 w-auto max-w-[10rem] object-contain" />
+              ) : null}
               <h1 id="dl-ready-title" className="dl-title" title={readyTitle}>{readyTitle}</h1>
               {transfer.message || readySender ? (
                 <figure className="dl-note">

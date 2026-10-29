@@ -1618,6 +1618,7 @@ html:has(.ds-page) body {
 
 @media (min-width: 860px) {
   .ds-plans { grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr); align-items: stretch; }
+  .ds-plans.is-tiers { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 
 .ds-plan {

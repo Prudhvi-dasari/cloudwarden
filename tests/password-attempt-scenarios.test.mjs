@@ -145,6 +145,16 @@ function installFetch(state) {
       ));
       return new Response(JSON.stringify(rows), { status: 200 });
     }
+    if (table === 'transfers' && method === 'PATCH') {
+      const shareId = columnEq(parsed, 'share_id');
+      for (const row of state.transfers) {
+        if (shareId == null || row.share_id === shareId) Object.assign(row, body);
+      }
+      return new Response('[]', { status: 200 });
+    }
+    if (table === 'sta_product_events' && method === 'POST') {
+      return new Response('[]', { status: 201 });
+    }
     if (table === 'claim_download_slot' && method === 'POST') {
       state.claims.push(body);
       return new Response(JSON.stringify(claimDownloadSlot(state.transfers, body)), { status: 200 });
@@ -289,7 +299,8 @@ describe('password attempt scenarios', { concurrency: false }, () => {
         assert.equal(result.data.downloadUrl, undefined, `attempt ${attempt + 1}`);
         assert.equal(JSON.stringify(result.data).includes('X-Amz-Signature'), false, `attempt ${attempt + 1}`);
       }
-      assert.equal(doubles.digests.count(WRONG), policy.limit - 1);
+      assert.match(row.password_hash, /^pbkdf2-sha256\$/);
+      assert.equal(doubles.digests.count(WRONG), 0);
       assert.equal(row.download_count, 1);
       assert.equal(state.claims.length, 1);
 

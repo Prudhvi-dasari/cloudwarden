@@ -140,6 +140,10 @@ function installFetch(state, { restStatus = 200 } = {}) {
       if (!auth.includes('service-test')) return new Response(JSON.stringify({ message: 'no' }), { status: 401 });
       const parsed = new URL(href);
       const tableName = parsed.pathname.split('/').pop();
+      if (tableName === 'sta_product_events') return new Response('[]', { status: 201 });
+      if (tableName === 'itransfer_accounts' || tableName === 'sta_transfer_passes' || tableName === 'billing_entitlements') {
+        return new Response('[]', { status: 200 });
+      }
       if (tableName === 'set_platform_storage_cap' || tableName === 'release_daily_upload') {
         return new Response('null', { status: 200 });
       }

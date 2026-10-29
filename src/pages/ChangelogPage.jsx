@@ -11,8 +11,22 @@ const RELEASES = [
     date: 'Oct 2026',
     dateTime: '2026-10',
     span: 'Late October',
-    title: 'Pro plan and a lighter site',
+    title: 'Creator, Pro, and Studio',
     badge: 'Latest',
+    highlights: [
+      'Free stays 6 GB per transfer and 7 days, with no account.',
+      'Creator is ₹299 a month. Pro is ₹799 a month or ₹7,999 a year. Studio is ₹2,499 a month.',
+      'Each plan has a stored total. The account page shows how much of it is in use.',
+      'A Pass is ₹149 for one transfer up to 100 GB, kept 30 days.',
+      'Download passwords are stored as a salted hash. Older links still open.',
+    ],
+  },
+  {
+    date: 'Oct 2026',
+    dateTime: '2026-10',
+    span: 'Late October',
+    title: 'Pro plan and a lighter site',
+    badge: 'Plans',
     highlights: [
       'Pro: 250 GB per transfer and links up to 180 days, billed through Dodo Payments.',
       'Pro switches on once the server confirms the payment, not when the checkout page returns.',

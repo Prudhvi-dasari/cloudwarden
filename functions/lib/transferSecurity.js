@@ -18,9 +18,11 @@ export function sizeError(fileSize, maxBytes = STORAGE_POLICY.freeTransferBytes)
   const max = Number(maxBytes) > 0 ? Number(maxBytes) : STORAGE_POLICY.freeTransferBytes;
   if (!Number.isFinite(size) || size <= 0) return 'Choose a file that is not empty.';
   if (size > max) {
-    return max > STORAGE_POLICY.freeTransferBytes
-      ? 'This transfer is larger than the 250 GB limit.'
-      : 'This transfer is larger than the 6 GB free limit.';
+    if (max <= STORAGE_POLICY.freeTransferBytes) {
+      return 'This transfer is larger than the 6 GB free limit.';
+    }
+    const gb = Math.max(1, Math.round(max / 1_000_000_000));
+    return `This transfer is larger than the ${gb} GB limit.`;
   }
   return null;
 }
@@ -56,7 +58,42 @@ export async function sha256Hex(data) {
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
-export async function hashPassword(password) {
+export const PBKDF2_ITERATIONS = 100_000;
+
+function bytesToBase64(bytes) {
+  let text = '';
+  for (const byte of bytes) text += String.fromCharCode(byte);
+  return btoa(text);
+}
+
+function base64ToBytes(value) {
+  const binary = atob(String(value || ''));
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+async function pbkdf2Bits(password, salt, iterations) {
+  const key = await crypto.subtle.importKey(
+    'raw',
+    encoder.encode(password),
+    'PBKDF2',
+    false,
+    ['deriveBits'],
+  );
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', hash: 'SHA-256', salt, iterations },
+    key,
+    256,
+  );
+  return new Uint8Array(bits);
+}
+
+export function passwordNeedsUpgrade(storedHash) {
+  return Boolean(storedHash) && !String(storedHash).startsWith('pbkdf2-sha256$');
+}
+
+export async function hashPassword(password, options = {}) {
   const value = String(password || '');
   if (!value) return null;
   if (value.length > 200) {
@@ -64,7 +101,10 @@ export async function hashPassword(password) {
     error.code = 'PASSWORD';
     throw error;
   }
-  return sha256Hex(value);
+  const iterations = Number(options.iterations) > 0 ? Number(options.iterations) : PBKDF2_ITERATIONS;
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const hash = await pbkdf2Bits(value, salt, iterations);
+  return `pbkdf2-sha256$${iterations}$${bytesToBase64(salt)}$${bytesToBase64(hash)}`;
 }
 
 export function isSha256Hex(value) {
@@ -80,6 +120,24 @@ export async function passwordMatches(storedHash, inputPassword) {
   if (!storedHash || inputPassword == null || inputPassword === '') return false;
   const stored = String(storedHash).trim();
   const typed = String(inputPassword);
+  if (stored.startsWith('pbkdf2-sha256$')) {
+    const [, count, saltText, hashText] = stored.split('$');
+    const iterations = Number(count);
+    if (!Number.isInteger(iterations) || iterations < 10_000 || iterations > 1_000_000) return false;
+    let salt;
+    let expected;
+    try {
+      salt = base64ToBytes(saltText);
+      expected = base64ToBytes(hashText);
+    } catch {
+      return false;
+    }
+    if (!salt?.length || !expected?.length) return false;
+    const actual = await pbkdf2Bits(typed, salt, iterations);
+    const actualHex = Array.from(actual, (byte) => byte.toString(16).padStart(2, '0')).join('');
+    const expectedHex = Array.from(expected, (byte) => byte.toString(16).padStart(2, '0')).join('');
+    return timingSafeEqual(actualHex, expectedHex);
+  }
   const digest = await sha256Hex(typed);
   if (isSha256Hex(stored)) return timingSafeEqual(digest, stored.toLowerCase());
   return timingSafeEqual(typed, stored);

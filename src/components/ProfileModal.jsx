@@ -1,8 +1,17 @@
-import { useState } from 'react';
-import { THEMES, applyTheme } from '../lib/supabase';
-import { isAdmin, isUserPro, isUserOnTrial, startProTrial, saveAccountTheme } from '../lib/authSession';
+import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { THEMES, applyTheme, supabase } from '../lib/supabase';
+import { isAdmin, isUserPro, isUserOnTrial, startProTrial, saveAccountTheme, saveBrandLogo } from '../lib/authSession';
 import { X, User, Crown, Palette, LogOut, Check, Sparkles, ShieldCheck, ArrowRight, Settings, Zap, Clock } from 'lucide-react';
 import Portal from './Portal';
+
+function formatStorage(bytes) {
+  const size = Number(bytes) || 0;
+  if (size >= 1_000_000_000_000) return `${(size / 1_000_000_000_000).toFixed(1)} TB`;
+  if (size >= 1_000_000_000) return `${Math.round(size / 1_000_000_000)} GB`;
+  if (size >= 1_000_000) return `${Math.round(size / 1_000_000)} MB`;
+  return `${Math.max(0, Math.round(size / 1024))} KB`;
+}
 
 export default function ProfileModal({
   isOpen,
@@ -17,11 +26,38 @@ export default function ProfileModal({
 }) {
   const [activatingTrial, setActivatingTrial] = useState(false);
   const [localUser, setLocalUser] = useState(user);
+  const [usage, setUsage] = useState(null);
+  const [logoUrl, setLogoUrl] = useState('');
+  const [logoNote, setLogoNote] = useState('');
+
+  useEffect(() => {
+    if (!isOpen || !user) return undefined;
+    let alive = true;
+    supabase.auth.getSession().then(({ data }) => {
+      const token = data.session?.access_token;
+      if (!token) return;
+      fetch('/api/r2?action=account-usage', { headers: { authorization: `Bearer ${token}` } })
+        .then((response) => response.json())
+        .then((body) => { if (alive && body?.quotaBytes) setUsage(body); })
+        .catch(() => {});
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, [isOpen, user]);
 
   if (!isOpen || !localUser) return null;
 
   const currentUser = localUser;
   const isPro = isUserPro(currentUser);
+  const accountTier = usage?.tier || currentUser.user_metadata?.plan || 'free';
+  const planCopy = {
+    creator: ['Creator sends up to 50 GB per transfer, stores 200 GB, and keeps links for up to 30 days.', '50 GB · 30 days'],
+    pro: ['Pro sends up to 250 GB per transfer, stores 1 TB, and keeps links for up to 180 days.', '250 GB · 180 days'],
+    studio: ['Studio sends up to 250 GB per transfer, stores 3 TB, and keeps links for up to 1 year.', '250 GB · 1 year'],
+    free: ['Free sends up to 6 GB per transfer, with links open from 1 hour to 7 days and an optional password.', '6 GB · 7 days'],
+  };
+  const [planSentence, planLimit] = planCopy[accountTier] || planCopy[isPro ? 'pro' : 'free'];
+  const planBadge = { creator: 'Creator', studio: 'Studio', pro: 'Pro', trial: 'Pro' }[accountTier] || 'Free';
+  const storageFull = usage?.quotaBytes > 0 && usage.usedBytes >= usage.quotaBytes;
   const isMasterAdmin = isAdmin(currentUser);
   const isOnTrial = isUserOnTrial(currentUser);
 
@@ -90,12 +126,12 @@ export default function ProfileModal({
               <div className="mt-1 flex flex-wrap items-center gap-2">
                 {isMasterAdmin ? (
                   <span className="ds-badge ds-badge-dark">Admin</span>
-                ) : isPro ? (
-                  <span className="ds-badge ds-badge-blue">
-                    <Crown className="w-3 h-3" aria-hidden="true" /> Pro
-                  </span>
-                ) : (
+                ) : planBadge === 'Free' ? (
                   <span className="ds-badge">Free</span>
+                ) : (
+                  <span className="ds-badge ds-badge-blue">
+                    <Crown className="w-3 h-3" aria-hidden="true" /> {planBadge}
+                  </span>
                 )}
                 <span className="inline-flex items-center gap-1 text-xs text-[var(--ds-muted)]">
                   <span className="ds-dot-live" aria-hidden="true" /> Signed in
@@ -130,18 +166,63 @@ export default function ProfileModal({
               <span className="ds-icon is-blue is-sm" aria-hidden="true"><Zap /></span>
               Your plan
             </h3>
-            <p className="acct-lead mt-2 text-sm">
-              {isPro
-                ? 'Pro sends up to 250 GB per transfer, with links open for up to 180 days.'
-                : 'Free sends up to 6 GB per transfer, with links open from 1 hour to 7 days and an optional password.'}
-            </p>
+            <p className="acct-lead mt-2 text-sm">{planSentence}</p>
             <div className="acct-limit">
               <span className="inline-flex items-center gap-2">
                 <Clock className="w-4 h-4 text-[var(--ds-muted)]" aria-hidden="true" />
                 Transfer limit
               </span>
-              <b>{isPro ? '250 GB · 180 days' : '6 GB · 7 days'}</b>
+              <b>{planLimit}</b>
             </div>
+            {usage?.quotaBytes ? (
+              <div className="mt-3">
+                <div className="snd-live-row">
+                  <span>Stored</span>
+                  <span>{formatStorage(usage.usedBytes)} / {formatStorage(usage.quotaBytes)}</span>
+                </div>
+                <div className="ds-progress" aria-hidden="true">
+                  <i style={{ width: `${Math.min(100, Math.round((usage.usedBytes / usage.quotaBytes) * 100))}%` }} />
+                </div>
+                {usage.near || storageFull ? (
+                  <p className="ds-plan-note mt-2">
+                    {storageFull
+                      ? 'This account is using all of its storage. Delete an older transfer, or upgrade for more room.'
+                      : 'This account is close to its storage limit.'}{' '}
+                    <Link to="/pricing" className="ds-link" onClick={onClose}>See larger plans</Link>
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+            {usage?.brand ? (
+              <form
+                className="mt-3"
+                onSubmit={async (event) => {
+                  event.preventDefault();
+                  setLogoNote('');
+                  try {
+                    await saveBrandLogo(currentUser, logoUrl);
+                    setLogoNote(logoUrl.trim() ? 'Logo link saved. It shows on the download page.' : 'Logo link removed.');
+                  } catch (error) {
+                    setLogoNote(error?.message || 'Could not save that logo link.');
+                  }
+                }}
+              >
+                <label htmlFor="brand-logo-url" className="ds-label">Logo on the download page</label>
+                <div className="mt-2 flex gap-2">
+                  <input
+                    id="brand-logo-url"
+                    className="ds-input"
+                    type="url"
+                    inputMode="url"
+                    placeholder="https://…"
+                    value={logoUrl}
+                    onChange={(event) => setLogoUrl(event.target.value)}
+                  />
+                  <button type="submit" className="ds-btn ds-btn-ghost shrink-0">Save</button>
+                </div>
+                {logoNote ? <p className="ds-plan-note mt-2">{logoNote}</p> : null}
+              </form>
+            ) : null}
           </div>
 
           {/* Theme Preference Section */}
