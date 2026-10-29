@@ -10,7 +10,7 @@ import CheckoutReturnNotice from '../components/CheckoutReturnNotice';
 import AnimatedHeadline from '../components/ds/AnimatedHeadline';
 import PlanCards, { PAID_FALLBACK } from '../components/ds/PlanCards';
 import { HomeFaq } from '../components/home/HomeSections';
-import { getStoredUser, clearUserSession, isUserPro } from '../lib/authSession';
+import { getStoredUser, clearUserSession, isUserPro, persistUserSession } from '../lib/authSession';
 import { supabase } from '../lib/supabase';
 import { checkoutAccessToken } from '../lib/checkoutSession';
 
@@ -63,6 +63,32 @@ export default function PricingPage() {
   const [notePlan, setNotePlan] = useState('');
   const userIsPro = isUserPro(user);
   const paidPlans = offers?.plans?.length ? offers.plans : PAID_FALLBACK;
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('checkout') !== 'return') return undefined;
+    let stopped = false;
+    let tries = 0;
+    async function refreshAccount() {
+      const { data } = await supabase.auth.getUser();
+      if (stopped || !data?.user) return;
+      const next = await persistUserSession(data.user);
+      if (!stopped && next) setUser(next);
+    }
+    refreshAccount();
+    const timer = setInterval(() => {
+      tries += 1;
+      if (tries > 6) {
+        clearInterval(timer);
+        return;
+      }
+      refreshAccount();
+    }, 3000);
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+    };
+  }, []);
 
   useEffect(() => {
     let alive = true;

@@ -5,6 +5,13 @@
 
 import { allowanceForStatus, STORAGE_POLICY } from './storagePolicy.js';
 import { SINGLE_PUT_ABANDON_GRACE_SECONDS, UNOCCUPIED_STATUSES } from './transferReservation.js';
+import {
+  escapeXml,
+  mergeCompleteParts,
+  multipartIsAbandoned,
+  parseIncompleteUploads,
+  parseListedParts,
+} from './multipartUpload.js';
 import { checkSharedLimit, trustedClientIp } from './rateLimit.js';
 import { opsEvent } from './opsLog.js';
 import { isolatedRuntimeBlock } from './localIsolation.js';
@@ -720,10 +727,15 @@ async function requireDeleteClaim(env, token) {
   return { claim };
 }
 
-function safeEtag(value) {
-  const etag = String(value || '').trim();
-  if (!/^"?[A-Za-z0-9._:-]+"?$/.test(etag)) return null;
-  return etag.includes('"') ? etag : `"${etag}"`;
+async function listUploadedParts(cfg, key, uploadId) {
+  const res = await signedFetch({
+    ...cfg,
+    method: 'GET',
+    path: `/${cfg.bucket}/${key}`,
+    query: { uploadId, 'max-parts': '1000' },
+  });
+  if (!res.ok) return [];
+  return parseListedParts(await res.text());
 }
 
 async function optionalOwner(request, env) {
@@ -1242,7 +1254,7 @@ export async function handleR2Request({ request, env }) {
       return json(200, { uploadId, s3Key: key, shareId: gate.claim.share_id, safeFileName: safeName, bucket: cfg.bucket });
     }
 
-    if ((action === 'get-part-url' || action === 'get-part-urls') && request.method === 'POST') {
+    if ((action === 'get-part-url' || action === 'get-part-urls' || action === 'list-parts') && request.method === 'POST') {
       if (uploadsPaused(env)) return uploadPauseResponse();
       const missing = requireConfig(cfg);
       if (missing) return missing;
@@ -1255,6 +1267,10 @@ export async function handleR2Request({ request, env }) {
       const row = await loadTransferByPath(env, body.s3Key);
       if (!row || row.share_id !== gate.claim.share_id || row.multipart_upload_id !== body.uploadId || row.status !== 'pending') {
         return json(403, { error: 'That upload session is not valid.', code: 'UPLOAD_NOT_AUTHORIZED' });
+      }
+      if (action === 'list-parts') {
+        const listed = await listUploadedParts(cfg, body.s3Key, body.uploadId);
+        return json(200, { parts: listed });
       }
       if (action === 'get-part-urls' && !Array.isArray(body.partNumbers)) {
         return json(400, { error: 'partNumbers must be an array.', code: 'PART_NUMBERS_INVALID' });
@@ -1298,14 +1314,15 @@ export async function handleR2Request({ request, env }) {
       if (!pending || pending.share_id !== gate.claim.share_id || pending.multipart_upload_id !== body.uploadId || pending.status !== 'pending') {
         return json(403, { error: 'That upload session is not valid.', code: 'UPLOAD_NOT_AUTHORIZED' });
       }
-      const partsXml = [...body.parts]
-        .sort((a, b) => Number(a.PartNumber) - Number(b.PartNumber))
-        .map((part) => {
-          const etag = safeEtag(part.ETag);
-          const partNumber = Number(part.PartNumber);
-          if (!etag || !partNumber) return '';
-          return `<Part><PartNumber>${partNumber}</PartNumber><ETag>${etag}</ETag></Part>`;
-        })
+      let listed = [];
+      try {
+        listed = await listUploadedParts(cfg, body.s3Key, body.uploadId);
+      } catch {
+        listed = [];
+      }
+      const merged = mergeCompleteParts(listed, body.parts);
+      const partsXml = merged
+        .map((part) => `<Part><PartNumber>${part.partNumber}</PartNumber><ETag>${escapeXml(part.etag)}</ETag></Part>`)
         .join('');
       if (!partsXml) return json(400, { error: 'Upload parts were not valid.' });
       const res = await signedFetch({
@@ -1318,6 +1335,38 @@ export async function handleR2Request({ request, env }) {
       });
       if (!res.ok) return json(502, { error: 'Could not complete upload.', code: 'MULTIPART_FAILED' });
       return activateObject(env, cfg, { s3Key: body.s3Key, claim: gate.claim });
+    }
+
+    if (action === 'abort-upload' && request.method === 'POST') {
+      const missing = requireConfig(cfg);
+      if (missing) return missing;
+      const body = await readBody(request);
+      if (!body.s3Key?.startsWith('transfers/') || body.s3Key.includes('..') || !body.uploadId) {
+        return json(400, { error: 'Missing s3Key or uploadId.' });
+      }
+      const gate = await requireDeleteClaim(env, body.deleteToken);
+      if (gate.error) return gate.error;
+      const pending = await loadTransferByPath(env, body.s3Key);
+      if (!pending || pending.share_id !== gate.claim.share_id || pending.multipart_upload_id !== body.uploadId) {
+        return json(403, { error: 'That upload session is not valid.', code: 'UPLOAD_NOT_AUTHORIZED' });
+      }
+      if (pending.status !== 'pending') {
+        return json(409, { error: 'That upload is no longer in progress.', code: 'UPLOAD_NOT_PENDING' });
+      }
+      const abort = await signedFetch({
+        ...cfg,
+        method: 'DELETE',
+        path: `/${cfg.bucket}/${body.s3Key}`,
+        query: { uploadId: body.uploadId },
+      });
+      if (!abort.ok && abort.status !== 404) {
+        return json(502, { error: 'Could not abort the upload.', code: 'ABORT_FAILED' });
+      }
+      await sbFetch(env, `transfers?file_path=eq.${encodeURIComponent(body.s3Key)}&status=eq.pending`, {
+        method: 'PATCH',
+        body: { status: 'rejected' },
+      });
+      return json(200, { ok: true, status: 'rejected' });
     }
 
     if (action === 'finalize-upload' && request.method === 'POST') {
@@ -1563,6 +1612,53 @@ export async function handleR2Request({ request, env }) {
         else releasedCount += 1;
       }
 
+      const multipartAbandonBefore = new Date(now - 24 * 60 * 60 * 1000).toISOString();
+      const staleMultipart = await sbFetch(
+        env,
+        `transfers?select=id,share_id,file_path,expires_at,status,multipart_upload_id,created_at&status=eq.pending&multipart_upload_id=not.is.null&created_at=lt.${encodeURIComponent(multipartAbandonBefore)}&order=created_at.asc,id.asc&limit=${cleanupBatch}`,
+      );
+      if (!Array.isArray(staleMultipart)) {
+        opsEvent({ event: 'cleanup', result: 'failed', category: 'CLEANUP_RECORD_FAILED', durationMs: Date.now() - now });
+        return json(503, { error: 'Cleanup could not read abandoned multipart uploads.', code: 'CLEANUP_RECORD_FAILED' });
+      }
+      for (const row of staleMultipart) {
+        checked += 1;
+        if (!row.multipart_upload_id || !multipartIsAbandoned(row.created_at, now)) continue;
+        const expired = row.expires_at && new Date(row.expires_at).getTime() <= now;
+        const removed = await removeCleanupObject(row);
+        if (!removed) {
+          if (expired) await markCleanupStatus(env, row.id, 'pending_delete');
+          pendingCount += 1;
+          continue;
+        }
+        await markCleanupStatus(env, row.id, expired ? 'expired' : 'released');
+        if (expired) purgedCount += 1;
+        else releasedCount += 1;
+      }
+
+      const uploadsRes = await signedFetch({
+        ...cfg,
+        method: 'GET',
+        path: `/${cfg.bucket}`,
+        query: { uploads: '', prefix: 'transfers/', 'max-uploads': '50' },
+      });
+      if (uploadsRes.ok) {
+        const uploadsXml = await uploadsRes.text();
+        for (const upload of parseIncompleteUploads(uploadsXml)) {
+          const initiated = new Date(upload.initiated).getTime();
+          if (!Number.isFinite(initiated) || now - initiated < 24 * 60 * 60 * 1000) continue;
+          checked += 1;
+          const abort = await signedFetch({
+            ...cfg,
+            method: 'DELETE',
+            path: `/${cfg.bucket}/${upload.key}`,
+            query: { uploadId: upload.uploadId },
+          });
+          if (abort.ok || abort.status === 404) releasedCount += 1;
+          else pendingCount += 1;
+        }
+      }
+
       let token = '';
       const seenTokens = new Set();
       for (let page = 0; page < maxListPages; page += 1) {
@@ -1590,14 +1686,8 @@ export async function handleR2Request({ request, env }) {
             count: pendingCount,
             durationMs: Date.now() - now,
           });
-          return json(502, {
-            error: 'Cleanup could not list stored objects.',
-            code: 'LIST_FAILED',
-            purgedCount,
-            releasedCount,
-            pendingCount,
-            checked,
-          });
+          // Database expiry already ran. A flaky bucket list must not fail the hourly job.
+          break;
         }
         const keys = [...xml.matchAll(/<Key>([^<]+)<\/Key>/g)].map((match) => match[1]);
         for (const key of keys) {

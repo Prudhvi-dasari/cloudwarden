@@ -86,7 +86,7 @@ export const ROUTE_SEO_MAP = {
   },
   '/pricing': {
     title: 'Free 6 GB transfers — SendToAnyone',
-    description: 'Sending costs nothing. Each transfer can be up to 6 GB and the link can last up to 7 days. There is no upgrade that raises either limit.',
+    description: 'Free is 6 GB per transfer and links up to 7 days. Pro is 250 GB per transfer and links up to 180 days after Dodo confirms the payment.',
     crumb: 'Pricing',
   },
   '/receive': {

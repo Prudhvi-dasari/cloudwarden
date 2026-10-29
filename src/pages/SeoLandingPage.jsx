@@ -10,7 +10,7 @@ import { ArrowRight, Check } from 'lucide-react';
 const LANDING_DATA = {
   'send-large-files': {
     title: 'Send large files online, up to 6 GB | SendToAnyone',
-    metaDesc: 'Send up to 6 GB with no account. The link lasts from 1 hour to 7 days. Split anything larger. There is no bigger plan.',
+    metaDesc: 'Send up to 6 GB with no account. The link lasts from 1 hour to 7 days. Pro on the pricing page is 250 GB and 180 days.',
     h1: 'Send a large file',
     subtitle: 'One cloud transfer holds 6 GB. No account. You pick how long the link stays open, from 1 hour up to 7 days, and then it stops.',
   },
@@ -136,9 +136,9 @@ const LANDING_DATA = {
   },
   'file-transfer-free': {
     title: 'Send a file, up to 6 GB | SendToAnyone',
-    metaDesc: '6 GB, no account, links up to 7 days. There is no paid plan that raises the cap.',
-    h1: 'The free transfer is the only plan',
-    subtitle: 'Up to 6 GB. No account. Links last up to 7 days. A larger plan is not for sale.',
+    metaDesc: '6 GB free with no account, links up to 7 days. Pro is 250 GB and 180 days after checkout is confirmed.',
+    h1: 'Free is 6 GB. Pro is for the bigger file.',
+    subtitle: 'Up to 6 GB with no account. Links last up to 7 days. Pro on the pricing page is 250 GB and 180 days.',
     feature1: 'No account to upload',
     feature2: '6 GB per transfer',
     feature3: '7 days is the longest link',
@@ -270,7 +270,7 @@ function LargeFileArticle() {
         <p>
           6 GB is 6,000,000,000 bytes, counted as the total of every file in that transfer. The send form adds the sizes. Past the cap, it tells you to remove a file, and Create download link stays off. The server also rejects an upload that is still over the limit.
         </p>
-        <p>There is no larger plan. Anything over 6 GB has to be split into pieces that each sit under the cap. A link cannot be kept past 7 days.</p>
+        <p>Free stops at 6 GB and 7 days. Pro, after the server confirms payment, is 250 GB and 180 days. Anything over the limit for the account you are using has to be split.</p>
       </Section>
 
       <Section title="Video, source files, and folders">
@@ -408,7 +408,7 @@ function HowToArticle() {
 
       <Section title="Over 6 GB">
         <p>
-          Split the project into pieces under 6 GB. Name each piece in the title. There is no upgrade that raises the cap, and there is no way to keep one link past 7 days.
+          On Free, split the project into pieces under 6 GB and keep each link within 7 days. Pro raises one transfer to 250 GB and 180 days after payment is confirmed.
         </p>
       </Section>
 

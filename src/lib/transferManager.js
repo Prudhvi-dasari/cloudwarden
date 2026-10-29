@@ -6,6 +6,7 @@
  */
 
 import { sanitizeStoragePath } from './storageProvider';
+import { PART_UPLOAD_ATTEMPTS, normalizePartEtag, partUrlIsStale } from './uploadPlan';
 
 const SINGLE_PUT_MAX = 8 * 1024 * 1024; // 8 MB
 const PART_SIZE = 16 * 1024 * 1024; // 16 MB parts (S3/R2 minimum is 5 MB except last)
@@ -96,6 +97,7 @@ export class TransferManager {
     this.senderEmail = options.senderEmail || null;
     this.transferType = options.transferType || 'link';
     this.partConcurrency = options.partConcurrency || PARALLEL_PARTS;
+    this.accessToken = options.accessToken || '';
 
     this.files = [];
     this.listeners = new Map();
@@ -241,10 +243,7 @@ export class TransferManager {
     if (item && item.status === 'error') {
       item.status = 'queued';
       item.error = null;
-      item.progress = 0;
-      item.uploadedBytes = 0;
       item.speed = 0;
-      item.partBytes = null;
       this.flushProgress();
       this.processQueue();
     }
@@ -275,6 +274,7 @@ export class TransferManager {
     if (!item) return;
     item.status = 'cancelled';
     this._abortItem(item);
+    this._releaseRemote(item);
     this.flushProgress();
     this.processQueue();
   }
@@ -285,6 +285,7 @@ export class TransferManager {
       if (['uploading', 'queued', 'paused'].includes(f.status)) {
         f.status = 'cancelled';
         this._abortItem(f);
+        this._releaseRemote(f);
       }
     });
     this.flushProgress();
@@ -379,15 +380,35 @@ export class TransferManager {
     this.emitProgress();
   }
 
+  async _authHeaders() {
+    const headers = { 'Content-Type': 'application/json' };
+    let token = '';
+    try {
+      token = typeof this.accessToken === 'function' ? await this.accessToken() : (this.accessToken || '');
+    } catch {
+      token = '';
+    }
+    if (token) headers.Authorization = `Bearer ${token}`;
+    return headers;
+  }
+
   async _api(action, body) {
     const res = await fetch(`${this.apiBase}?action=${action}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: await this._authHeaders(),
       body: JSON.stringify(body),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || `API ${action} failed (${res.status})`);
     return data;
+  }
+
+  _releaseRemote(item) {
+    if (!item?.uploadId || !item?.s3Key || !this.deleteToken || item.serverRecorded) return;
+    const uploadId = item.uploadId;
+    const s3Key = item.s3Key;
+    item.uploadId = null;
+    this._api('abort-upload', { s3Key, uploadId, deleteToken: this.deleteToken }).catch(() => {});
   }
 
   async uploadSingleFile(item) {
@@ -459,52 +480,78 @@ export class TransferManager {
   }
 
   async _uploadMultipart(item, signal) {
-    const init = await this._api('initiate-upload', {
-      fileName: item.name,
-      fileSize: item.size,
-      contentType: item.type || 'application/octet-stream',
-      deleteToken: this.deleteToken,
-      shareId: this.shareId,
-      password: this.password || undefined,
-      transferType: this.transferType || 'link',
-    });
-
-    if (!init.uploadId || !init.s3Key) {
-      throw new Error('Could not start multipart upload');
+    if (!item.uploadId || !item.s3Key) {
+      const init = await this._api('initiate-upload', {
+        fileName: item.name,
+        fileSize: item.size,
+        contentType: item.type || 'application/octet-stream',
+        deleteToken: this.deleteToken,
+        shareId: this.shareId,
+        password: this.password || undefined,
+        transferType: this.transferType || 'link',
+      });
+      if (!init.uploadId || !init.s3Key) throw new Error('Could not start multipart upload');
+      item.uploadId = init.uploadId;
+      item.s3Key = init.s3Key;
     }
 
-    const { uploadId, s3Key } = init;
+    const { uploadId, s3Key } = item;
     const totalSize = item.size;
     const partCount = Math.ceil(totalSize / PART_SIZE) || 1;
-    item.partBytes = new Array(partCount).fill(0);
+    if (!item.partBytes || item.partBytes.length !== partCount) {
+      item.partBytes = new Array(partCount).fill(0);
+    }
     const completedParts = new Array(partCount);
+    const done = new Set(Array.isArray(item.completedPartNumbers) ? item.completedPartNumbers : []);
+
+    try {
+      const listed = await this._api('list-parts', { s3Key, uploadId, deleteToken: this.deleteToken });
+      for (const part of listed.parts || []) {
+        const index = Number(part.partNumber) - 1;
+        if (index < 0 || index >= partCount) continue;
+        completedParts[index] = { PartNumber: part.partNumber, ETag: part.etag || '' };
+        done.add(part.partNumber);
+        item.partBytes[index] = PART_SIZE;
+      }
+    } catch {
+      // A missing list still lets new parts upload. Complete asks R2 again.
+    }
+    item.completedPartNumbers = [...done];
 
     const refreshAggregate = () => {
       const loaded = item.partBytes.reduce((a, b) => a + b, 0);
       if (item.status === 'uploading') this._updateItemProgress(item, loaded);
     };
+    refreshAggregate();
 
     const urlCache = new Map();
+    let urlChain = Promise.resolve();
 
-    const ensureUrls = async (fromIndex, count) => {
-      const needed = [];
-      for (let i = fromIndex; i < Math.min(fromIndex + count, partCount); i += 1) {
-        const partNumber = i + 1;
-        if (!urlCache.has(partNumber)) needed.push(partNumber);
-      }
-      if (needed.length === 0) return;
-      const batch = await this._api('get-part-urls', {
-        s3Key,
-        uploadId,
-        partNumbers: needed,
-        deleteToken: this.deleteToken,
+    const ensureUrls = (fromIndex, count) => {
+      const job = urlChain.then(async () => {
+        const needed = [];
+        for (let i = fromIndex; i < Math.min(fromIndex + count, partCount); i += 1) {
+          const partNumber = i + 1;
+          if (done.has(partNumber)) continue;
+          const cached = urlCache.get(partNumber);
+          if (!cached || partUrlIsStale(cached.issuedAt)) needed.push(partNumber);
+        }
+        if (needed.length === 0) return;
+        const batch = await this._api('get-part-urls', {
+          s3Key,
+          uploadId,
+          partNumbers: needed.slice(0, this.partConcurrency),
+          deleteToken: this.deleteToken,
+        });
+        const issuedAt = Date.now();
+        for (const part of batch.parts || []) {
+          urlCache.set(part.partNumber, { url: part.presignedUrl, issuedAt });
+        }
       });
-      for (const part of batch.parts || []) {
-        urlCache.set(part.partNumber, part.presignedUrl);
-      }
+      urlChain = job.catch(() => {});
+      return job;
     };
 
-    // Prefetch first wave of part URLs in one API round-trip
     await ensureUrls(0, this.partConcurrency);
 
     let nextPart = 0;
@@ -515,27 +562,26 @@ export class TransferManager {
         const partIndex = nextPart;
         nextPart += 1;
         const partNumber = partIndex + 1;
+        if (done.has(partNumber) && completedParts[partIndex]) continue;
+
         const start = partIndex * PART_SIZE;
         const end = Math.min(start + PART_SIZE, totalSize);
         const blob = item.file.slice(start, end);
 
-        // Keep the URL pipeline ahead of active uploads
-        ensureUrls(nextPart, this.partConcurrency).catch(() => {});
-
-        if (!urlCache.has(partNumber)) await ensureUrls(partIndex, 1);
-        let presignedUrl = urlCache.get(partNumber);
-        if (!presignedUrl) throw new Error(`Missing URL for part ${partNumber}`);
-
         let attempt = 0;
-        while (attempt < 3) {
+        while (attempt < PART_UPLOAD_ATTEMPTS) {
           try {
             if (signal.aborted || item.status !== 'uploading') throw new Error('aborted');
-            if (attempt > 0) {
+            if (attempt === 0) await ensureUrls(partIndex, this.partConcurrency);
+            let cached = urlCache.get(partNumber);
+            if (attempt > 0 || !cached?.url || partUrlIsStale(cached.issuedAt)) {
               const fresh = await this._api('get-part-url', { s3Key, uploadId, partNumber, deleteToken: this.deleteToken });
-              presignedUrl = fresh.presignedUrl;
+              cached = { url: fresh.presignedUrl, issuedAt: Date.now() };
+              urlCache.set(partNumber, cached);
             }
+            if (!cached?.url) throw new Error(`Missing URL for part ${partNumber}`);
 
-            const result = await xhrPut(presignedUrl, blob, {
+            const result = await xhrPut(cached.url, blob, {
               signal,
               onProgress: (loaded) => {
                 item.partBytes[partIndex] = loaded;
@@ -543,21 +589,17 @@ export class TransferManager {
               },
             });
 
-            let etag = result.etag;
-            if (!etag) {
-              throw new Error('Missing ETag — R2 CORS must expose ETag');
-            }
-            etag = etag.replaceAll('&quot;', '"');
-            if (!etag.startsWith('"')) etag = `"${etag.replaceAll('"', '')}"`;
-            completedParts[partIndex] = { PartNumber: partNumber, ETag: etag };
+            completedParts[partIndex] = { PartNumber: partNumber, ETag: normalizePartEtag(result.etag) };
+            done.add(partNumber);
+            item.completedPartNumbers = [...done];
             item.partBytes[partIndex] = end - start;
             refreshAggregate();
             break;
           } catch (err) {
             if (err?.message === 'aborted') throw err;
             attempt += 1;
-            if (attempt >= 3) throw err;
-            await new Promise((r) => setTimeout(r, 350 * attempt));
+            if (attempt >= PART_UPLOAD_ATTEMPTS) throw err;
+            await new Promise((r) => setTimeout(r, 400 * attempt));
           }
         }
       }
@@ -566,13 +608,12 @@ export class TransferManager {
     await Promise.all(workers);
 
     const parts = completedParts.filter(Boolean);
-    if (parts.length !== partCount) {
-      throw new Error('Multipart upload incomplete');
-    }
+    if (parts.length !== partCount) throw new Error('Multipart upload incomplete');
 
     await this._api('complete-upload', { s3Key, uploadId, parts, deleteToken: this.deleteToken });
     item.fileId = s3Key;
     item.serverRecorded = true;
+    item.uploadId = null;
   }
 
   getSnapshot() {

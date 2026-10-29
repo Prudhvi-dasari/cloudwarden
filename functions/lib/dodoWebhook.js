@@ -74,11 +74,35 @@ export async function verifyDodoWebhook(rawBody, headers, secret, nowMs = Date.n
   }
 }
 
+function eventRecord(event) {
+  const data = event?.data && typeof event.data === 'object' && !Array.isArray(event.data) ? event.data : {};
+  if (data.payload && typeof data.payload === 'object' && !Array.isArray(data.payload)) return data.payload;
+  if (data.object && typeof data.object === 'object' && !Array.isArray(data.object)) return data.object;
+  return data;
+}
+
+function cartProductId(cart) {
+  const items = Array.isArray(cart) ? cart : [];
+  const first = items.find((item) => typeof item?.product_id === 'string' && item.product_id);
+  return first?.product_id || '';
+}
+
 function eventProductId(data) {
   if (typeof data?.product_id === 'string' && data.product_id) return data.product_id;
-  const cart = Array.isArray(data?.product_cart) ? data.product_cart : [];
-  const first = cart.find((item) => typeof item?.product_id === 'string' && item.product_id);
-  return first?.product_id || '';
+  const direct = cartProductId(data?.product_cart)
+    || cartProductId(data?.checkout?.product_cart)
+    || cartProductId(data?.payment?.product_cart);
+  if (direct) return direct;
+  const nested = [data?.product, data?.subscription, data?.payment].find((item) => typeof item?.product_id === 'string' && item.product_id);
+  return nested?.product_id || '';
+}
+
+function customerEmail(data, metadata) {
+  const candidates = [metadata.email, data?.customer?.email, data?.customer_email, data?.billing?.email];
+  for (const value of candidates) {
+    if (typeof value === 'string' && value.includes('@') && value.length <= 320) return value.trim().toLowerCase();
+  }
+  return '';
 }
 
 function statusFor(type) {
@@ -90,20 +114,25 @@ function statusFor(type) {
   return '';
 }
 
-export function decideBillingEvent(event, products) {
+export function decideBillingEvent(event, products, overrides = {}) {
   const type = typeof event?.type === 'string' ? event.type : '';
-  const data = event?.data && typeof event.data === 'object' ? event.data : {};
+  const data = eventRecord(event);
   const metadata = data.metadata && typeof data.metadata === 'object' && !Array.isArray(data.metadata) ? data.metadata : {};
-  const userId = typeof metadata.user_id === 'string' ? metadata.user_id : '';
-  const productId = eventProductId(data);
+  const metadataUser = typeof metadata.user_id === 'string' ? metadata.user_id : (typeof metadata.userId === 'string' ? metadata.userId : '');
+  const overrideUser = typeof overrides.userId === 'string' ? overrides.userId : '';
+  const userId = USER_ID.test(overrideUser) ? overrideUser : metadataUser;
+  const productId = eventProductId(data) || (typeof metadata.product_id === 'string' ? metadata.product_id : '');
   const configuredPlan = Object.entries(products || {}).find(([, id]) => id && id === productId)?.[0] || '';
   const metaPlan = metadata.plan_code === 'monthly' || metadata.plan_code === 'yearly' ? metadata.plan_code : '';
   const plan = metaPlan || configuredPlan;
-  const productMatches = Boolean(plan && products?.[plan] && productId === products[plan]);
+  const productMatches = productId
+    ? Boolean(plan && products?.[plan] && productId === products[plan])
+    : Boolean(metaPlan && products?.[metaPlan]);
   const status = statusFor(type);
   const base = {
     eventType: type,
     userId: USER_ID.test(userId) ? userId : '',
+    customerEmail: customerEmail(data, metadata),
     planCode: plan,
     status,
     paymentId: typeof data.payment_id === 'string' ? data.payment_id : '',
@@ -119,7 +148,11 @@ export function decideBillingEvent(event, products) {
 }
 
 export async function processDodoEvent({ event, webhookId, store, products }) {
-  const decision = decideBillingEvent(event, products);
+  let decision = decideBillingEvent(event, products);
+  if (!decision.userId && decision.customerEmail && typeof store.userIdForEmail === 'function') {
+    const resolved = await store.userIdForEmail(decision.customerEmail);
+    if (resolved) decision = decideBillingEvent(event, products, { userId: resolved });
+  }
   const fresh = await store.insertEventIfNew(webhookId, decision);
   if (!fresh) return { duplicate: true, decision };
   try {
@@ -179,10 +212,38 @@ export function supabaseBillingStore(env) {
       }
       return true;
     },
+    async userIdForEmail(email) {
+      const response = await billingFetch(env, 'rpc/billing_user_id_for_email', {
+        method: 'POST',
+        prefer: 'return=representation',
+        body: { p_email: email },
+      });
+      if (!response.ok) return '';
+      const body = await response.json().catch(() => null);
+      return typeof body === 'string' && USER_ID.test(body) ? body : '';
+    },
     async deleteEvent(webhookId) {
       await billingFetch(env, `billing_events?webhook_id=eq.${encodeURIComponent(webhookId)}`, { method: 'DELETE' });
     },
     async upsertEntitlement(decision) {
+      const rpc = await billingFetch(env, 'rpc/apply_billing_entitlement', {
+        method: 'POST',
+        prefer: 'return=representation',
+        body: {
+          p_user_id: decision.userId,
+          p_plan_code: decision.planCode,
+          p_status: decision.status,
+          p_payment_id: decision.paymentId || null,
+          p_subscription_id: decision.subscriptionId || null,
+        },
+      });
+      if (rpc.ok) return;
+      const detail = await rpc.text().catch(() => '');
+      if (rpc.status !== 404 && !detail.includes('PGRST202')) {
+        const error = new Error('Entitlement was not recorded.');
+        error.code = 'ENTITLEMENT_FAILED';
+        throw error;
+      }
       const response = await billingFetch(env, 'billing_entitlements?on_conflict=user_id', {
         method: 'POST',
         prefer: 'return=minimal,resolution=merge-duplicates',

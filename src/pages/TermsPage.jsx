@@ -95,14 +95,14 @@ export default function TermsPage() {
               <p>SendToAnyone provides high-speed, encrypted digital file transfer services through:</p>
               <ul>
                 <li><strong>Free transfers:</strong> Up to 6 GB per transfer, kept for at most 7 days. No account is required.</li>
-                <li><strong>Larger plans:</strong> Not available yet. Paying does not raise the 6 GB limit or the 7-day expiry.</li>
+                <li><strong>Pro:</strong> 250 GB per transfer and links up to 180 days, after the server confirms a Dodo payment. Free stays 6 GB and 7 days until then.</li>
                 <li><strong>Device P2P:</strong> Direct browser-to-browser WebRTC streaming with zero server retention for infinite transfer sizes.</li>
               </ul>
             </Clause>
 
             <Clause index={2}>
               <p>
-                Stored files follow the expiry the sender chose, from 1 hour up to 7 days. Longer retention is not available yet.
+                Free files follow the expiry the sender chose, from 1 hour up to 7 days. Pro can keep a link open for up to 180 days. There is no permanent storage.
               </p>
               <div className="ds-callout is-warn">
                 <Clock className="w-5 h-5 shrink-0 mt-0.5 text-[#8a5300]" aria-hidden="true" />

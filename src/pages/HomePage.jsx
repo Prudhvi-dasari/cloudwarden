@@ -361,6 +361,10 @@ export default function HomePage() {
       password: enablePassword ? password.trim() : '',
       senderEmail: user?.email || `guest:${guestId}`,
       transferType: mainMode,
+      accessToken: async () => {
+        const { data } = await supabase.auth.getSession();
+        return data?.session?.access_token || '';
+      },
     });
 
     uploadLock.current = true;
