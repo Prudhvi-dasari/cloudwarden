@@ -1,5 +1,5 @@
 import { timingSafeEqual } from './transferSecurity.js';
-import { isPlanCode, productMap, tierForPlanCode } from './plans.js';
+import { configuredProductIds, isPlanCode, planCodeForProduct, productMap, tierForPlanCode } from './plans.js';
 import { recordProductEvent } from './productEvents.js';
 
 const encoder = new TextEncoder();
@@ -119,12 +119,11 @@ export function decideBillingEvent(event, products, overrides = {}) {
   const overrideUser = typeof overrides.userId === 'string' ? overrides.userId : '';
   const userId = USER_ID.test(overrideUser) ? overrideUser : metadataUser;
   const productId = eventProductId(data) || (typeof metadata.product_id === 'string' ? metadata.product_id : '');
-  const configuredPlan = Object.entries(products || {}).find(([, id]) => id && id === productId)?.[0] || '';
+  const configuredPlan = planCodeForProduct(products, productId);
   const metaPlan = isPlanCode(metadata.plan_code) ? metadata.plan_code : '';
   const plan = metaPlan || configuredPlan;
-  const productMatches = productId
-    ? Boolean(plan && products?.[plan] && productId === products[plan])
-    : Boolean(metaPlan && products?.[metaPlan]);
+  const knownIds = configuredProductIds(products, plan);
+  const productMatches = productId ? knownIds.includes(productId) : knownIds.length > 0;
   const status = statusFor(type);
   const base = {
     eventType: type,
@@ -140,7 +139,7 @@ export function decideBillingEvent(event, products, overrides = {}) {
   if (!base.userId) return { ...base, outcome: 'unmatched_user' };
   if (status === 'active' && !productMatches) return { ...base, outcome: 'unmapped_product' };
   if (productId && !productMatches) return { ...base, outcome: 'unmapped_product' };
-  if (!plan || !products?.[plan]) return { ...base, outcome: 'unmapped_product' };
+  if (!plan || knownIds.length === 0) return { ...base, outcome: 'unmapped_product' };
   return { ...base, outcome: status, apply: true };
 }
 

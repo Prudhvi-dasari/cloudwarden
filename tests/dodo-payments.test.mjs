@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { handlePaymentRequest, transferAllowance } from '../functions/lib/dodo.js';
 import { decideBillingEvent, processDodoEvent, signDodoWebhook } from '../functions/lib/dodoWebhook.js';
+import { entitlementAllows } from '../functions/lib/plans.js';
 import { STORAGE_POLICY } from '../functions/lib/storagePolicy.js';
 import { checkoutReturnState } from '../src/lib/checkoutReturn.js';
 
@@ -74,10 +75,11 @@ function installFetch({ user = { id: USER_A, email: 'payer@example.com' }, dodo 
   };
 }
 
-async function postCheckout(env, { token = 'session-token', body = { plan: 'monthly' }, cookie = '' } = {}) {
+async function postCheckout(env, { token = 'session-token', body = { plan: 'monthly' }, cookie = '', country = '' } = {}) {
   const headers = { 'content-type': 'application/json' };
   if (token) headers.authorization = `Bearer ${token}`;
   if (cookie) headers.cookie = cookie;
+  if (country) headers['cf-ipcountry'] = country;
   const response = await handlePaymentRequest({
     request: new Request('https://sendtoanyone.com/api/payment?action=checkout', {
       method: 'POST',
@@ -108,7 +110,9 @@ async function signedWebhook(env, event, { id = 'msg_1', timestamp = Math.floor(
   return { status: response.status, data: await response.json(), raw };
 }
 
-function paymentEvent(type, { userId = USER_A, plan = 'monthly', productId = 'pdt_month', paymentId = 'pay_1', subscriptionId = '' } = {}) {
+function paymentEvent(type, { userId = USER_A, plan = 'monthly', productId = 'pdt_month', paymentId = 'pay_1', subscriptionId = '', omitPlan = false } = {}) {
+  const metadata = { user_id: userId };
+  if (!omitPlan) metadata.plan_code = plan;
   return {
     business_id: 'bus_test',
     type,
@@ -118,7 +122,7 @@ function paymentEvent(type, { userId = USER_A, plan = 'monthly', productId = 'pd
       payment_id: paymentId,
       subscription_id: subscriptionId,
       product_id: productId,
-      metadata: { user_id: userId, plan_code: plan },
+      metadata,
     },
   };
 }
@@ -202,7 +206,9 @@ test('checkout rejects missing auth, unknown plans, client product ids, and miss
     const offerBody = await offers.json();
     assert.equal(offerBody.purchasable, true);
     assert.equal(offerBody.plans.find((plan) => plan.code === 'monthly').purchasable, true);
-    assert.equal(offerBody.plans.find((plan) => plan.code === 'yearly').priceLabel, '₹7,999');
+    assert.equal(offerBody.currency, 'USD');
+    assert.equal(offerBody.plans.find((plan) => plan.code === 'yearly').priceLabel, '$150');
+    assert.equal(offerBody.plans.find((plan) => plan.code === 'yearly').inrLabel, '₹7,999');
     assert.equal(offerBody.plans.find((plan) => plan.code === 'yearly').usdLabel, '$150');
     assert.equal(offerBody.mode, 'test');
     assert.equal(JSON.stringify(offerBody).includes('pdt_month'), false);
@@ -408,4 +414,145 @@ test('a checkout return never confirms payment, and the migration is additive', 
   assert.doesNotMatch(executable, /reserve_transfer_file|drop table|public\.transfers/i);
   const engine = readFileSync(new URL('../functions/lib/r2Engine.js', import.meta.url), 'utf8');
   assert.equal(engine.includes('userPlan'), false);
+});
+
+test('checkout currency follows the connection country and ignores a client currency', async () => {
+  const env = baseEnv({
+    DODO_PRODUCT_CREATOR_MONTHLY: 'pdt_0NqoDtsIq58zQ2ukjCex2',
+    DODO_PRODUCT_CREATOR_MONTHLY_USD: 'pdt_creator_usd',
+    DODO_PRODUCT_PRO_YEARLY: 'pdt_year_inr',
+    DODO_PRODUCT_PRO_YEARLY_USD: 'pdt_year_usd',
+  });
+  const network = installFetch();
+  try {
+    const gamed = await postCheckout(env, {
+      country: 'US',
+      body: { plan: 'creator_monthly', currency: 'INR', billing_currency: 'INR' },
+    });
+    assert.equal(gamed.status, 200);
+    const usPayload = JSON.parse(network.calls.find((call) => call.href.includes('/checkouts')).options.body);
+    assert.deepEqual(usPayload.product_cart, [{ product_id: 'pdt_creator_usd', quantity: 1 }]);
+    assert.equal(usPayload.billing_currency, 'USD');
+    assert.deepEqual(usPayload.billing_address, { country: 'US' });
+    assert.equal(usPayload.feature_flags.allow_currency_selection, false);
+    assert.equal(usPayload.feature_flags.allow_customer_editing_country, false);
+    assert.equal(usPayload.metadata.plan_code, 'creator_monthly');
+    assert.equal(usPayload.metadata.currency, 'USD');
+    assert.equal(usPayload.metadata.country, 'US');
+
+    const india = await postCheckout(env, {
+      country: 'IN',
+      body: { plan: 'creator_monthly', currency: 'USD' },
+    });
+    assert.equal(india.status, 200);
+    const inPayload = JSON.parse(network.calls.filter((call) => call.href.includes('/checkouts')).at(-1).options.body);
+    assert.deepEqual(inPayload.product_cart, [{ product_id: 'pdt_0NqoDtsIq58zQ2ukjCex2', quantity: 1 }]);
+    assert.equal(inPayload.billing_currency, 'INR');
+    assert.deepEqual(inPayload.billing_address, { country: 'IN' });
+    assert.equal(inPayload.metadata.plan_code, 'creator_monthly');
+
+    const fallback = await postCheckout(baseEnv({ DODO_PRODUCT_PASS: 'pdt_pass_inr' }), {
+      country: 'DE',
+      body: { plan: 'pass' },
+    });
+    assert.equal(fallback.status, 200);
+    const fallbackPayload = JSON.parse(network.calls.filter((call) => call.href.includes('/checkouts')).at(-1).options.body);
+    assert.equal(fallbackPayload.product_cart[0].product_id, 'pdt_pass_inr');
+    assert.equal(fallbackPayload.billing_currency, 'INR');
+    assert.equal(fallbackPayload.billing_address.country, 'DE');
+
+    const usOffers = await handlePaymentRequest({
+      request: new Request('https://sendtoanyone.com/api/payment?action=offers', { headers: { 'cf-ipcountry': 'US' } }),
+      env,
+    });
+    const usBody = await usOffers.json();
+    assert.equal(usBody.currency, 'USD');
+    assert.equal(usBody.country, 'US');
+    assert.equal(usBody.plans.find((plan) => plan.code === 'creator_monthly').priceLabel, '$5');
+    assert.equal(usBody.plans.find((plan) => plan.code === 'creator_monthly').chargeCurrency, 'USD');
+    assert.equal(JSON.stringify(usBody).includes('pdt_creator_usd'), false);
+
+    const inOffers = await handlePaymentRequest({
+      request: new Request('https://sendtoanyone.com/api/payment?action=offers', { headers: { 'cf-ipcountry': 'IN' } }),
+      env,
+    });
+    const inBody = await inOffers.json();
+    assert.equal(inBody.currency, 'INR');
+    assert.equal(inBody.plans.find((plan) => plan.code === 'pro_yearly').priceLabel, '₹7,999');
+    assert.equal(inBody.plans.find((plan) => plan.code === 'studio_monthly').priceLabel, '₹2,499');
+    assert.equal(inBody.plans.find((plan) => plan.code === 'pass').priceLabel, '₹149');
+
+    const cfRequest = new Request('https://sendtoanyone.com/api/payment?action=offers', {
+      headers: { 'cf-ipcountry': 'US' },
+    });
+    cfRequest.cf = { country: 'IN' };
+    const cfWins = await handlePaymentRequest({ request: cfRequest, env });
+    assert.equal((await cfWins.json()).currency, 'INR');
+  } finally {
+    network.restore();
+  }
+});
+
+test('creator INR and USD webhooks call apply_billing_entitlement and grant the creator quota', async () => {
+  const rpc = [];
+  const original = globalThis.fetch;
+  globalThis.fetch = async (url, options = {}) => {
+    const href = String(url);
+    if (href.includes('/rpc/apply_billing_entitlement')) {
+      rpc.push(JSON.parse(options.body));
+      return new Response(JSON.stringify({ ok: true, tier: 'creator', status: 'active' }), { status: 200 });
+    }
+    if (href.includes('/rest/v1/billing_events') && (!options.method || options.method === 'GET')) {
+      return new Response('[]', { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    return new Response('', { status: 201 });
+  };
+  const env = baseEnv({
+    SUPABASE_SERVICE_ROLE_KEY: 'service-role-test',
+    DODO_PRODUCT_CREATOR_MONTHLY: 'pdt_0NqoDtsIq58zQ2ukjCex2',
+    DODO_PRODUCT_CREATOR_MONTHLY_USD: 'pdt_creator_usd',
+  });
+  try {
+    const paid = await signedWebhook(env, paymentEvent('payment.succeeded', {
+      plan: 'creator_monthly',
+      productId: 'pdt_0NqoDtsIq58zQ2ukjCex2',
+      paymentId: 'pay_creator_inr',
+    }), { id: 'msg_creator_inr' });
+    assert.equal(paid.status, 200);
+    assert.equal(paid.data.duplicate, false);
+
+    const renewed = await signedWebhook(env, paymentEvent('subscription.active', {
+      omitPlan: true,
+      productId: 'pdt_creator_usd',
+      paymentId: 'pay_creator_usd',
+      subscriptionId: 'sub_creator_usd',
+    }), { id: 'msg_creator_usd' });
+    assert.equal(renewed.status, 200);
+    assert.equal(renewed.data.duplicate, false);
+  } finally {
+    globalThis.fetch = original;
+  }
+
+  assert.equal(rpc.length, 2);
+  assert.equal(rpc[0].p_user_id, USER_A);
+  assert.equal(rpc[0].p_plan_code, 'creator_monthly');
+  assert.equal(rpc[0].p_status, 'active');
+  assert.equal(rpc[0].p_payment_id, 'pay_creator_inr');
+  assert.equal(rpc[1].p_plan_code, 'creator_monthly');
+  assert.equal(rpc[1].p_status, 'active');
+  assert.equal(rpc[1].p_subscription_id, 'sub_creator_usd');
+
+  const creator = entitlementAllows({ status: 'active', planCode: rpc[0].p_plan_code });
+  assert.equal(creator.tier, 'creator');
+  assert.equal(creator.paid, true);
+  assert.equal(creator.storageBytes, 200_000_000_000);
+  assert.equal(creator.transferBytes, 50_000_000_000);
+  assert.equal(creator.retentionHours, 30 * 24);
+
+  const sql = readFileSync(new URL('../supabase/migrations/20261029200000_sta_account_quotas.sql', import.meta.url), 'utf8');
+  assert.match(sql, /when p_plan_code in \('creator_monthly', 'creator'\) then 'creator'/);
+  assert.match(sql, /creator_storage constant bigint := 200000000000/);
+  assert.match(sql, /creator_transfer constant bigint := 50000000000/);
+  assert.match(sql, /max_hours := 720/);
+  assert.match(sql, /perform public\.apply_billing_entitlement|return public\.apply_billing_entitlement|rpc\/apply_billing_entitlement|create or replace function public\.apply_billing_entitlement/);
 });

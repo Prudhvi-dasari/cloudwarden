@@ -13,6 +13,7 @@ import { HomeFaq } from '../components/home/HomeSections';
 import { getStoredUser, clearUserSession, isUserPro, persistUserSession } from '../lib/authSession';
 import { supabase } from '../lib/supabase';
 import { checkoutAccessToken } from '../lib/checkoutSession';
+import { readPricingGeo } from '../lib/pricingCurrency';
 
 const COMPARE = [
   ['Size of one transfer', '6 GB', '50 GB', '250 GB', '250 GB'],
@@ -57,6 +58,7 @@ export default function PricingPage() {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isPaymentOpen, setIsPaymentOpen] = useState(false);
   const [offers, setOffers] = useState(null);
+  const [currency, setCurrency] = useState(() => readPricingGeo().currency);
   const [pendingPlan, setPendingPlan] = useState('');
   const [busyPlan, setBusyPlan] = useState('');
   const [note, setNote] = useState('');
@@ -94,7 +96,11 @@ export default function PricingPage() {
     let alive = true;
     fetch('/api/payment?action=offers')
       .then((response) => response.json())
-      .then((body) => { if (alive) setOffers(body); })
+      .then((body) => {
+        if (!alive || !body || !Array.isArray(body.plans)) return;
+        setOffers(body);
+        if (body.currency === 'INR' || body.currency === 'USD') setCurrency(body.currency);
+      })
       .catch(() => { if (alive) setOffers(null); });
     return () => { alive = false; };
   }, []);
@@ -174,18 +180,17 @@ export default function PricingPage() {
         </section>
 
         <section className="ds-wrap pb-6" aria-label="Plans">
-          <div className="max-w-6xl mx-auto">
-            <PlanCards
-              plans={paidPlans}
-              onCheckout={startCheckout}
-              busyPlan={busyPlan}
-              note={note}
-              notePlan={notePlan}
-              freeHref="/"
-              isPro={userIsPro}
-              currentTier={user?.user_metadata?.plan || ''}
-            />
-          </div>
+          <PlanCards
+            plans={paidPlans}
+            onCheckout={startCheckout}
+            busyPlan={busyPlan}
+            note={note}
+            notePlan={notePlan}
+            freeHref="/"
+            isPro={userIsPro}
+            currentTier={user?.user_metadata?.plan || ''}
+            currency={currency}
+          />
         </section>
 
         <section className="ds-section" aria-labelledby="compare-title">
@@ -194,23 +199,23 @@ export default function PricingPage() {
               <p className="ds-kicker justify-center"><b>●</b> Side by side</p>
               <h2 id="compare-title" className="ds-h2">What changes when you pay.</h2>
             </div>
-            <div className="mt-10 max-w-4xl mx-auto ds-card overflow-hidden" data-reveal style={{ '--d': '80ms' }}>
-              <table className="w-full text-left text-[0.9375rem]">
+            <div className="mt-10 ds-card ds-compare-scroll" data-reveal style={{ '--d': '80ms' }}>
+              <table className="ds-compare w-full text-left text-[0.9375rem]">
                 <thead>
                   <tr className="border-b border-[#e6e8ee] bg-[#f6f7f9]">
-                    <th scope="col" className="px-5 py-4 font-semibold text-[#6b7486]">Limit</th>
-                    <th scope="col" className="px-5 py-4 font-semibold text-[#060a12]">Free</th>
-                    <th scope="col" className="px-5 py-4 font-semibold text-[#060a12]">Creator</th>
-                    <th scope="col" className="px-5 py-4 font-semibold text-[#060a12]">Pro</th>
-                    <th scope="col" className="px-5 py-4 font-semibold text-[#060a12]">Studio</th>
+                    <th scope="col" className="px-3 py-3 sm:px-5 sm:py-4 font-semibold text-[#6b7486]">Limit</th>
+                    <th scope="col" className="px-3 py-3 sm:px-5 sm:py-4 font-semibold text-[#060a12]">Free</th>
+                    <th scope="col" className="px-3 py-3 sm:px-5 sm:py-4 font-semibold text-[#060a12]">Creator</th>
+                    <th scope="col" className="px-3 py-3 sm:px-5 sm:py-4 font-semibold text-[#060a12]">Pro</th>
+                    <th scope="col" className="px-3 py-3 sm:px-5 sm:py-4 font-semibold text-[#060a12]">Studio</th>
                   </tr>
                 </thead>
                 <tbody>
                   {COMPARE.map(([label, ...values]) => (
                     <tr key={label} className="border-b border-[#e6e8ee] last:border-0">
-                      <th scope="row" className="px-5 py-4 font-medium text-[#1b2230]">{label}</th>
+                      <th scope="row" className="px-3 py-3 sm:px-5 sm:py-4 font-medium text-[#1b2230]">{label}</th>
                       {values.map((value, i) => (
-                        <td key={i} className="px-5 py-4 text-[#060a12]">
+                        <td key={i} className="px-3 py-3 sm:px-5 sm:py-4 text-[#060a12]">
                           {value === true ? (
                             <Check className="w-4 h-4 text-[#12a150]" aria-label="Included" />
                           ) : value === false ? (

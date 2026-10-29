@@ -3,10 +3,11 @@ import { X, Crown, Check, ArrowRight, AlertCircle } from 'lucide-react';
 import Portal from './Portal';
 import { supabase } from '../lib/supabase';
 import { checkoutAccessToken } from '../lib/checkoutSession';
+import { labelForCurrency, readPricingGeo } from '../lib/pricingCurrency';
 
-const PLANS = {
-  monthly: { label: 'Monthly', price: '₹799', note: 'Billed every month' },
-  yearly: { label: 'Yearly', price: '₹7,999', note: 'Billed once a year' },
+const PLAN_COPY = {
+  monthly: { label: 'Monthly', inr: '₹799', usd: '$15', note: 'Billed every month' },
+  yearly: { label: 'Yearly', inr: '₹7,999', usd: '$150', note: 'Billed once a year' },
 };
 
 export default function PaymentModal({ isOpen, onClose }) {
@@ -31,6 +32,14 @@ export default function PaymentModal({ isOpen, onClose }) {
 
   const planOffer = offers?.plans?.find((plan) => plan.code === billingCycle);
   const canPurchase = Boolean(offers?.purchasable && planOffer?.purchasable && planOffer?.productConfigured);
+  const currency = offers?.currency === 'INR' || offers?.currency === 'USD' ? offers.currency : readPricingGeo().currency;
+  const choices = Object.entries(PLAN_COPY).map(([id, plan]) => {
+    const offer = offers?.plans?.find((item) => item.code === id);
+    const price = offer?.currencyFallback && offer.chargeLabel
+      ? offer.chargeLabel
+      : (offer ? labelForCurrency(offer, currency) : (currency === 'INR' ? plan.inr : plan.usd));
+    return [id, { ...plan, price }];
+  });
 
   async function startCheckout() {
     if (!canPurchase || phase === 'submitting') return;
@@ -96,7 +105,7 @@ export default function PaymentModal({ isOpen, onClose }) {
 
         <div className="ds-modal-body acct-stack">
           <div className="acct-plan-opts" role="group" aria-label="Billing cycle">
-            {Object.entries(PLANS).map(([id, plan]) => (
+            {choices.map(([id, plan]) => (
               <button
                 key={id}
                 type="button"

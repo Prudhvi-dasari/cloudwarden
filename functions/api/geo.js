@@ -1,12 +1,14 @@
+import { countryFromRequest, currencyForCountry } from '../lib/pricingGeo.js';
+
 export async function onRequest(context) {
   const { request } = context;
   const cf = request.cf || {};
-  const country = cf.country || request.headers.get('cf-ipcountry');
+  const country = countryFromRequest(request);
   const city = cf.city || request.headers.get('cf-ipcity') || '';
   const timezone = cf.timezone || '';
-  const usable = country && country !== 'XX' && country !== 'T1';
   return new Response(JSON.stringify({
-    countryCode: usable ? String(country).toUpperCase() : null,
+    countryCode: country || null,
+    currency: currencyForCountry(country),
     city,
     timezone,
     colo: cf.colo || '',

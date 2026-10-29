@@ -53,6 +53,7 @@ export const CHECKOUT_PLANS = [
     priceInr: 299,
     priceUsd: 5,
     env: 'DODO_PRODUCT_CREATOR_MONTHLY',
+    usdEnv: 'DODO_PRODUCT_CREATOR_MONTHLY_USD',
   },
   {
     code: 'pro_monthly',
@@ -62,6 +63,8 @@ export const CHECKOUT_PLANS = [
     priceUsd: 15,
     env: 'DODO_PRODUCT_PRO_MONTHLY',
     aliasEnv: 'DODO_PRODUCT_MONTHLY',
+    usdEnv: 'DODO_PRODUCT_PRO_MONTHLY_USD',
+    usdAliasEnv: 'DODO_PRODUCT_MONTHLY_USD',
   },
   {
     code: 'pro_yearly',
@@ -71,6 +74,8 @@ export const CHECKOUT_PLANS = [
     priceUsd: 150,
     env: 'DODO_PRODUCT_PRO_YEARLY',
     aliasEnv: 'DODO_PRODUCT_YEARLY',
+    usdEnv: 'DODO_PRODUCT_PRO_YEARLY_USD',
+    usdAliasEnv: 'DODO_PRODUCT_YEARLY_USD',
   },
   {
     code: 'studio_monthly',
@@ -79,6 +84,7 @@ export const CHECKOUT_PLANS = [
     priceInr: 2499,
     priceUsd: 39,
     env: 'DODO_PRODUCT_STUDIO_MONTHLY',
+    usdEnv: 'DODO_PRODUCT_STUDIO_MONTHLY_USD',
   },
   {
     code: 'pass',
@@ -87,6 +93,7 @@ export const CHECKOUT_PLANS = [
     priceInr: 149,
     priceUsd: 2,
     env: 'DODO_PRODUCT_PASS',
+    usdEnv: 'DODO_PRODUCT_PASS_USD',
   },
 ];
 
@@ -135,19 +142,83 @@ export function isPlanCode(code) {
   return PLAN_CODES.has(String(code || ''));
 }
 
-export function productIdFor(env, code) {
+function planByCode(code) {
   const normalized = normalizeCheckoutCode(code);
-  const plan = CHECKOUT_PLANS.find((item) => item.code === normalized);
-  if (!plan) return '';
+  return CHECKOUT_PLANS.find((item) => item.code === normalized) || null;
+}
+
+function inrProductId(env, plan) {
   return envGet(env, plan.env) || (plan.aliasEnv ? envGet(env, plan.aliasEnv) : '');
+}
+
+function usdProductId(env, plan) {
+  return envGet(env, plan.usdEnv) || (plan.usdAliasEnv ? envGet(env, plan.usdAliasEnv) : '');
+}
+
+/**
+ * India always charges the INR product.
+ * Everywhere else charges the USD product when that env var is set, and the INR product until it is.
+ * Adaptive currency is not used: it would convert the rupee price at a live rate instead of the catalog dollar price.
+ */
+export function checkoutProduct(env, code, currency = 'USD') {
+  const plan = planByCode(code);
+  const wanted = currency === 'INR' ? 'INR' : 'USD';
+  if (!plan) return { productId: '', currency: wanted, fallback: false };
+  const inr = inrProductId(env, plan);
+  const usd = usdProductId(env, plan);
+  if (wanted === 'INR') return { productId: inr, currency: 'INR', fallback: false };
+  if (usd) return { productId: usd, currency: 'USD', fallback: false };
+  if (inr) return { productId: inr, currency: 'INR', fallback: true };
+  return { productId: '', currency: 'USD', fallback: false };
+}
+
+export function productIdFor(env, code, currency = 'INR') {
+  return checkoutProduct(env, code, currency).productId;
+}
+
+function idsOf(value) {
+  const list = Array.isArray(value) ? value : [value];
+  return list.filter((id) => typeof id === 'string' && id);
 }
 
 export function productMap(env) {
   const map = {};
-  for (const plan of CHECKOUT_PLANS) map[plan.code] = productIdFor(env, plan.code);
+  for (const plan of CHECKOUT_PLANS) {
+    const ids = [inrProductId(env, plan), usdProductId(env, plan)].filter(Boolean);
+    map[plan.code] = ids.length > 1 ? ids : (ids[0] || '');
+  }
   map.monthly = map.pro_monthly;
   map.yearly = map.pro_yearly;
   return map;
+}
+
+export function planCodeForProduct(products, productId) {
+  if (!productId) return '';
+  for (const [code, value] of Object.entries(products || {})) {
+    if (idsOf(value).includes(productId)) return code;
+  }
+  return '';
+}
+
+export function configuredProductIds(products, planCode) {
+  const code = String(planCode || '');
+  const normalized = normalizeCheckoutCode(code);
+  const keys = new Set([code, normalized]);
+  if (normalized === 'pro_monthly' || code === 'monthly') {
+    keys.add('monthly');
+    keys.add('pro_monthly');
+  }
+  if (normalized === 'pro_yearly' || code === 'yearly') {
+    keys.add('yearly');
+    keys.add('pro_yearly');
+  }
+  const ids = [];
+  for (const key of keys) {
+    for (const id of idsOf(products?.[key])) {
+      if (!ids.includes(id)) ids.push(id);
+    }
+  }
+  return ids;
 }
 
 export function entitlementAllows(entitlement) {
@@ -165,20 +236,32 @@ export function planExpiryDays(planCode) {
   return 32;
 }
 
-export function inrLabel(amount) {
-  return `₹${Number(amount).toLocaleString('en-IN')}`;
+export function moneyLabel(currency, amount) {
+  const value = Number(amount);
+  if (currency === 'INR') return `₹${value.toLocaleString('en-IN')}`;
+  return `$${value.toLocaleString('en-US')}`;
 }
 
-export function offerFor(env, plan) {
+export function inrLabel(amount) {
+  return moneyLabel('INR', amount);
+}
+
+export function offerFor(env, plan, currency = 'USD') {
   const limits = TIERS[plan.tier];
-  const productId = productIdFor(env, plan.code);
+  const choice = checkoutProduct(env, plan.code, currency);
+  const shown = currency === 'INR' ? 'INR' : 'USD';
   const gb = (bytes) => `${Math.round(bytes / GB)} GB`;
   const days = Math.round(limits.retentionHours / 24);
   return {
     code: plan.code,
     tier: plan.tier,
-    priceLabel: inrLabel(plan.priceInr),
-    usdLabel: `$${plan.priceUsd}`,
+    currency: shown,
+    priceLabel: moneyLabel(shown, shown === 'INR' ? plan.priceInr : plan.priceUsd),
+    inrLabel: moneyLabel('INR', plan.priceInr),
+    usdLabel: moneyLabel('USD', plan.priceUsd),
+    chargeCurrency: choice.currency,
+    chargeLabel: moneyLabel(choice.currency, choice.currency === 'INR' ? plan.priceInr : plan.priceUsd),
+    currencyFallback: choice.fallback,
     interval: plan.interval === 'year'
       ? 'Billed once a year'
       : plan.interval === 'once'
@@ -189,6 +272,6 @@ export function offerFor(env, plan) {
     retention: days >= 365 ? '1 year' : `${days} days`,
     oneTime: plan.interval === 'once',
     hidden: false,
-    productConfigured: Boolean(productId),
+    productConfigured: Boolean(choice.productId),
   };
 }
